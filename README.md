@@ -2,12 +2,12 @@
 
 **MusDesk** is a planned desktop tool for turning a music track and cover artwork into a vertical, animated music visualizer video for short-form platforms.
 
-> **Project status: editor shell.** MusDesk opens a resizable 1280 × 800 SDL3/OpenGL window with Dear ImGui controls and an empty vertical preview. Preview color, scale, safe-area guides, and reset work. Media import, audio playback, visualizer rendering, and MP4 export are not implemented yet. Automated tests cover time formatting.
+> **Project status: animated composition preview (M2).** MusDesk imports PNG, JPEG and still WebP artwork and renders a rotating vinyl record, gently blurred moving background, blue rim, editable track labels and a demo progress bar. The composition is rendered at 1080 × 1920 from an explicit timestamp. Audio, audio-reactive effects and MP4 export are not implemented yet.
 
 ## What the app will do
 
 1. Import a music track (MP3, WAV, or OGG) and cover artwork (PNG, JPEG, or WebP).
-2. Display a spinning vinyl record with centered artwork, a blurred image background, track title, artist, playback status, and progress timer.
+2. Display a spinning vinyl record with centered artwork, a blurred image background, track title, artist, and progress timer.
 3. Animate a glow/ring using the track's measured energy and allow choosing effect presets.
 4. Preview the composition and export a synchronized, vertical MP4 video.
 
@@ -39,12 +39,14 @@ ctest --test-dir build -C Debug --output-on-failure
 Alternatively, open the repository with **File > Open > Folder** in Visual Studio,
 build the Debug configuration, and select `MusDesk.exe` as the startup target.
 
-CMake downloads pinned SDL **3.4.18** and Dear ImGui **1.93.0** source archives
-from their official GitHub repositories and verifies their SHA-256 checksums.
+CMake downloads pinned SDL **3.4.18**, Dear ImGui **1.93.0**, stb and libwebp
+**1.6.0** source archives from their official GitHub repositories and verifies
+their SHA-256 checksums. stb decodes PNG/JPEG and rasterizes text; libwebp provides
+the WebP decoder. Encoder tools are not built.
 The first configuration needs internet access; sources and build products stay
-inside the build directory. Both dependencies are built from source. SDL's DLL
-is copied next to `MusDesk.exe` on Windows; Dear ImGui is linked statically.
-Keep the DLL alongside the executable when running it elsewhere.
+inside the build directory. SDL's DLL and the `assets/Roboto-Medium.ttf` font
+are copied next to `MusDesk.exe`; the remaining libraries are linked statically.
+Keep the DLL and the assets directory alongside the executable when running it elsewhere.
 
 The requested client size is 1280 × 800, with a minimum of 900 × 600. Desktop
 scaling and window-manager constraints can affect physical size. Close the window
@@ -54,19 +56,50 @@ the console; startup failures produce a nonzero exit code.
 
 ## Current workspace
 
-- The left panel contains preview controls and disabled media/export actions.
-- The right panel fits an empty **9:16** canvas into the available space when the
+- Use **Import artwork**, drop an image onto the window, or launch with
+  `MusDesk.exe --artwork "path/to/artwork.png"`. Unicode paths are supported.
+  Failed imports display an error and preserve the previous image.
+- PNG, JPEG and still WebP are accepted up to 64 MiB, 8192 pixels per side and
+  32 megapixels. Animated WebP is rejected; JPEG EXIF orientation is not applied.
+- The right panel fits the **9:16** composition into the available space when the
   window is resized. The preview scale changes its display size, not the target
   1080 × 1920 format.
-- Use the color picker or quick colors, adjust preview scale, toggle safe-area
-  guides, or press **Reset preview**. These settings last only for the session.
+- Artwork fills the background and circular label through centered cropping,
+  preserving its proportions. The record and label rotate together. The blue
+  rim is static until audio analysis is added.
+- Edit title, artist, rotation speed, demo length and preview time in the left
+  panel. Seeking stops automatic animation. Duration and progress are demo values;
+  no audio is loaded. The composition contains no player transport buttons.
+- Adjust preview scale, toggle safe-area guides, or press **Reset preview**.
+  Guides belong only to the editor; reset preserves artwork and track labels.
+  All settings last only for the session. Export remains disabled.
 - Keyboard navigation is enabled: **Tab**, arrow keys, and **Space** can operate
   the controls. The controls panel scrolls when space is limited.
 
-Window/context lifetime and the rendering loop are in `src/main.cpp`. The panel,
-preview placeholder, and their session state are in `src/app/EditorUi.cpp` and
-`src/app/EditorUi.hpp`. The UI uses the official Dear ImGui SDL3/OpenGL3 backends;
-the core library and its tests do not depend on Dear ImGui or OpenGL.
+Window/context lifetime and the rendering loop are in `src/main.cpp`; editor
+controls and the asynchronous native file dialog are in `src/app/`. Pure time
+calculations live in `musdesk_core`, image decoding in `musdesk_media`, and the
+OpenGL framebuffer and composition drawing in `musdesk_render`. The renderer
+does not depend on Dear ImGui. Its output depends on time and settings rather
+than the order in which frames were requested.
+
+### Tests
+
+The default CTest suite checks time formatting, deterministic animation values,
+PNG/JPEG/WebP decoding, Unicode paths, alpha and malformed input. To also register
+the integration test requiring an OpenGL 3.3 graphics driver:
+
+```powershell
+cmake -S . -B build -DMUSDESK_ENABLE_RENDER_TESTS=ON
+cmake --build build --config Debug --parallel 1 -- /nr:false
+ctest --test-dir build -C Debug --output-on-failure
+```
+
+The render test checks 1080 × 1920 pixel readback, opacity, animation, preservation
+of artwork after an invalid replacement, and identical pixels when seeking back
+to the same time. It can also run against your own image:
+`MusDeskRenderTests.exe "path/to/artwork.png"`. Pixel equality is checked within
+one graphics context; identical results across different GPU drivers are not guaranteed.
 
 ### MSVC debug-information troubleshooting
 
@@ -88,5 +121,9 @@ and [debug information formats](https://learn.microsoft.com/en-us/cpp/build/refe
 
 SDL is distributed under the [zlib license](https://github.com/libsdl-org/SDL/blob/release-3.4.18/LICENSE.txt).
 Dear ImGui is distributed under the [MIT license](https://github.com/ocornut/imgui/blob/v1.93.0/LICENSE.txt).
+stb offers [MIT or public-domain licensing](https://github.com/nothings/stb/blob/a7d4c2175630e1ea5b6f8dd00ab96fed0b97b96d/LICENSE).
+libwebp uses a [BSD-style license](https://github.com/webmproject/libwebp/blob/v1.6.0/COPYING)
+with a separate [patent grant](https://github.com/webmproject/libwebp/blob/v1.6.0/PATENTS).
+The bundled Roboto font uses the [Apache 2.0 license](https://github.com/ocornut/imgui/blob/v1.93.0/docs/FONTS.md#fonts-included-in-this-repository).
 
 A source-code license has not been selected. Before distributing compiled releases, review the licenses and distribution conditions of the chosen dependencies and codecs. Only use media you have permission to distribute.

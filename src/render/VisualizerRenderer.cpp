@@ -138,13 +138,15 @@ void main() {
         float reflection = pow(abs(cos(phi-0.5)),22.0)*0.10;
         vec3 vinyl = vec3(0.015,0.021,0.029) + grooves + reflection;
         vinyl += 0.018*pow(abs(sin(phi+0.6)),10.0);
-        if (r < 0.46) {
-            vec2 labelUv = material/0.92+0.5;
+        if (r < 0.60) {
+            vec2 labelUv = material/1.20+0.5;
             vec4 label = hasArtwork ? texture(artwork,coverCrop(labelUv,1.0)) : vec4(0.10,0.17,0.25,1.0);
             vinyl = mix(vec3(0.06,0.08,0.12),label.rgb,label.a);
         }
-        if (r < 0.024) {
-            vinyl = mix(vec3(0.04,0.06,0.09),vec3(0.65,0.75,0.86),1.0-smoothstep(0.0,0.024,r));
+        if (r < 0.040) {
+            vinyl = mix(vec3(0.04,0.06,0.09),
+                        vec3(0.65,0.75,0.86),
+                        1.0-smoothstep(0.0,0.040,r));
         }
         color = mix(color,vinyl,1.0-smoothstep(0.994,1.0,r));
     }

@@ -84,7 +84,7 @@ ImageData blurredBackground(const ImageData& source) {
         || source.rgba.size() != static_cast<std::size_t>(source.width) * source.height * 4) {
         throw std::runtime_error("Invalid RGBA image for background blur.");
     }
-    const float scale = std::min(1.0f, 256.0f / std::max(source.width, source.height));
+    const float scale = std::min(1.0f, 512.0f / std::max(source.width, source.height));
     ImageData output;
     output.width = std::max(1, static_cast<int>(source.width * scale));
     output.height = std::max(1, static_cast<int>(source.height * scale));
@@ -98,10 +98,10 @@ ImageData blurredBackground(const ImageData& source) {
             }
         }
     }
-    // Three separable box passes approximate a Gaussian blur on a small image.
+    // A gentle blur keeps background details visible behind the composition.
     auto temporary = output.rgba;
-    constexpr int radius = 7;
-    for (int pass = 0; pass < 3; ++pass) {
+    constexpr int radius = 2;
+    for (int pass = 0; pass < 2; ++pass) {
         for (int axis = 0; axis < 2; ++axis) {
             for (int y = 0; y < output.height; ++y) {
                 for (int x = 0; x < output.width; ++x) {
