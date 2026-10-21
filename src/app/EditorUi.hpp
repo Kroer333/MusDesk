@@ -57,6 +57,7 @@ struct EditorUiState {
     float exportProgress = 0;
     std::string exportStatus;
     bool exportError = false;
+    int exportEncoder = 0;
 };
 
 void configureEditorStyle(float displayScale);

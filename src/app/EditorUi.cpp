@@ -171,6 +171,10 @@ void drawControls(EditorUiState& state) {
 
     ImGui::EndDisabled();
     ImGui::SeparatorText("Export");
+    ImGui::BeginDisabled(state.exportBusy);
+    ImGui::SetNextItemWidth(-1);
+    ImGui::Combo("##ExportEncoder", &state.exportEncoder, "Automatic (GPU / CPU)\0CPU (veryfast)\0");
+    ImGui::EndDisabled();
     const bool ready = state.audioReady && !state.artworkName.empty() && state.ffmpegReady && state.ffprobeReady;
     ImGui::BeginDisabled(!ready || state.exportBusy || state.audioImportPending || state.artworkDialogPending
         || state.audioDialogPending || state.presetDialogPending);

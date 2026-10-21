@@ -119,6 +119,26 @@ int main(int argc, char* argv[]) {
         renderer.setArtwork({2, 2, {255,40,10,255, 255,40,10,255, 10,40,255,255, 10,40,255,255}});
         const auto folder = std::filesystem::u8path(SDL_GetBasePath()) / "test-fixtures" / "export";
         std::filesystem::create_directories(folder);
+        if ((argc == 5 || argc == 6) && std::string(argv[1]) == "--benchmark") {
+            auto audio = std::make_shared<musdesk::DecodedAudio>(musdesk::prepareAudio(argv[2], tools));
+            const auto seconds = std::stoul(argv[4]);
+            require(seconds >= 1 && seconds <= 60, "Benchmark duration must be 1-60 seconds");
+            audio->samples.resize(std::min(audio->samples.size(), seconds * 48000ULL * 2));
+            audio->envelope = musdesk::analyzeRms(audio->samples, 48000, 2);
+            renderer.setArtwork(musdesk::loadArtwork(argv[3]));
+            musdesk::CompositionSettings composition;
+            composition.title = "Export benchmark";
+            composition.durationSeconds = audio->durationSeconds();
+            const auto started = SDL_GetTicksNS();
+            musdesk::ExportEngine job(renderer, composition, audio, tools, utf8(folder / "benchmark.mp4"),
+                argc == 6 && std::string(argv[5]) == "cpu" ? musdesk::ExportEncoder::Cpu : musdesk::ExportEncoder::Automatic);
+            const auto result = finish(job);
+            require(result.phase == musdesk::ExportPhase::Completed, result.message.c_str());
+            const double elapsed = (SDL_GetTicksNS() - started) / 1e9;
+            std::cout << result.totalFrames << " frames in " << elapsed << " s; "
+                << result.totalFrames / elapsed << " FPS; " << result.encoder << '\n';
+            return 0;
+        }
         const auto input = folder / std::filesystem::path(L"d\u017Awi\u0119k testowy.wav");
         wav(input);
         auto clip = std::make_shared<musdesk::DecodedAudio>(musdesk::prepareAudio(utf8(input), tools));
@@ -155,11 +175,22 @@ int main(int argc, char* argv[]) {
                     "Exported video is vertically inverted or differs from the renderer");
         }
         runTool({tools.ffmpegPath, "-v", "error", "-xerror", "-nostdin", "-i", utf8(output), "-f", "null", "-"});
+        {
+            musdesk::ExportEngine job(renderer, settings, clip, tools, utf8(folder / "cpu.mp4"), musdesk::ExportEncoder::Cpu);
+            const auto status = finish(job);
+            require(status.phase == musdesk::ExportPhase::Completed && status.encoder == "CPU (x264 veryfast)", "Explicit CPU export failed");
+            require(status.elapsedSeconds > 0, "Export duration was not reported");
+        }
         const auto guarded = folder / "preserved.mp4";
         { std::ofstream file(guarded); file << "existing destination"; }
         {
-            musdesk::ExportEngine job(renderer, settings, clip, tools, utf8(guarded));
-            job.update();
+            musdesk::ExportEngine job(renderer, settings, clip, tools, utf8(guarded), musdesk::ExportEncoder::Cpu);
+            const auto deadline = SDL_GetTicks() + 15000;
+            while (job.status().active() && job.status().framesWritten == 0) {
+                job.update();
+                require(SDL_GetTicks() < deadline, "Encoder did not begin accepting frames");
+                SDL_Delay(1);
+            }
             job.cancel();
             require(finish(job).phase == musdesk::ExportPhase::Cancelled, "Cancellation was not reported");
         }

@@ -14,6 +14,12 @@
 #include <stdexcept>
 #include <thread>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
+
 namespace musdesk {
 std::uint64_t exportFrameCount(std::uint64_t samples) {
     if (samples == 0 || samples > 48000ULL * 1200)
@@ -24,30 +30,86 @@ double exportFrameTime(std::uint64_t index) { return static_cast<double>(index) 
 
 namespace {
 using Clock = std::chrono::steady_clock;
+using Io = std::unique_ptr<SDL_IOStream, decltype(&SDL_CloseIO)>;
+#ifdef _WIN32
+Io pipeStream(HANDLE handle) {
+    SDL_IOStreamInterface interface{};
+    SDL_INIT_INTERFACE(&interface);
+    interface.close = [](void* data) -> bool { return CloseHandle(data) != 0; };
+    interface.write = [](void* data, const void* bytes, std::size_t size, SDL_IOStatus* status) -> std::size_t {
+        DWORD written = 0;
+        if (!WriteFile(data, bytes, static_cast<DWORD>(size), &written, nullptr)) {
+            const auto error = GetLastError();
+            *status = error == ERROR_NO_DATA ? SDL_IO_STATUS_NOT_READY : SDL_IO_STATUS_ERROR;
+            if (*status == SDL_IO_STATUS_ERROR) SDL_SetError("Export pipe write failed (%lu).", error);
+        } else if (written == 0) *status = SDL_IO_STATUS_NOT_READY;
+        return written;
+    };
+    Io stream(SDL_OpenIO(&interface, handle), SDL_CloseIO);
+    if (!stream) { CloseHandle(handle); throw std::runtime_error("Cannot wrap export pipe."); }
+    if (!SDL_SetPointerProperty(SDL_GetIOProperties(stream.get()), SDL_PROP_IOSTREAM_WINDOWS_HANDLE_POINTER, handle))
+        throw std::runtime_error("Cannot configure export pipe.");
+    return stream;
+}
+std::pair<Io, Io> exportPipe() {
+    HANDLE readHandle, writeHandle;
+    // SDL's default Windows pipe is small compared with an 8 MiB RGBA frame.
+    if (!CreatePipe(&readHandle, &writeHandle, nullptr, 1024 * 1024))
+        throw std::runtime_error("Cannot create buffered export pipe.");
+    Io writer(nullptr, SDL_CloseIO), reader(nullptr, SDL_CloseIO);
+    try { reader = pipeStream(readHandle); }
+    catch (...) { CloseHandle(writeHandle); throw; }
+    writer = pipeStream(writeHandle);
+    DWORD mode = PIPE_NOWAIT;
+    if (!SetNamedPipeHandleState(writeHandle, &mode, nullptr, nullptr))
+        throw std::runtime_error("Cannot configure nonblocking export pipe.");
+    return {std::move(reader), std::move(writer)};
+}
+#endif
 struct Process {
     SDL_Process* handle = nullptr;
     SDL_IOStream* input = nullptr;
     SDL_IOStream* output = nullptr;
     SDL_IOStream* errors = nullptr;
     std::string diagnostic;
+    bool ownsInput = false;
     explicit Process(const std::vector<std::string>& args, bool writeInput) {
         std::vector<const char*> pointers;
         for (const auto& arg : args) pointers.push_back(arg.c_str());
         pointers.push_back(nullptr);
+#ifdef _WIN32
+        Io reader(nullptr, SDL_CloseIO), writer(nullptr, SDL_CloseIO);
+        if (writeInput) {
+            auto streams = exportPipe();
+            reader = std::move(streams.first);
+            writer = std::move(streams.second);
+        }
+#endif
         const auto props = SDL_CreateProperties();
         SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER, pointers.data());
         SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER, writeInput ? SDL_PROCESS_STDIO_APP : SDL_PROCESS_STDIO_NULL);
         SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER, SDL_PROCESS_STDIO_APP);
         SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDERR_NUMBER, SDL_PROCESS_STDIO_APP);
+#ifdef _WIN32
+        if (writeInput) {
+            SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER, SDL_PROCESS_STDIO_REDIRECT);
+            SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_STDIN_POINTER, reader.get());
+        }
+#endif
         handle = SDL_CreateProcessWithProperties(props);
         SDL_DestroyProperties(props);
         if (!handle) throw std::runtime_error(std::string("Cannot start media tool: ") + SDL_GetError());
         const auto properties = SDL_GetProcessProperties(handle);
+#ifdef _WIN32
+        if (writeInput) { input = writer.release(); ownsInput = true; }
+#else
         input = writeInput ? SDL_GetProcessInput(handle) : nullptr;
+#endif
         output = SDL_GetProcessOutput(handle);
         errors = static_cast<SDL_IOStream*>(SDL_GetPointerProperty(properties, SDL_PROP_PROCESS_STDERR_POINTER, nullptr));
     }
     ~Process() {
+        if (ownsInput) closeInput();
         if (handle) {
             if (!SDL_WaitProcess(handle, false, nullptr)) {
                 SDL_KillProcess(handle, true);
@@ -87,6 +149,12 @@ struct TemporaryFile {
         throw std::runtime_error(std::string("Cannot create export file: ") + SDL_GetError());
     }
 };
+struct Encoder {
+    std::string name;
+    std::vector<std::string> arguments;
+    std::string pixelFormat;
+};
+Encoder cpuEncoder() { return {"CPU (x264 veryfast)", {"-c:v", "libx264", "-preset", "veryfast", "-crf", "20"}, "yuv420p"}; }
 void validateMovie(const std::string& text, std::uint64_t frames) {
     const auto json = nlohmann::json::parse(text);
     const auto& streams = json.at("streams");
@@ -130,12 +198,15 @@ struct ExportEngine::Impl {
     ExportStatus state;
     std::uint64_t submitted = 0;
     std::atomic<bool> cancelled{false};
+    ExportEncoder requestedEncoder;
+    const Clock::time_point started = Clock::now();
+    Clock::time_point finished;
     std::jthread worker;
 
     Impl(VisualizerRenderer& target, CompositionSettings composition, std::shared_ptr<const DecodedAudio> clip,
-        MediaTools mediaTools, std::string output)
+        MediaTools mediaTools, std::string output, ExportEncoder encoder)
         : renderer(target), settings(std::move(composition)), audio(std::move(clip)),
-          tools(std::move(mediaTools)), destination(std::move(output)) {
+          tools(std::move(mediaTools)), destination(std::move(output)), requestedEncoder(encoder) {
         if (!audio || audio->samples.empty() || audio->samples.size() % DecodedAudio::channels)
             throw std::runtime_error("Import valid audio before exporting.");
         validatePreset(settings.preset);
@@ -160,18 +231,60 @@ struct ExportEngine::Impl {
     void checkCancel() {
         if (cancelled) throw std::runtime_error("Export cancelled.");
     }
+    Encoder selectEncoder() {
+        if (requestedEncoder == ExportEncoder::Cpu) return cpuEncoder();
+        const std::vector<Encoder> candidates{
+            {"NVIDIA NVENC", {"-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "20", "-b:v", "0"}, "nv12"},
+            {"Intel Quick Sync", {"-c:v", "h264_qsv", "-preset", "veryfast", "-global_quality", "20"}, "nv12"},
+            {"AMD AMF", {"-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "20", "-qp_p", "22"}, "nv12"}
+        };
+        for (const auto& candidate : candidates) {
+            checkCancel();
+            {
+                std::lock_guard lock(mutex);
+                state.message = "Checking " + candidate.name + "...";
+            }
+            std::vector<std::string> args{tools.ffmpegPath, "-v", "error", "-nostdin", "-f", "lavfi", "-i",
+                "color=size=1080x1920:rate=30", "-frames:v", "2", "-an", "-vf", "format=" + candidate.pixelFormat};
+            args.insert(args.end(), candidate.arguments.begin(), candidate.arguments.end());
+            args.insert(args.end(), {"-f", "null", "-"});
+            Process probe(args, false);
+            const auto deadline = Clock::now() + std::chrono::seconds(5);
+            int code = -1;
+            bool done = false;
+            while (!(done = SDL_WaitProcess(probe.handle, false, &code))) {
+                checkCancel();
+                probe.drainErrors();
+                if (Clock::now() > deadline) break;
+                SDL_Delay(5);
+            }
+            if (done && code == 0) return candidate;
+        }
+        return cpuEncoder();
+    }
     void run() {
         try {
+            const auto selected = selectEncoder();
+            checkCancel();
+            {
+                std::lock_guard lock(mutex);
+                state.encoder = selected.name;
+                state.phase = ExportPhase::Encoding;
+                state.message.clear();
+            }
             TemporaryFile temporary;
             temporary.reserve(destination);
             const auto count = state.totalFrames;
-            Process encoder({tools.ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+            std::vector<std::string> arguments{tools.ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
                 "-f", "rawvideo", "-pixel_format", "rgba", "-video_size", "1080x1920", "-framerate", "30", "-i", "pipe:0",
                 "-protocol_whitelist", "file", "-i", audio->path, "-map", "0:v:0", "-map", "1:a:0",
-                "-vf", "vflip", "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-pix_fmt", "yuv420p",
+                "-vf", "vflip,format=" + selected.pixelFormat};
+            arguments.insert(arguments.end(), selected.arguments.begin(), selected.arguments.end());
+            arguments.insert(arguments.end(), {
                 "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-af", "asetpts=PTS-STARTPTS,apad",
                 "-t", std::to_string(exportFrameTime(count)), "-frames:v", std::to_string(count),
-                "-movflags", "+faststart", temporary.path}, true);
+                "-movflags", "+faststart", temporary.path});
+            Process encoder(arguments, true);
             std::uint64_t written = 0;
             while (written < count) {
                 checkCancel();
@@ -192,7 +305,7 @@ struct ExportEngine::Impl {
                 while (offset < frame.size()) {
                     checkCancel();
                     encoder.drainErrors();
-                    const auto bytes = SDL_WriteIO(encoder.input, frame.data() + offset, std::min<std::size_t>(65536, frame.size() - offset));
+                    const auto bytes = SDL_WriteIO(encoder.input, frame.data() + offset, std::min<std::size_t>(256 * 1024, frame.size() - offset));
                     offset += bytes;
                     if (bytes) {
                         lastActivity = Clock::now();
@@ -253,6 +366,7 @@ struct ExportEngine::Impl {
             temporary.committed = true;
             state.phase = ExportPhase::Completed;
             state.message = "MP4 verified and saved: " + destination;
+            finished = Clock::now();
         } catch (const std::exception& error) {
             std::lock_guard lock(mutex);
             if (state.phase != ExportPhase::Failed) {
@@ -260,13 +374,14 @@ struct ExportEngine::Impl {
                 state.message = error.what();
             }
             queue.clear();
+            finished = Clock::now();
         }
     }
 };
 
 ExportEngine::ExportEngine(VisualizerRenderer& renderer, CompositionSettings settings,
-    std::shared_ptr<const DecodedAudio> audio, MediaTools tools, std::string outputPath)
-    : impl_(std::make_unique<Impl>(renderer, std::move(settings), std::move(audio), std::move(tools), std::move(outputPath))) {}
+    std::shared_ptr<const DecodedAudio> audio, MediaTools tools, std::string outputPath, ExportEncoder encoder)
+    : impl_(std::make_unique<Impl>(renderer, std::move(settings), std::move(audio), std::move(tools), std::move(outputPath), encoder)) {}
 ExportEngine::~ExportEngine() = default;
 void ExportEngine::cancel() {
     std::lock_guard lock(impl_->mutex);
@@ -275,30 +390,38 @@ void ExportEngine::cancel() {
 }
 ExportStatus ExportEngine::status() const {
     std::lock_guard lock(impl_->mutex);
-    return impl_->state;
+    auto result = impl_->state;
+    const auto end = result.active() || impl_->finished == Clock::time_point{} ? Clock::now() : impl_->finished;
+    result.elapsedSeconds = std::chrono::duration<double>(end - impl_->started).count();
+    return result;
 }
 void ExportEngine::update() {
-    auto& task = *impl_;
-    {
-        std::lock_guard lock(task.mutex);
-        if (!task.state.active() || task.cancelled || task.submitted >= task.state.totalFrames || task.queue.size() >= 2) return;
-    }
-    try {
-        const auto time = exportFrameTime(task.submitted);
-        task.renderer.renderFrame(time, task.settings, task.audio->envelope.at(time));
-        auto pixels = task.renderer.readPixels();
-        std::lock_guard lock(task.mutex);
-        if (task.state.active() && !task.cancelled) {
-            task.queue.push_back(std::move(pixels));
-            ++task.submitted;
-            task.wake.notify_one();
+    const auto started = Clock::now();
+    for (int batch = 0; batch < 4; ++batch) {
+        if (Clock::now() - started > std::chrono::milliseconds(8)) return;
+        auto& task = *impl_;
+        {
+            std::lock_guard lock(task.mutex);
+            if (task.state.phase != ExportPhase::Encoding || task.cancelled
+                || task.submitted >= task.state.totalFrames || task.queue.size() >= 2) return;
         }
-    } catch (const std::exception& error) {
-        std::lock_guard lock(task.mutex);
-        task.state.phase = ExportPhase::Failed;
-        task.state.message = std::string("Export rendering failed: ") + error.what();
-        task.cancelled = true;
-        task.wake.notify_all();
+        try {
+            const auto time = exportFrameTime(task.submitted);
+            task.renderer.renderFrame(time, task.settings, task.audio->envelope.at(time));
+            auto pixels = task.renderer.readPixels();
+            std::lock_guard lock(task.mutex);
+            if (task.state.active() && !task.cancelled) {
+                task.queue.push_back(std::move(pixels));
+                ++task.submitted;
+                task.wake.notify_one();
+            }
+        } catch (const std::exception& error) {
+            std::lock_guard lock(task.mutex);
+            task.state.phase = ExportPhase::Failed;
+            task.state.message = std::string("Export rendering failed: ") + error.what();
+            task.cancelled = true;
+            task.wake.notify_all();
+        }
     }
 }
 }

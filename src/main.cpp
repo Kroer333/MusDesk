@@ -161,6 +161,8 @@ int main(int argc, char* argv[]) {
         musdesk::ArtworkDialog presetSaveDialog;
         musdesk::ArtworkDialog exportDialog;
         std::unique_ptr<musdesk::ExportEngine> exporter;
+        bool exportVsyncDisabled = false;
+        Uint64 lastExportUiFrame = 0;
         auto importPreset = [&](const std::string& path) {
             editorState.presetStatus.clear();
             try {
@@ -356,7 +358,8 @@ int main(int argc, char* argv[]) {
                         resumeAfterSeek = false;
                         const musdesk::CompositionSettings settings{editorState.title.data(), editorState.artist.data(),
                             audioClip->durationSeconds(), editorState.preset};
-                        exporter = std::make_unique<musdesk::ExportEngine>(composition, settings, audioClip, mediaTools, path);
+                        exporter = std::make_unique<musdesk::ExportEngine>(composition, settings, audioClip, mediaTools, path,
+                            editorState.exportEncoder == 0 ? musdesk::ExportEncoder::Automatic : musdesk::ExportEncoder::Cpu);
                     } catch (const std::exception& error) {
                         editorState.exportStatus = error.what();
                         editorState.exportError = true;
@@ -370,9 +373,19 @@ int main(int argc, char* argv[]) {
                 editorState.exportActive = status.active();
                 editorState.exportProgress = status.phase == musdesk::ExportPhase::Completed ? 1.0f
                     : std::min(0.98f, static_cast<float>(status.framesWritten) / static_cast<float>(status.totalFrames));
-                editorState.exportStatus = status.phase == musdesk::ExportPhase::Verifying ? "Verifying MP4 with ffprobe..."
+                editorState.exportStatus = status.phase == musdesk::ExportPhase::Preparing ? status.message
+                    : status.phase == musdesk::ExportPhase::Verifying ? "Verifying MP4 with ffprobe..."
                     : status.phase == musdesk::ExportPhase::Encoding ? "Encoding frame " + std::to_string(status.framesWritten)
                         + " / " + std::to_string(status.totalFrames) : status.message;
+                if (!status.encoder.empty()) {
+                    editorState.exportStatus += "\n" + status.encoder;
+                    if (status.framesWritten && status.elapsedSeconds > 0) {
+                        const double fps = status.framesWritten / status.elapsedSeconds;
+                        editorState.exportStatus += " | " + std::to_string(static_cast<int>(fps)) + " FPS";
+                        if (status.active() && fps > 0) editorState.exportStatus += " | ~"
+                            + std::to_string(static_cast<int>((status.totalFrames - status.framesWritten) / fps)) + " s left";
+                    }
+                }
                 editorState.exportError = status.phase == musdesk::ExportPhase::Failed;
                 if (!status.active()) {
                     SDL_Log("%s", editorState.exportStatus.c_str());
@@ -380,10 +393,23 @@ int main(int argc, char* argv[]) {
                 }
             }
             editorState.exportBusy = editorState.exportActive || editorState.exportDialogPending;
+            if (editorState.exportActive && !exportVsyncDisabled) {
+                exportVsyncDisabled = SDL_GL_SetSwapInterval(0);
+            } else if (!editorState.exportActive && exportVsyncDisabled) {
+                SDL_GL_SetSwapInterval(vsyncEnabled ? 1 : 0);
+                exportVsyncDisabled = false;
+            }
             refreshPlayback();
             if ((SDL_GetWindowFlags(resources.window) & SDL_WINDOW_MINIMIZED) != 0) {
-                SDL_Delay(editorState.exportActive ? 2 : 50);
+                SDL_Delay(editorState.exportActive ? 1 : 50);
                 continue;
+            }
+            if (editorState.exportActive) {
+                if (SDL_GetTicks() - lastExportUiFrame < 33) {
+                    SDL_Delay(1);
+                    continue;
+                }
+                lastExportUiFrame = SDL_GetTicks();
             }
 
             int pixelWidth = 0;
@@ -502,7 +528,7 @@ int main(int argc, char* argv[]) {
 
             // A driver may not support VSync. Keep that path from spinning freely.
             const Uint64 frameDuration = SDL_GetTicks() - frameStart;
-            if (!vsyncEnabled && frameDuration < 16) {
+            if (!editorState.exportActive && !vsyncEnabled && frameDuration < 16) {
                 SDL_Delay(static_cast<Uint32>(16 - frameDuration));
             }
         }

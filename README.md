@@ -50,8 +50,8 @@ Keep the DLL and the assets directory alongside the executable when running it e
 
 The requested client size is 1280 × 800, with a minimum of 900 × 600. Desktop
 scaling and window-manager constraints can affect physical size. Close the window
-with the title-bar close button or **Alt+F4**. Rendering uses VSync when available,
-a frame delay otherwise, and pauses while minimized. Diagnostic messages go to
+with the title-bar close button or **Alt+F4**. Preview rendering uses VSync when available,
+a frame delay otherwise, and pauses while minimized; export rendering runs independently. Diagnostic messages go to
 the console; startup failures produce a nonzero exit code.
 
 ## Current workspace
@@ -194,8 +194,9 @@ working audio output device; preparation errors are shown in the panel.
 ### MP4 export
 
 Import artwork and audio, set the labels and effects, then scroll to **Export MP4**.
-Choose a destination in the native save dialog. FFmpeg must include the `libx264`
-and AAC encoders. Both FFmpeg and ffprobe must be available.
+Choose **Automatic (GPU / CPU)** or **CPU (veryfast)** and a destination in the
+native save dialog. FFmpeg must include the `libx264` and AAC encoders for CPU
+fallback. Both FFmpeg and ffprobe must be available.
 
 Export pauses monitoring and renders the complete track from zero, regardless of
 the preview position, volume, mute or loop. Composition settings and media imports
@@ -206,8 +207,8 @@ the encoder to stop. Export continues while the window is minimized.
 Frames are rendered offscreen at **1080 × 1920**, with timestamps `i / 30.0`.
 The frame count rounds decoded audio duration up to the next 1/30 second; the
 audio tail is padded with silence by less than one frame. FFmpeg reads bottom-up
-RGBA through a pipe, flips the image vertically, encodes H.264 (`yuv420p`, CRF 20,
-fast preset) and AAC stereo (48 kHz, 192 kbit/s), and writes MP4 with fast-start
+RGBA through a pipe, flips the image vertically, encodes H.264 (`yuv420p`)
+and AAC stereo (48 kHz, 192 kbit/s), and writes MP4 with fast-start
 metadata. Audio comes from the original imported file, which must remain available
 and unchanged until export ends. Preview gain never modifies the exported audio.
 
@@ -215,7 +216,27 @@ GPU rendering remains on the main thread. A worker writes frames through a
 nonblocking process pipe; a queue holds at most two waiting frames, avoiding
 storage of an entire uncompressed movie. The displayed progress counts frames
 delivered to FFmpeg; final encoding and ffprobe verification follow separately.
-Encoding speed depends on the GPU and CPU and can be slower than real time.
+Automatic mode tries NVIDIA NVENC, Intel Quick Sync and AMD AMF in that order.
+Each candidate must actually encode two 1080 × 1920 frames before it is selected;
+listing an encoder alone is insufficient. Each trial is cancellable with a
+five-second timeout. Unavailable hardware falls back to x264 `veryfast` / CRF 20.
+Hardware paths use their own quality controls (NVENC CQ 20, QSV global quality 20,
+AMF I/P QP 20/22); these are not numerically equivalent to x264 CRF. File size and
+compression quality can differ between encoders. If hardware fails during the
+actual export, its error is reported; select CPU to retry.
+
+On Windows, the input pipe requests a 1 MiB buffer and sends up to 256 KiB per
+write, reducing small writes and waiting. Cancellation remains nonblocking.
+Frame production runs in bounded batches independently of the editor's 30 Hz
+export display updates; VSync is temporarily disabled and restored afterwards.
+The panel reports the selected encoder, average export FPS and estimated time
+remaining. Speed depends on hardware, artwork and drivers; it is not guaranteed
+to exceed real time. `Release` is recommended for normal use.
+
+```powershell
+cmake --build build --config Release --parallel 1 -- /nr:false
+.\build\Release\MusDesk.exe
+```
 
 The destination is replaced only after ffprobe verifies both codecs, dimensions,
 pixel format, 30 FPS, frame count, stream start times and durations. Encoding
@@ -254,6 +275,19 @@ whole MP4, and exercises cancellation, shutdown, process failures and preservati
 of an existing destination. This integration test needs both external tools;
 CTest marks it skipped when they are unavailable. Generated fixtures stay inside
 the ignored build directory.
+
+For a reproducible export measurement using local media, run:
+
+```powershell
+.\build\Debug\MusDeskExportTests.exe --benchmark "path/to/track.mp3" "path/to/artwork.png" 10
+.\build\Debug\MusDeskExportTests.exe --benchmark "path/to/track.mp3" "path/to/artwork.png" 10 cpu
+```
+
+The last number limits the excerpt to 1–60 seconds. Timing covers encoder
+selection, frame production, encoding, verification and saving, excluding media
+import. The benchmark writes only inside the ignored build directory and prints
+elapsed time, FPS and the selected encoder. CPU mode uses the same renderer and
+timing path with hardware selection disabled.
 
 For a focused audio integration check with installed tools, run
 `MusDeskAudioTests.exe "path/to/track.mp3"`. Multiple audio paths can be supplied.
