@@ -12,10 +12,12 @@ struct ArtworkSelection {
     std::string error;
 };
 
+enum class FileDialogKind { Artwork, Audio, PresetOpen, PresetSave };
+
 class ArtworkDialog {
 public:
     ArtworkDialog();
-    void open(SDL_Window* window, bool audio = false);
+    void open(SDL_Window* window, FileDialogKind kind = FileDialogKind::Artwork);
     bool pending() const;
     std::optional<ArtworkSelection> takeSelection();
 

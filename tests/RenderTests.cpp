@@ -1,4 +1,5 @@
 #include "musdesk/render/VisualizerRenderer.hpp"
+#include "musdesk/presets/PresetStore.hpp"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -6,6 +7,7 @@
 
 #include <iostream>
 #include <stdexcept>
+#include <filesystem>
 
 namespace {
 struct Context {
@@ -57,6 +59,26 @@ int main(int argc, char* argv[]) {
         renderer.renderFrame(10, settings, 0.2f);
         renderer.renderFrame(0, settings, 1);
         require(reactive == renderer.readPixels(), "Audio-reactive rendering must be repeatable after seeking");
+        settings.preset = musdesk::beatPulsePreset();
+        renderer.renderFrame(12.3, settings, 0.7f);
+        const auto presetFrame = renderer.readPixels();
+        const auto folder = std::filesystem::u8path(SDL_GetBasePath()) / "test-fixtures";
+        std::filesystem::create_directories(folder);
+        const auto file = (folder / "render-preset.json").u8string();
+        const std::string presetPath(file.begin(), file.end());
+        musdesk::savePreset(presetPath, settings.preset);
+        settings.preset = musdesk::softGlowPreset();
+        renderer.renderFrame(12.3, settings, 0.7f);
+        require(presetFrame != renderer.readPixels(), "Built-in presets must produce distinct visuals");
+        settings.preset = musdesk::loadPreset(presetPath);
+        renderer.renderFrame(12.3, settings, 0.7f);
+        require(presetFrame == renderer.readPixels(), "Loading a saved preset must reproduce identical pixels");
+        settings.preset.pulseStrength = 0;
+        renderer.renderFrame(0, settings, 0);
+        const auto noPulse = renderer.readPixels();
+        renderer.renderFrame(0, settings, 1);
+        require(noPulse == renderer.readPixels(), "Zero pulse strength must disable audio modulation");
+        settings.preset = musdesk::softGlowPreset();
         bool rejected = false;
         try { renderer.setArtwork({}); } catch (const std::exception&) { rejected = true; }
         require(rejected, "Invalid replacement must be rejected");

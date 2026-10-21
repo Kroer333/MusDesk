@@ -1,13 +1,14 @@
 #pragma once
 
 #include <string>
+#include "musdesk/core/VisualPreset.hpp"
 
 namespace musdesk {
 struct CompositionSettings {
     std::string title = "Track title";
     std::string artist = "Artist name";
     double durationSeconds = 252.0;
-    double discRpm = 8.0;
+    VisualPreset preset;
 };
 
 struct CompositionFrame {

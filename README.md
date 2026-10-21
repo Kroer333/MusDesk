@@ -2,7 +2,7 @@
 
 **MusDesk** is a planned desktop tool for turning a music track and cover artwork into a vertical, animated music visualizer video for short-form platforms.
 
-> **Project status: audio-reactive composition preview (M3).** MusDesk imports PNG, JPEG and still WebP artwork, plays MP3/WAV/OGG audio, and renders a rotating vinyl record, gently blurred moving background, audio-reactive blue rim, editable track labels and progress bar. The composition is rendered at 1080 × 1920 from an explicit timestamp. Presets and MP4 export are not implemented yet.
+> **Project status: configurable audio-reactive preview (M4).** MusDesk imports artwork and audio, renders a vinyl composition, and supports editable Soft Glow / Beat Pulse presets with JSON save/load. The composition is rendered at 1080 × 1920 from an explicit timestamp. MP4 export is not implemented yet.
 
 ## What the app will do
 
@@ -39,8 +39,8 @@ ctest --test-dir build -C Debug --output-on-failure
 Alternatively, open the repository with **File > Open > Folder** in Visual Studio,
 build the Debug configuration, and select `MusDesk.exe` as the startup target.
 
-CMake downloads pinned SDL **3.4.18**, Dear ImGui **1.93.0**, stb and libwebp
-**1.6.0** source archives from their official GitHub repositories and verifies
+CMake downloads pinned SDL **3.4.18**, Dear ImGui **1.93.0**, stb, libwebp
+**1.6.0** and nlohmann/json **3.12.0** source archives from their official GitHub repositories and verifies
 their SHA-256 checksums. stb decodes PNG/JPEG and rasterizes text; libwebp provides
 the WebP decoder. Encoder tools are not built.
 The first configuration needs internet access; sources and build products stay
@@ -65,24 +65,71 @@ the console; startup failures produce a nonzero exit code.
   window is resized. The preview scale changes its display size, not the target
   1080 × 1920 format.
 - Artwork fills the background and circular label through centered cropping,
-  preserving its proportions. The record and label rotate together. The blue
+  preserving its proportions. The record and label rotate together. The
   rim expands and brightens with the precomputed audio energy.
-- Edit title, artist, rotation speed and preview time in the left panel.
+- Edit title, artist and preview time in the left panel; rotation and visual
+  effects are in **Effects and presets**.
   Without audio, a demo length can be adjusted;
   importing audio replaces it with the decoded duration. The composition
   contains no player transport buttons.
 - Adjust preview scale, toggle safe-area guides, or press **Reset preview**.
   Guides belong only to the editor; reset preserves artwork and track labels.
-  All settings last only for the session. Export remains disabled.
+  Preview-only settings last for the session; visual presets can be saved as JSON.
+  Export remains disabled.
 - Keyboard navigation is enabled: **Tab**, arrow keys, and **Space** can operate
   the controls. The controls panel scrolls when space is limited.
 
 Window/context lifetime and the rendering loop are in `src/main.cpp`; editor
 controls and the asynchronous native file dialog are in `src/app/`. Pure time
-calculations live in `musdesk_core`, image decoding and audio metadata import in `musdesk_media`, and the
+calculations live in `musdesk_core`, image/audio decoding in `musdesk_media`, and the
 OpenGL framebuffer and composition drawing in `musdesk_render`. The renderer
 does not depend on Dear ImGui. Its output depends on time and settings rather
 than the order in which frames were requested.
+
+### Visual presets
+
+Expand **Effects and presets** near the top of the panel. **Soft Glow** provides
+a gentle blue glow and slower background movement; **Beat Pulse** uses a violet
+rim with stronger audio response. Beat Pulse still uses RMS energy, not beat
+detection. Built-ins are available without reading external preset files.
+
+Adjust rim color, glow intensity, pulse strength, disc RPM, background speed,
+zoom and brightness. Zero pulse disables audio modulation; zero background speed
+freezes background motion; negative RPM reverses the record. Background blur
+retains the gentle M2 setting. Changes are visible immediately and marked
+**modified** until saved or replaced by a loaded/built-in preset.
+
+Enter a preset name and use **Save JSON** to choose a file, or **Load JSON** to
+restore settings. Loading errors preserve current settings. Saving writes a
+temporary file in the destination directory and replaces the target only after
+writing and closing it successfully. Unicode names and file paths are supported.
+You can also drop a JSON file onto the editor or launch with
+`MusDesk.exe --preset "path/to/preset.json"`; this combines with `--artwork` and
+`--audio`. Example files are in `presets/soft-glow.json` and `presets/beat-pulse.json`.
+
+Presets contain visual settings and their name. They do not contain media paths,
+track labels, preview volume, playback position, guides or window settings.
+Loading a preset does not reset audio or its timeline. This is not project saving.
+
+JSON format version **1** requires exactly these root fields: `version`, `name`,
+`disc_rpm`, `glow` and `background`. `glow` contains `color`, `intensity` and
+`pulse_strength`; `background` contains `speed`, `zoom` and `brightness`.
+
+| Setting | Accepted range |
+| --- | --- |
+| Name | 1–96 UTF-8 bytes, nonblank, no control characters |
+| RGB color | Three numbers, each 0–1 |
+| Glow intensity | 0–3 |
+| Pulse strength | 0–2 |
+| Disc speed | −45–45 RPM |
+| Background speed | 0–3 times normal speed |
+| Background zoom | 1.1–1.5 |
+| Background brightness | 0–1.5 |
+
+The parser rejects wrong types, missing/unknown/duplicate fields, nonfinite or
+out-of-range values, unsupported versions, excessive nesting and files above
+64 KiB. Preset I/O is isolated in `musdesk_presets`; the core settings model and
+renderer do not depend on the JSON library.
 
 ### Audio tools and import
 
@@ -148,7 +195,7 @@ working audio output device; preparation errors are shown in the panel.
 
 The default CTest suite checks time formatting, deterministic animation values,
 PNG/JPEG/WebP decoding, Unicode paths, alpha, malformed input and missing-tool
-audio diagnostics, RMS smoothing and playback state using SDL's silent dummy
+audio diagnostics, preset validation/file round trips, RMS smoothing and playback state using SDL's silent dummy
 audio driver. To also register
 the integration test requiring an OpenGL 3.3 graphics driver:
 
@@ -160,7 +207,8 @@ ctest --test-dir build -C Debug --output-on-failure
 
 The render test checks 1080 × 1920 pixel readback, opacity, animation, preservation
 of artwork after an invalid replacement, and identical pixels when seeking back
-to the same time. It can also run against your own image:
+to the same time. It also checks distinct presets, disabled pulse and identical
+pixels after saving/reloading a preset. It can also run against your own image:
 `MusDeskRenderTests.exe "path/to/artwork.png"`. Pixel equality is checked within
 one graphics context; identical results across different GPU drivers are not guaranteed.
 
@@ -194,6 +242,7 @@ Dear ImGui is distributed under the [MIT license](https://github.com/ocornut/img
 stb offers [MIT or public-domain licensing](https://github.com/nothings/stb/blob/a7d4c2175630e1ea5b6f8dd00ab96fed0b97b96d/LICENSE).
 libwebp uses a [BSD-style license](https://github.com/webmproject/libwebp/blob/v1.6.0/COPYING)
 with a separate [patent grant](https://github.com/webmproject/libwebp/blob/v1.6.0/PATENTS).
+nlohmann/json uses the [MIT license](https://github.com/nlohmann/json/blob/v3.12.0/LICENSE.MIT).
 The bundled Roboto font uses the [Apache 2.0 license](https://github.com/ocornut/imgui/blob/v1.93.0/docs/FONTS.md#fonts-included-in-this-repository).
 FFmpeg and ffprobe are external tools with licensing determined by their build;
 see the [FFmpeg license information](https://ffmpeg.org/legal.html).

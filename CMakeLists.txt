@@ -36,6 +36,14 @@ FetchContent_Declare(stb
 )
 FetchContent_MakeAvailable(stb)
 
+set(JSON_BuildTests OFF CACHE BOOL "Do not build dependency tests")
+set(JSON_Install OFF CACHE BOOL "Do not install JSON separately")
+FetchContent_Declare(nlohmann_json
+    URL https://codeload.github.com/nlohmann/json/tar.gz/refs/tags/v3.12.0
+    URL_HASH SHA256=4b92eb0c06d10683f7447ce9406cb97cd4b453be18d7279320f7b2f025c10187
+)
+FetchContent_MakeAvailable(nlohmann_json)
+
 foreach(option IN ITEMS ANIM_UTILS CWEBP DWEBP GIF2WEBP IMG2WEBP VWEBP WEBPINFO
         LIBWEBPMUX WEBPMUX EXTRAS WEBP_JS FUZZTEST)
     set(WEBP_BUILD_${option} OFF CACHE BOOL "Disable unused WebP tools")
@@ -68,6 +76,7 @@ add_library(musdesk_core STATIC
     src/core/TimeFormat.cpp
     src/core/Composition.cpp
     src/core/AudioAnalysis.cpp
+    src/core/VisualPreset.cpp
 )
 
 target_include_directories(musdesk_core PUBLIC
@@ -83,6 +92,10 @@ add_library(musdesk_audio STATIC src/audio/AudioPlayer.cpp)
 target_include_directories(musdesk_audio PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(musdesk_audio PUBLIC musdesk_media PRIVATE SDL3::SDL3)
 
+add_library(musdesk_presets STATIC src/presets/PresetStore.cpp)
+target_include_directories(musdesk_presets PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(musdesk_presets PUBLIC musdesk_core PRIVATE nlohmann_json::nlohmann_json SDL3::SDL3)
+
 add_library(musdesk_render STATIC src/render/VisualizerRenderer.cpp)
 target_include_directories(musdesk_render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_include_directories(musdesk_render SYSTEM PRIVATE "${stb_SOURCE_DIR}")
@@ -93,7 +106,7 @@ add_executable(MusDesk
     src/app/EditorUi.cpp
     src/app/ArtworkDialog.cpp
 )
-target_link_libraries(MusDesk PRIVATE musdesk_render musdesk_audio musdesk_imgui SDL3::SDL3 OpenGL::GL)
+target_link_libraries(MusDesk PRIVATE musdesk_render musdesk_audio musdesk_presets musdesk_imgui SDL3::SDL3 OpenGL::GL)
 
 function(musdesk_copy_runtime_files target)
     add_custom_command(TARGET ${target} POST_BUILD
@@ -118,6 +131,10 @@ musdesk_stage_media_tools(MusDesk)
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(MusDeskPresetTests tests/PresetTests.cpp)
+    target_link_libraries(MusDeskPresetTests PRIVATE musdesk_presets SDL3::SDL3)
+    musdesk_copy_runtime_files(MusDeskPresetTests)
+    add_test(NAME MusDeskPresetTests COMMAND MusDeskPresetTests "${CMAKE_CURRENT_SOURCE_DIR}/presets")
     add_executable(MusDeskAnalysisTests tests/AudioAnalysisTests.cpp)
     target_link_libraries(MusDeskAnalysisTests PRIVATE musdesk_core)
     add_test(NAME MusDeskAnalysisTests COMMAND MusDeskAnalysisTests)
@@ -156,7 +173,7 @@ if(BUILD_TESTING)
     add_test(NAME MusDeskImageTests COMMAND MusDeskImageTests)
 
     add_executable(MusDeskRenderTests tests/RenderTests.cpp)
-    target_link_libraries(MusDeskRenderTests PRIVATE musdesk_render SDL3::SDL3 OpenGL::GL)
+    target_link_libraries(MusDeskRenderTests PRIVATE musdesk_render musdesk_presets SDL3::SDL3 OpenGL::GL)
     musdesk_copy_runtime_files(MusDeskRenderTests)
     option(MUSDESK_ENABLE_RENDER_TESTS "Register tests requiring an OpenGL 3.3 graphics driver" OFF)
     if(MUSDESK_ENABLE_RENDER_TESTS)
@@ -164,5 +181,6 @@ if(BUILD_TESTING)
     endif()
     if(MSVC)
         target_compile_options(MusDeskImageTests PRIVATE /utf-8)
+        target_compile_options(MusDeskPresetTests PRIVATE /utf-8)
     endif()
 endif()

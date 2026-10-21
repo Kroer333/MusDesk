@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <string>
+#include "musdesk/core/VisualPreset.hpp"
 
 namespace musdesk {
 struct EditorUiState {
@@ -12,7 +13,14 @@ struct EditorUiState {
     std::array<char, 96> artist{"Artist name"};
     double timeSeconds = 0;
     double durationSeconds = 252;
-    float discRpm = 8;
+    VisualPreset preset;
+    std::array<char, 97> presetName{"Soft Glow"};
+    bool presetDirty = false;
+    bool presetDialogPending = false;
+    bool requestLoadPreset = false;
+    bool requestSavePreset = false;
+    std::string presetStatus;
+    std::string presetError;
     bool animatePreview = true;
     bool requestArtwork = false;
     bool artworkDialogPending = false;
@@ -44,5 +52,6 @@ struct EditorUiState {
 };
 
 void configureEditorStyle(float displayScale);
+void applyVisualPreset(EditorUiState& state, const VisualPreset& preset);
 void drawEditorUi(EditorUiState& state, std::uint32_t compositionTexture);
 }

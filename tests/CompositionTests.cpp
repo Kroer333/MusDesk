@@ -15,7 +15,7 @@ void require(bool condition, const char* message) {
 int main() {
     try {
         musdesk::CompositionSettings settings;
-        settings.discRpm = 6;
+        settings.preset.discRpm = 6;
         const auto atZero = musdesk::compositionAt(0, settings);
         const auto atFive = musdesk::compositionAt(5, settings);
         const auto atTen = musdesk::compositionAt(10, settings);
@@ -29,13 +29,19 @@ int main() {
             && atFive.backgroundOffsetX == seekBack.backgroundOffsetX, "Seeking must reproduce the same frame");
         require(musdesk::compositionAt(-5, settings).progress == 0, "Negative time must clamp to start");
         require(musdesk::compositionAt(1000, settings).progress == 1, "Time beyond duration must clamp to end");
-        settings.discRpm = 0;
+        settings.preset.discRpm = 0;
         require(musdesk::compositionAt(20, settings).discAngleRadians == 0, "Stopped disc must not rotate");
-        settings.discRpm = -6;
+        settings.preset.discRpm = -6;
         require(std::abs(musdesk::compositionAt(5, settings).discAngleRadians + std::numbers::pi) < 1e-10,
             "Negative RPM must reverse rotation");
+        settings.preset.backgroundSpeed = 0;
+        const auto staticStart = musdesk::compositionAt(0, settings);
+        const auto staticLater = musdesk::compositionAt(100, settings);
+        require(staticStart.backgroundAngleRadians == staticLater.backgroundAngleRadians
+            && staticStart.backgroundZoom == staticLater.backgroundZoom
+            && staticStart.backgroundOffsetY == staticLater.backgroundOffsetY, "Zero background speed must freeze its pose");
         settings.durationSeconds = 0;
-        settings.discRpm = std::numeric_limits<double>::infinity();
+        settings.preset.discRpm = std::numeric_limits<double>::infinity();
         const auto invalid = musdesk::compositionAt(std::numeric_limits<double>::quiet_NaN(), settings);
         require(std::isfinite(invalid.progress) && invalid.timeSeconds == 0 && invalid.discAngleRadians == 0,
             "Invalid numeric input must not produce nonfinite frame data");

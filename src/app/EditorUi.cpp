@@ -6,16 +6,72 @@
 #include <algorithm>
 
 namespace musdesk {
+void applyVisualPreset(EditorUiState& state, const VisualPreset& preset) {
+    validatePreset(preset);
+    state.preset = preset;
+    state.presetName.fill('\0');
+    std::copy(preset.name.begin(), preset.name.end(), state.presetName.begin());
+    state.presetDirty = false;
+    state.presetError.clear();
+    state.presetStatus = "Preset applied.";
+}
+
 namespace {
+void drawPresetControls(EditorUiState& state) {
+    if (!ImGui::CollapsingHeader("Effects and presets")) return;
+    if (ImGui::Button("Soft Glow")) applyVisualPreset(state, softGlowPreset());
+    ImGui::SameLine();
+    if (ImGui::Button("Beat Pulse")) applyVisualPreset(state, beatPulsePreset());
+    ImGui::TextWrapped("%s%s", state.preset.name.c_str(), state.presetDirty ? " (modified)" : "");
+    ImGui::SetNextItemWidth(-1);
+    bool changed = ImGui::InputTextWithHint("##PresetName", "Preset name", state.presetName.data(), state.presetName.size());
+    if (changed) state.preset.name = state.presetName.data();
+    ImGui::BeginDisabled(state.presetDialogPending || state.artworkDialogPending || state.audioDialogPending);
+    if (ImGui::Button("Load JSON")) state.requestLoadPreset = true;
+    ImGui::SameLine();
+    if (ImGui::Button("Save JSON")) state.requestSavePreset = true;
+    ImGui::EndDisabled();
+    auto& preset = state.preset;
+    changed |= ImGui::ColorEdit3("Rim color", preset.glowColor.data(), ImGuiColorEditFlags_NoInputs);
+    ImGui::SetNextItemWidth(-1);
+    changed |= ImGui::SliderFloat("##Glow", &preset.glowIntensity, 0, 3, "Glow: %.2f", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetNextItemWidth(-1);
+    changed |= ImGui::SliderFloat("##Pulse", &preset.pulseStrength, 0, 2, "Pulse: %.2f", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetNextItemWidth(-1);
+    const double minRpm = -45, maxRpm = 45, minSpeed = 0, maxSpeed = 3;
+    changed |= ImGui::SliderScalar("##Rotation", ImGuiDataType_Double, &preset.discRpm,
+        &minRpm, &maxRpm, "Rotation: %.1f RPM", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetNextItemWidth(-1);
+    changed |= ImGui::SliderScalar("##BackgroundSpeed", ImGuiDataType_Double, &preset.backgroundSpeed,
+        &minSpeed, &maxSpeed, "Background speed: %.2fx", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetNextItemWidth(-1);
+    changed |= ImGui::SliderFloat("##BackgroundZoom", &preset.backgroundZoom, 1.1f, 1.5f, "Background zoom: %.2fx", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetNextItemWidth(-1);
+    changed |= ImGui::SliderFloat("##BackgroundBrightness", &preset.backgroundBrightness, 0, 1.5f,
+        "Background light: %.2f", ImGuiSliderFlags_AlwaysClamp);
+    if (changed) {
+        state.presetDirty = true;
+        state.presetStatus.clear();
+    }
+    if (!state.presetStatus.empty()) ImGui::TextWrapped("%s", state.presetStatus.c_str());
+    if (!state.presetError.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.55f, 0.45f, 1));
+        ImGui::TextWrapped("%s", state.presetError.c_str());
+        ImGui::PopStyleColor();
+    }
+    ImGui::Spacing();
+}
+
 void drawControls(EditorUiState& state) {
     ImGui::SeparatorText("Composition");
     ImGui::TextUnformatted("Vertical music visualizer");
     ImGui::TextDisabled("1080 x 1920  /  9:16");
     ImGui::TextDisabled("Target: 30 FPS");
     ImGui::Spacing();
+    drawPresetControls(state);
 
     ImGui::SeparatorText("Media");
-    ImGui::BeginDisabled(state.artworkDialogPending || state.audioDialogPending);
+    ImGui::BeginDisabled(state.artworkDialogPending || state.audioDialogPending || state.presetDialogPending);
     if (ImGui::Button(state.artworkDialogPending ? "Choosing artwork..." : "Import artwork", ImVec2(-1, 0))) {
         state.requestArtwork = true;
     }
@@ -30,7 +86,7 @@ void drawControls(EditorUiState& state) {
     if (state.toolsChecked && (!state.ffmpegReady || !state.ffprobeReady)) {
         ImGui::TextWrapped("Tools: MUSDESK_FFMPEG_DIR, executable directory, or PATH. Restart after installing.");
     }
-    ImGui::BeginDisabled(!state.ffprobeReady || !state.ffmpegReady || state.audioDialogPending || state.artworkDialogPending || state.audioImportPending);
+    ImGui::BeginDisabled(!state.ffprobeReady || !state.ffmpegReady || state.audioDialogPending || state.artworkDialogPending || state.presetDialogPending || state.audioImportPending);
     const char* audioButton = state.audioImportPending ? "Preparing audio..."
         : (state.audioDialogPending ? "Choosing audio..." : "Import audio");
     if (ImGui::Button(audioButton, ImVec2(-1, 0))) {
@@ -95,8 +151,6 @@ void drawControls(EditorUiState& state) {
         ImGui::Text("Audio duration: %.3f s", state.durationSeconds);
     }
     state.timeSeconds = std::min(state.timeSeconds, state.durationSeconds);
-    ImGui::SetNextItemWidth(-1);
-    ImGui::SliderFloat("##Rotation", &state.discRpm, 0, 45, "Rotation: %.1f RPM", ImGuiSliderFlags_AlwaysClamp);
     ImGui::TextWrapped(state.audioPath.empty()
         ? "Time and duration are a visual demo; no audio is loaded."
         : "Audio and visuals share the playback timeline. Controls are editor-only.");

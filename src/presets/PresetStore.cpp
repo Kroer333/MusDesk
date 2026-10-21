@@ -1,0 +1,121 @@
+#include "musdesk/presets/PresetStore.hpp"
+
+#include <SDL3/SDL.h>
+#include <nlohmann/json.hpp>
+
+#include <atomic>
+#include <cmath>
+#include <initializer_list>
+#include <memory>
+#include <stdexcept>
+#include <unordered_set>
+
+namespace musdesk {
+namespace {
+using Json = nlohmann::json;
+constexpr std::size_t maxPresetBytes = 64 * 1024;
+
+void fields(const Json& value, std::initializer_list<const char*> names) {
+    if (!value.is_object() || value.size() != names.size())
+        throw std::runtime_error("Preset object has missing or unknown fields.");
+    for (auto name : names) {
+        if (!value.contains(name)) throw std::runtime_error(std::string("Missing preset field: ") + name);
+    }
+}
+
+double number(const Json& value, double minimum, double maximum, const char* name) {
+    if (!value.is_number()) throw std::runtime_error(std::string("Preset field must be numeric: ") + name);
+    const auto result = value.get<double>();
+    if (!std::isfinite(result) || result < minimum || result > maximum)
+        throw std::runtime_error(std::string("Preset value out of range: ") + name);
+    return result;
+}
+
+struct TemporaryFile {
+    std::string path;
+    bool committed = false;
+    ~TemporaryFile() { if (!committed) SDL_RemovePath(path.c_str()); }
+};
+}
+
+VisualPreset parsePreset(std::string_view text) {
+    if (text.empty() || text.size() > maxPresetBytes) throw std::runtime_error("Preset JSON must contain 1-65536 bytes.");
+    try {
+        std::vector<std::unordered_set<std::string>> keys;
+        const auto json = Json::parse(text.begin(), text.end(), [&](int depth, Json::parse_event_t event, Json& value) {
+            if (depth > 16) throw std::runtime_error("Preset JSON is nested too deeply.");
+            if (event == Json::parse_event_t::object_start) keys.emplace_back();
+            if (event == Json::parse_event_t::key && !keys.back().insert(value.get<std::string>()).second)
+                throw std::runtime_error("Preset JSON contains a duplicate field.");
+            if (event == Json::parse_event_t::object_end) keys.pop_back();
+            return true;
+        });
+        fields(json, {"version", "name", "disc_rpm", "glow", "background"});
+        if (!json.at("version").is_number_integer() || json.at("version") != 1)
+            throw std::runtime_error("Unsupported preset version; expected integer 1.");
+        if (!json.at("name").is_string()) throw std::runtime_error("Preset name must be a string.");
+        const auto& glow = json.at("glow");
+        const auto& background = json.at("background");
+        fields(glow, {"color", "intensity", "pulse_strength"});
+        fields(background, {"speed", "zoom", "brightness"});
+        const auto& color = glow.at("color");
+        if (!color.is_array() || color.size() != 3) throw std::runtime_error("Glow color must contain three RGB components.");
+        VisualPreset preset;
+        preset.name = json.at("name").get<std::string>();
+        preset.discRpm = number(json.at("disc_rpm"), -45, 45, "disc_rpm");
+        for (int i = 0; i < 3; ++i) preset.glowColor[i] = static_cast<float>(number(color[i], 0, 1, "glow.color"));
+        preset.glowIntensity = static_cast<float>(number(glow.at("intensity"), 0, 3, "glow.intensity"));
+        preset.pulseStrength = static_cast<float>(number(glow.at("pulse_strength"), 0, 2, "glow.pulse_strength"));
+        preset.backgroundSpeed = number(background.at("speed"), 0, 3, "background.speed");
+        preset.backgroundZoom = static_cast<float>(number(background.at("zoom"), 1.1, 1.5, "background.zoom"));
+        preset.backgroundBrightness = static_cast<float>(number(background.at("brightness"), 0, 1.5, "background.brightness"));
+        validatePreset(preset);
+        return preset;
+    } catch (const Json::exception& error) {
+        throw std::runtime_error(std::string("Invalid preset JSON: ") + error.what());
+    }
+}
+
+std::string serializePreset(const VisualPreset& preset) {
+    validatePreset(preset);
+    try {
+        const Json json{{"version", 1}, {"name", preset.name}, {"disc_rpm", preset.discRpm},
+            {"glow", {{"color", preset.glowColor}, {"intensity", preset.glowIntensity}, {"pulse_strength", preset.pulseStrength}}},
+            {"background", {{"speed", preset.backgroundSpeed}, {"zoom", preset.backgroundZoom}, {"brightness", preset.backgroundBrightness}}}};
+        return json.dump(2) + '\n';
+    } catch (const Json::exception& error) {
+        throw std::runtime_error(std::string("Cannot serialize preset: ") + error.what());
+    }
+}
+
+VisualPreset loadPreset(const std::string& path) {
+    std::unique_ptr<SDL_IOStream, decltype(&SDL_CloseIO)> stream(SDL_IOFromFile(path.c_str(), "rb"), SDL_CloseIO);
+    if (!stream) throw std::runtime_error(std::string("Cannot open preset: ") + SDL_GetError());
+    const auto length = SDL_GetIOSize(stream.get());
+    if (length <= 0 || length > maxPresetBytes) throw std::runtime_error("Preset file must contain 1-65536 bytes.");
+    std::string text(static_cast<std::size_t>(length), '\0');
+    if (SDL_ReadIO(stream.get(), text.data(), text.size()) != text.size()) throw std::runtime_error("Cannot read complete preset file.");
+    return parsePreset(text);
+}
+
+void savePreset(const std::string& path, const VisualPreset& preset) {
+    const auto text = serializePreset(preset);
+    static std::atomic<unsigned> counter{0};
+    std::string temporary;
+    TemporaryFile cleanup{{}, true};
+    std::unique_ptr<SDL_IOStream, decltype(&SDL_CloseIO)> stream(nullptr, SDL_CloseIO);
+    for (int attempt = 0; attempt < 8 && !stream; ++attempt) {
+        temporary = path + ".tmp-" + std::to_string(SDL_GetTicksNS()) + "-" + std::to_string(counter++);
+        stream.reset(SDL_IOFromFile(temporary.c_str(), "wbx"));
+    }
+    if (!stream) throw std::runtime_error(std::string("Cannot create preset file: ") + SDL_GetError());
+    cleanup.path = temporary;
+    cleanup.committed = false;
+    if (SDL_WriteIO(stream.get(), text.data(), text.size()) != text.size() || !SDL_FlushIO(stream.get()))
+        throw std::runtime_error(std::string("Cannot write preset: ") + SDL_GetError());
+    if (!SDL_CloseIO(stream.release())) throw std::runtime_error(std::string("Cannot close preset: ") + SDL_GetError());
+    if (!SDL_RenamePath(temporary.c_str(), path.c_str()))
+        throw std::runtime_error(std::string("Cannot replace preset: ") + SDL_GetError());
+    cleanup.committed = true;
+}
+}

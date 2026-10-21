@@ -98,6 +98,9 @@ uniform float backgroundZoom;
 uniform vec2 backgroundOffset;
 uniform float progress;
 uniform float audioEnergy;
+uniform vec4 glowSettings;
+uniform float pulseStrength;
+uniform float backgroundBrightness;
 
 vec2 rotatePoint(vec2 p, float angle) {
     float c = cos(angle), s = sin(angle);
@@ -122,8 +125,9 @@ void main() {
         bg = bg/vec2(0.5625,1.0) + 0.5 + backgroundOffset;
         vec4 sampleColor = texture(backgroundImage, coverCrop(bg,0.5625));
         vec3 lifted = pow(max(sampleColor.rgb,vec3(0.0)),vec3(0.72));
-        color = mix(color,lifted,sampleColor.a)*0.88;
+        color = mix(color,lifted,sampleColor.a);
     }
+    color *= backgroundBrightness;
     float vignette = 1.0 - 0.55*smoothstep(0.15,0.80,length(topUv-0.5));
     color *= vignette * (1.0-0.26*smoothstep(0.5,0.9,topUv.y));
 
@@ -131,11 +135,12 @@ void main() {
     float r = length(discPoint);
     vec2 material = rotatePoint(discPoint,-discAngle);
     float phi = atan(material.y,material.x);
-    vec3 accent = vec3(0.24,0.60,1.0);
-    float rimRadius = 1.0 + 0.025*audioEnergy;
+    vec3 accent = glowSettings.rgb;
+    float pulse = audioEnergy*pulseStrength;
+    float rimRadius = 1.0 + 0.025*pulse;
     float rimDistance = abs(r-rimRadius);
-    color += accent * (1.0+2.0*audioEnergy)
-        * (0.25*exp(-rimDistance*(24.0-8.0*audioEnergy)) + 0.65*exp(-rimDistance*180.0));
+    color += accent * glowSettings.a * (1.0+2.0*pulse)
+        * (0.25*exp(-rimDistance*(24.0-6.0*pulse)) + 0.65*exp(-rimDistance*180.0));
     if (r < 1.0) {
         float grooves = 0.009*sin(r*950.0) + 0.006*sin(r*420.0);
         float reflection = pow(abs(cos(phi-0.5)),22.0)*0.10;
@@ -405,6 +410,15 @@ void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettin
     scalar("backgroundZoom", frame.backgroundZoom);
     scalar("progress", frame.progress);
     scalar("audioEnergy", std::isfinite(audioEnergy) ? std::clamp(audioEnergy, 0.0f, 1.0f) : 0);
+    const auto& preset = settings.preset;
+    auto safe = [](float value, float minimum, float maximum, float fallback) {
+        return std::isfinite(value) ? std::clamp(value, minimum, maximum) : fallback;
+    };
+    gl.Uniform4f(gl.GetUniformLocation(impl_->sceneProgram, "glowSettings"),
+        safe(preset.glowColor[0], 0, 1, 0.24f), safe(preset.glowColor[1], 0, 1, 0.6f),
+        safe(preset.glowColor[2], 0, 1, 1), safe(preset.glowIntensity, 0, 3, 0.8f));
+    scalar("pulseStrength", safe(preset.pulseStrength, 0, 2, 0.6f));
+    scalar("backgroundBrightness", safe(preset.backgroundBrightness, 0, 1.5f, 0.88f));
     gl.Uniform2f(gl.GetUniformLocation(impl_->sceneProgram, "backgroundOffset"),
         static_cast<float>(frame.backgroundOffsetX), static_cast<float>(frame.backgroundOffsetY));
     gl.BindVertexArray(impl_->sceneVao);

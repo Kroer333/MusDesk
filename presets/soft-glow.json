@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "name": "Soft Glow",
+  "disc_rpm": 8,
+  "glow": { "color": [0.24, 0.6, 1.0], "intensity": 0.8, "pulse_strength": 0.6 },
+  "background": { "speed": 0.6, "zoom": 1.16, "brightness": 0.88 }
+}

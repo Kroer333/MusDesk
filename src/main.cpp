@@ -3,6 +3,7 @@
 #include "musdesk/render/VisualizerRenderer.hpp"
 #include "musdesk/media/AudioImporter.hpp"
 #include "musdesk/audio/AudioPlayer.hpp"
+#include "musdesk/presets/PresetStore.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_opengl3.h>
@@ -65,16 +66,28 @@ struct StopImportOnExit {
     std::stop_source& source;
     ~StopImportOnExit() { source.request_stop(); }
 };
+
+bool isJsonPath(const std::string& path) {
+    const auto dot = path.find_last_of('.');
+    if (dot == std::string::npos) return false;
+    auto extension = path.substr(dot);
+    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) {
+        return static_cast<char>(c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c);
+    });
+    return extension == ".json";
+}
 }
 
 int main(int argc, char* argv[]) {
     std::string startupArtwork;
     std::string startupAudio;
+    std::string startupPreset;
     for (int i = 1; i < argc; i += 2) {
         if (i + 1 < argc && std::string(argv[i]) == "--artwork") startupArtwork = argv[i + 1];
         else if (i + 1 < argc && std::string(argv[i]) == "--audio") startupAudio = argv[i + 1];
+        else if (i + 1 < argc && std::string(argv[i]) == "--preset") startupPreset = argv[i + 1];
         else {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Usage: MusDesk [--artwork image.png] [--audio track.mp3]");
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Usage: MusDesk [--artwork image.png] [--audio track.mp3] [--preset preset.json]");
             return EXIT_FAILURE;
         }
     }
@@ -143,6 +156,21 @@ int main(int argc, char* argv[]) {
         musdesk::EditorUiState editorState;
         musdesk::ArtworkDialog artworkDialog;
         musdesk::ArtworkDialog audioDialog;
+        musdesk::ArtworkDialog presetOpenDialog;
+        musdesk::ArtworkDialog presetSaveDialog;
+        auto importPreset = [&](const std::string& path) {
+            editorState.presetStatus.clear();
+            try {
+                const auto preset = musdesk::loadPreset(path);
+                musdesk::applyVisualPreset(editorState, preset);
+                editorState.presetStatus = "Preset loaded.";
+                SDL_Log("Preset loaded: %s", preset.name.c_str());
+            } catch (const std::exception& error) {
+                editorState.presetError = error.what();
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", error.what());
+            }
+        };
+        if (!startupPreset.empty()) importPreset(startupPreset);
         musdesk::MediaTools mediaTools;
         musdesk::AudioPlayer audioPlayer;
         audioPlayer.setVolume(editorState.previewVolume / 100);
@@ -215,7 +243,8 @@ int main(int argc, char* argv[]) {
                 ImGui_ImplSDL3_ProcessEvent(&event);
                 if (event.type == SDL_EVENT_DROP_FILE && event.drop.data != nullptr
                     && event.drop.windowID == SDL_GetWindowID(resources.window)) {
-                    if (musdesk::isAudioPath(event.drop.data)) importAudio(event.drop.data);
+                    if (isJsonPath(event.drop.data)) importPreset(event.drop.data);
+                    else if (musdesk::isAudioPath(event.drop.data)) importAudio(event.drop.data);
                     else importArtwork(event.drop.data);
                 }
                 if (event.type == SDL_EVENT_QUIT ||
@@ -284,6 +313,27 @@ int main(int argc, char* argv[]) {
                 else if (!selection->path.empty()) importAudio(selection->path);
             }
             editorState.audioDialogPending = audioDialog.pending();
+            if (auto selection = presetOpenDialog.takeSelection()) {
+                if (!selection->error.empty()) editorState.presetError = selection->error;
+                else if (!selection->path.empty()) importPreset(selection->path);
+            }
+            if (auto selection = presetSaveDialog.takeSelection()) {
+                if (!selection->error.empty()) editorState.presetError = selection->error;
+                else if (!selection->path.empty()) {
+                    try {
+                        auto path = selection->path;
+                        const auto slash = path.find_last_of("/\\");
+                        const auto dot = path.find_last_of('.');
+                        if (dot == std::string::npos || (slash != std::string::npos && dot < slash)) path += ".json";
+                        if (!isJsonPath(path)) throw std::runtime_error("Preset files must use the .json extension.");
+                        musdesk::savePreset(path, editorState.preset);
+                        editorState.presetDirty = false;
+                        editorState.presetError.clear();
+                        editorState.presetStatus = "Preset saved.";
+                    } catch (const std::exception& error) { editorState.presetError = error.what(); }
+                }
+            }
+            editorState.presetDialogPending = presetOpenDialog.pending() || presetSaveDialog.pending();
             refreshPlayback();
             if ((SDL_GetWindowFlags(resources.window) & SDL_WINDOW_MINIMIZED) != 0) {
                 SDL_Delay(50);
@@ -365,10 +415,21 @@ int main(int argc, char* argv[]) {
             }
             if (editorState.requestAudio) {
                 editorState.requestAudio = false;
-                audioDialog.open(resources.window, true);
+                audioDialog.open(resources.window, musdesk::FileDialogKind::Audio);
+            }
+            if (editorState.requestLoadPreset) {
+                editorState.requestLoadPreset = false;
+                presetOpenDialog.open(resources.window, musdesk::FileDialogKind::PresetOpen);
+            }
+            if (editorState.requestSavePreset) {
+                editorState.requestSavePreset = false;
+                try {
+                    musdesk::validatePreset(editorState.preset);
+                    presetSaveDialog.open(resources.window, musdesk::FileDialogKind::PresetSave);
+                } catch (const std::exception& error) { editorState.presetError = error.what(); }
             }
             const musdesk::CompositionSettings settings{editorState.title.data(), editorState.artist.data(),
-                editorState.durationSeconds, editorState.discRpm};
+                editorState.durationSeconds, editorState.preset};
             composition.renderFrame(editorState.timeSeconds, settings, editorState.audioEnergy);
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
