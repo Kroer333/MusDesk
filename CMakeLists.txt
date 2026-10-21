@@ -22,6 +22,29 @@ FetchContent_Declare(SDL3
 )
 FetchContent_MakeAvailable(SDL3)
 
+find_package(OpenGL REQUIRED)
+
+FetchContent_Declare(imgui
+    URL https://codeload.github.com/ocornut/imgui/tar.gz/refs/tags/v1.93.0
+    URL_HASH SHA256=f7bf6bc76e5d79d40d751096663e6c5d18daf08129dd52e7f7b09e4251c8eeee
+)
+FetchContent_MakeAvailable(imgui)
+
+# Dear ImGui provides source files; build its core and the two chosen backends.
+add_library(musdesk_imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+)
+target_include_directories(musdesk_imgui PUBLIC
+    "${imgui_SOURCE_DIR}"
+    "${imgui_SOURCE_DIR}/backends"
+)
+target_link_libraries(musdesk_imgui PRIVATE SDL3::SDL3 OpenGL::GL)
+
 add_library(musdesk_core STATIC
     src/core/TimeFormat.cpp
 )
@@ -30,8 +53,11 @@ target_include_directories(musdesk_core PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
-add_executable(MusDesk src/main.cpp)
-target_link_libraries(MusDesk PRIVATE musdesk_core SDL3::SDL3)
+add_executable(MusDesk
+    src/main.cpp
+    src/app/EditorUi.cpp
+)
+target_link_libraries(MusDesk PRIVATE musdesk_core musdesk_imgui SDL3::SDL3 OpenGL::GL)
 
 if(WIN32 AND TARGET SDL3::SDL3-shared)
     add_custom_command(TARGET MusDesk POST_BUILD

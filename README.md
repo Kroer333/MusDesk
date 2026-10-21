@@ -2,7 +2,7 @@
 
 **MusDesk** is a planned desktop tool for turning a music track and cover artwork into a vertical, animated music visualizer video for short-form platforms.
 
-> **Project status: first application window.** MusDesk opens a 1280 × 800 SDL3 window and handles closing and startup errors. Automated tests cover time formatting. Editor controls, media support, audio-reactive effects, and MP4 export are not implemented yet.
+> **Project status: editor shell.** MusDesk opens a resizable 1280 × 800 SDL3/OpenGL window with Dear ImGui controls and an empty vertical preview. Preview color, scale, safe-area guides, and reset work. Media import, audio playback, visualizer rendering, and MP4 export are not implemented yet. Automated tests cover time formatting.
 
 ## What the app will do
 
@@ -25,7 +25,8 @@ This is **not** a general-purpose video editor.
 ## Build and run on Windows
 
 Requirements: Visual Studio 2022 with the **Desktop development with C++** workload,
-a Windows SDK, and CMake 3.21 or newer. Run these commands from the repository root
+a Windows SDK, CMake 3.21 or newer, and a graphics driver supporting **OpenGL 3.3 Core**.
+Run these commands from the repository root
 in a Developer PowerShell for Visual Studio:
 
 ```powershell
@@ -38,17 +39,34 @@ ctest --test-dir build -C Debug --output-on-failure
 Alternatively, open the repository with **File > Open > Folder** in Visual Studio,
 build the Debug configuration, and select `MusDesk.exe` as the startup target.
 
-CMake downloads the pinned SDL **3.4.18** source archive from the official SDL
-GitHub release and verifies its SHA-256 checksum. The first configuration needs
-internet access; sources and build products stay inside the build directory.
-SDL is built from source and its DLL is copied next to `MusDesk.exe` on Windows.
+CMake downloads pinned SDL **3.4.18** and Dear ImGui **1.93.0** source archives
+from their official GitHub repositories and verifies their SHA-256 checksums.
+The first configuration needs internet access; sources and build products stay
+inside the build directory. Both dependencies are built from source. SDL's DLL
+is copied next to `MusDesk.exe` on Windows; Dear ImGui is linked statically.
 Keep the DLL alongside the executable when running it elsewhere.
 
-The current window has no rendered content. Its requested client size is 1280 × 800;
-desktop scaling and window-manager constraints can affect its physical size.
-Close it with the title-bar close button or **Alt+F4**. The event loop waits while
-idle. The console remains available for diagnostic messages; startup failures
-produce a nonzero exit code.
+The requested client size is 1280 × 800, with a minimum of 900 × 600. Desktop
+scaling and window-manager constraints can affect physical size. Close the window
+with the title-bar close button or **Alt+F4**. Rendering uses VSync when available,
+a frame delay otherwise, and pauses while minimized. Diagnostic messages go to
+the console; startup failures produce a nonzero exit code.
+
+## Current workspace
+
+- The left panel contains preview controls and disabled media/export actions.
+- The right panel fits an empty **9:16** canvas into the available space when the
+  window is resized. The preview scale changes its display size, not the target
+  1080 × 1920 format.
+- Use the color picker or quick colors, adjust preview scale, toggle safe-area
+  guides, or press **Reset preview**. These settings last only for the session.
+- Keyboard navigation is enabled: **Tab**, arrow keys, and **Space** can operate
+  the controls. The controls panel scrolls when space is limited.
+
+Window/context lifetime and the rendering loop are in `src/main.cpp`. The panel,
+preview placeholder, and their session state are in `src/app/EditorUi.cpp` and
+`src/app/EditorUi.hpp`. The UI uses the official Dear ImGui SDL3/OpenGL3 backends;
+the core library and its tests do not depend on Dear ImGui or OpenGL.
 
 ### MSVC debug-information troubleshooting
 
@@ -69,5 +87,6 @@ and [debug information formats](https://learn.microsoft.com/en-us/cpp/build/refe
 ## License and media
 
 SDL is distributed under the [zlib license](https://github.com/libsdl-org/SDL/blob/release-3.4.18/LICENSE.txt).
+Dear ImGui is distributed under the [MIT license](https://github.com/ocornut/imgui/blob/v1.93.0/LICENSE.txt).
 
 A source-code license has not been selected. Before distributing compiled releases, review the licenses and distribution conditions of the chosen dependencies and codecs. Only use media you have permission to distribute.
