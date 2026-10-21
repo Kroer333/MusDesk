@@ -30,6 +30,25 @@ FetchContent_Declare(imgui
 )
 FetchContent_MakeAvailable(imgui)
 
+FetchContent_Declare(stb
+    URL https://codeload.github.com/nothings/stb/tar.gz/a7d4c2175630e1ea5b6f8dd00ab96fed0b97b96d
+    URL_HASH SHA256=ae498e10fadeba0c2e7aa86c71cc9989c4d895201cd26b8b72061c76cfde4edf
+)
+FetchContent_MakeAvailable(stb)
+
+foreach(option IN ITEMS ANIM_UTILS CWEBP DWEBP GIF2WEBP IMG2WEBP VWEBP WEBPINFO
+        LIBWEBPMUX WEBPMUX EXTRAS WEBP_JS FUZZTEST)
+    set(WEBP_BUILD_${option} OFF CACHE BOOL "Disable unused WebP tools")
+endforeach()
+set(WEBP_USE_THREAD OFF CACHE BOOL "Decode artwork on the importing thread")
+FetchContent_Declare(libwebp
+    URL https://codeload.github.com/webmproject/libwebp/tar.gz/4fa21912338357f89e4fd51cf2368325b59e9bd9
+    URL_HASH SHA256=923f3382a47a2af185c3240c954cf004428b237bd7317413a95146d01eb4b94b
+)
+FetchContent_MakeAvailable(libwebp)
+# Pull in only webpdecoder and its dependencies, not the unused encoder libraries.
+set_property(DIRECTORY "${libwebp_SOURCE_DIR}" PROPERTY EXCLUDE_FROM_ALL TRUE)
+
 # Dear ImGui provides source files; build its core and the two chosen backends.
 add_library(musdesk_imgui STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp
@@ -47,30 +66,79 @@ target_link_libraries(musdesk_imgui PRIVATE SDL3::SDL3 OpenGL::GL)
 
 add_library(musdesk_core STATIC
     src/core/TimeFormat.cpp
+    src/core/Composition.cpp
 )
 
 target_include_directories(musdesk_core PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
+add_library(musdesk_media STATIC src/media/ImageLoader.cpp)
+target_include_directories(musdesk_media PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_include_directories(musdesk_media SYSTEM PRIVATE "${stb_SOURCE_DIR}")
+target_link_libraries(musdesk_media PRIVATE SDL3::SDL3 webpdecoder)
+
+add_library(musdesk_render STATIC src/render/VisualizerRenderer.cpp)
+target_include_directories(musdesk_render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_include_directories(musdesk_render SYSTEM PRIVATE "${stb_SOURCE_DIR}")
+target_link_libraries(musdesk_render PUBLIC musdesk_core musdesk_media PRIVATE SDL3::SDL3 OpenGL::GL)
+
 add_executable(MusDesk
     src/main.cpp
     src/app/EditorUi.cpp
+    src/app/ArtworkDialog.cpp
 )
-target_link_libraries(MusDesk PRIVATE musdesk_core musdesk_imgui SDL3::SDL3 OpenGL::GL)
+target_link_libraries(MusDesk PRIVATE musdesk_render musdesk_imgui SDL3::SDL3 OpenGL::GL)
 
-if(WIN32 AND TARGET SDL3::SDL3-shared)
-    add_custom_command(TARGET MusDesk POST_BUILD
+function(musdesk_copy_runtime_files target)
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:${target}>/assets"
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-            "$<TARGET_FILE:SDL3::SDL3-shared>"
-            "$<TARGET_FILE_DIR:MusDesk>"
+            "${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf"
+            "$<TARGET_FILE_DIR:${target}>/assets/Roboto-Medium.ttf"
         VERBATIM
     )
-endif()
+    if(WIN32 AND TARGET SDL3::SDL3-shared)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "$<TARGET_FILE:SDL3::SDL3-shared>"
+                "$<TARGET_FILE_DIR:${target}>"
+            VERBATIM
+        )
+    endif()
+endfunction()
+musdesk_copy_runtime_files(MusDesk)
 
 include(CTest)
 if(BUILD_TESTING)
     add_executable(MusDeskTimeTests tests/TimeFormatTests.cpp)
     target_link_libraries(MusDeskTimeTests PRIVATE musdesk_core)
     add_test(NAME MusDeskTimeTests COMMAND MusDeskTimeTests)
+
+    add_executable(MusDeskCompositionTests tests/CompositionTests.cpp)
+    target_link_libraries(MusDeskCompositionTests PRIVATE musdesk_core)
+    add_test(NAME MusDeskCompositionTests COMMAND MusDeskCompositionTests)
+
+    add_executable(MusDeskImageTests tests/ImageLoaderTests.cpp)
+    target_include_directories(MusDeskImageTests SYSTEM PRIVATE "${stb_SOURCE_DIR}")
+    target_link_libraries(MusDeskImageTests PRIVATE musdesk_media SDL3::SDL3)
+    musdesk_copy_runtime_files(MusDeskImageTests)
+    add_custom_command(TARGET MusDeskImageTests POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:MusDeskImageTests>/test-fixtures"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${libwebp_SOURCE_DIR}/examples/test.webp"
+            "$<TARGET_FILE_DIR:MusDeskImageTests>/test-fixtures/codec-sample.webp"
+        VERBATIM
+    )
+    add_test(NAME MusDeskImageTests COMMAND MusDeskImageTests)
+
+    add_executable(MusDeskRenderTests tests/RenderTests.cpp)
+    target_link_libraries(MusDeskRenderTests PRIVATE musdesk_render SDL3::SDL3 OpenGL::GL)
+    musdesk_copy_runtime_files(MusDeskRenderTests)
+    option(MUSDESK_ENABLE_RENDER_TESTS "Register tests requiring an OpenGL 3.3 graphics driver" OFF)
+    if(MUSDESK_ENABLE_RENDER_TESTS)
+        add_test(NAME MusDeskRenderTests COMMAND MusDeskRenderTests)
+    endif()
+    if(MSVC)
+        target_compile_options(MusDeskImageTests PRIVATE /utf-8)
+    endif()
 endif()

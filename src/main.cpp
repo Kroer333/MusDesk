@@ -1,4 +1,6 @@
 #include "app/EditorUi.hpp"
+#include "app/ArtworkDialog.hpp"
+#include "musdesk/render/VisualizerRenderer.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_opengl3.h>
@@ -9,6 +11,9 @@
 #include <SDL3/SDL_opengl.h>
 
 #include <cstdlib>
+#include <cmath>
+#include <exception>
+#include <string>
 
 namespace {
 struct ApplicationResources {
@@ -49,7 +54,14 @@ int reportSdlFailure(const char* operation) {
 }
 }
 
-int main(int, char*[]) {
+int main(int argc, char* argv[]) {
+    std::string startupArtwork;
+    if (argc == 3 && std::string(argv[1]) == "--artwork") {
+        startupArtwork = argv[2];
+    } else if (argc != 1) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Usage: MusDesk [--artwork image.png]");
+        return EXIT_FAILURE;
+    }
     ApplicationResources resources;
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         return reportSdlFailure("SDL initialization failed");
@@ -92,6 +104,14 @@ int main(int, char*[]) {
     // The fixed workspace and its settings are session-only for now.
     io.IniFilename = nullptr;
     io.LogFilename = nullptr;
+    const std::string fontPath = std::string(SDL_GetBasePath()) + "assets/Roboto-Medium.ttf";
+    SDL_PathInfo fontInfo{};
+    if (!SDL_GetPathInfo(fontPath.c_str(), &fontInfo) || fontInfo.type != SDL_PATHTYPE_FILE) {
+        return reportSdlFailure("Bundled composition font is missing");
+    }
+    if (io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 16.0f) == nullptr) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "UI font unavailable; using built-in font");
+    }
     musdesk::configureEditorStyle(SDL_GetWindowDisplayScale(resources.window));
     if (!ImGui_ImplSDL3_InitForOpenGL(resources.window, resources.glContext)) {
         return reportSdlFailure("ImGui SDL backend initialization failed");
@@ -102,60 +122,111 @@ int main(int, char*[]) {
         return EXIT_FAILURE;
     }
     resources.rendererBackendInitialized = true;
-    musdesk::EditorUiState editorState;
-
-    bool running = true;
-    while (running) {
-        const Uint64 frameStart = SDL_GetTicks();
-        SDL_Event event{};
-        while (SDL_PollEvent(&event)) {
-            ImGui_ImplSDL3_ProcessEvent(&event);
-            if (event.type == SDL_EVENT_QUIT ||
-                (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
-                 event.window.windowID == SDL_GetWindowID(resources.window))) {
-                running = false;
+    try {
+        musdesk::VisualizerRenderer composition(fontPath);
+        musdesk::EditorUiState editorState;
+        musdesk::ArtworkDialog artworkDialog;
+        auto importArtwork = [&](const std::string& path) {
+            try {
+                const auto image = musdesk::loadArtwork(path);
+                composition.setArtwork(image);
+                const auto slash = path.find_last_of("/\\");
+                editorState.artworkName = path.substr(slash == std::string::npos ? 0 : slash + 1);
+                editorState.importError.clear();
+                SDL_Log("Artwork imported: %d x %d", image.width, image.height);
+            } catch (const std::exception& error) {
+                // A failed replacement keeps the previously imported image intact.
+                editorState.importError = error.what();
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", error.what());
             }
-            if (event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED &&
-                event.window.windowID == SDL_GetWindowID(resources.window)) {
-                musdesk::configureEditorStyle(SDL_GetWindowDisplayScale(resources.window));
+        };
+        if (!startupArtwork.empty()) importArtwork(startupArtwork);
+        double anchorTime = 0;
+        Uint64 anchorTicks = SDL_GetTicksNS();
+
+        bool running = true;
+        while (running) {
+            const Uint64 frameStart = SDL_GetTicks();
+            SDL_Event event{};
+            while (SDL_PollEvent(&event)) {
+                ImGui_ImplSDL3_ProcessEvent(&event);
+                if (event.type == SDL_EVENT_DROP_FILE && event.drop.data != nullptr
+                    && event.drop.windowID == SDL_GetWindowID(resources.window)) {
+                    importArtwork(event.drop.data);
+                }
+                if (event.type == SDL_EVENT_QUIT ||
+                    (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
+                     event.window.windowID == SDL_GetWindowID(resources.window))) {
+                    running = false;
+                }
+                if (event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED &&
+                    event.window.windowID == SDL_GetWindowID(resources.window)) {
+                    musdesk::configureEditorStyle(SDL_GetWindowDisplayScale(resources.window));
+                }
+            }
+            if (!running) {
+                break;
+            }
+            if (auto selection = artworkDialog.takeSelection()) {
+                if (!selection->error.empty()) editorState.importError = selection->error;
+                else if (!selection->path.empty()) importArtwork(selection->path);
+            }
+            editorState.artworkDialogPending = artworkDialog.pending();
+            if ((SDL_GetWindowFlags(resources.window) & SDL_WINDOW_MINIMIZED) != 0) {
+                SDL_Delay(50);
+                continue;
+            }
+
+            int pixelWidth = 0;
+            int pixelHeight = 0;
+            if (!SDL_GetWindowSizeInPixels(resources.window, &pixelWidth, &pixelHeight)) {
+                return reportSdlFailure("Reading framebuffer size failed");
+            }
+            if (pixelWidth <= 0 || pixelHeight <= 0) {
+                SDL_Delay(50);
+                continue;
+            }
+            glViewport(0, 0, pixelWidth, pixelHeight);
+            glClearColor(0.055f, 0.07f, 0.09f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            ImGui_ImplOpenGL3_NewFrame();
+            ImGui_ImplSDL3_NewFrame();
+            ImGui::NewFrame();
+            const Uint64 now = SDL_GetTicksNS();
+            if (editorState.animatePreview) {
+                editorState.timeSeconds = std::fmod(anchorTime + (now - anchorTicks) / 1.0e9,
+                    editorState.durationSeconds);
+            }
+            const bool wasAnimating = editorState.animatePreview;
+            const double beforeUiTime = editorState.timeSeconds;
+            musdesk::drawEditorUi(editorState, composition.textureId());
+            if (wasAnimating != editorState.animatePreview || beforeUiTime != editorState.timeSeconds) {
+                anchorTime = editorState.timeSeconds;
+                anchorTicks = now;
+            }
+            if (editorState.requestArtwork) {
+                editorState.requestArtwork = false;
+                artworkDialog.open(resources.window);
+            }
+            const musdesk::CompositionSettings settings{editorState.title.data(), editorState.artist.data(),
+                editorState.durationSeconds, editorState.discRpm};
+            composition.renderFrame(editorState.timeSeconds, settings);
+            ImGui::Render();
+            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+            if (!SDL_GL_SwapWindow(resources.window)) {
+                return reportSdlFailure("Presenting OpenGL frame failed");
+            }
+
+            // A driver may not support VSync. Keep that path from spinning freely.
+            const Uint64 frameDuration = SDL_GetTicks() - frameStart;
+            if (!vsyncEnabled && frameDuration < 16) {
+                SDL_Delay(static_cast<Uint32>(16 - frameDuration));
             }
         }
-        if (!running) {
-            break;
-        }
-        if ((SDL_GetWindowFlags(resources.window) & SDL_WINDOW_MINIMIZED) != 0) {
-            SDL_Delay(50);
-            continue;
-        }
 
-        int pixelWidth = 0;
-        int pixelHeight = 0;
-        if (!SDL_GetWindowSizeInPixels(resources.window, &pixelWidth, &pixelHeight)) {
-            return reportSdlFailure("Reading framebuffer size failed");
-        }
-        if (pixelWidth <= 0 || pixelHeight <= 0) {
-            SDL_Delay(50);
-            continue;
-        }
-        glViewport(0, 0, pixelWidth, pixelHeight);
-        glClearColor(0.055f, 0.07f, 0.09f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplSDL3_NewFrame();
-        ImGui::NewFrame();
-        musdesk::drawEditorUi(editorState);
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        if (!SDL_GL_SwapWindow(resources.window)) {
-            return reportSdlFailure("Presenting OpenGL frame failed");
-        }
-
-        // A driver may not support VSync. Keep that path from spinning freely.
-        const Uint64 frameDuration = SDL_GetTicks() - frameStart;
-        if (!vsyncEnabled && frameDuration < 16) {
-            SDL_Delay(static_cast<Uint32>(16 - frameDuration));
-        }
+        return EXIT_SUCCESS;
+    } catch (const std::exception& error) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Composition renderer failed: %s", error.what());
+        return EXIT_FAILURE;
     }
-
-    return EXIT_SUCCESS;
 }

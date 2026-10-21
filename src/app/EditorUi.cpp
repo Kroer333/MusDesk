@@ -14,34 +14,48 @@ void drawControls(EditorUiState& state) {
     ImGui::Spacing();
 
     ImGui::SeparatorText("Media");
-    ImGui::TextDisabled("No audio or artwork loaded");
-    ImGui::BeginDisabled();
-    ImGui::Button("Import audio", ImVec2(-1, 0));
-    ImGui::Button("Import artwork", ImVec2(-1, 0));
+    ImGui::BeginDisabled(state.artworkDialogPending);
+    if (ImGui::Button(state.artworkDialogPending ? "Choosing artwork..." : "Import artwork", ImVec2(-1, 0))) {
+        state.requestArtwork = true;
+    }
     ImGui::EndDisabled();
-    ImGui::TextWrapped("Audio and artwork import is not available yet.");
+    ImGui::TextWrapped("%s", state.artworkName.empty() ? "Choose PNG/JPEG/WebP, or drop an image onto this window." : state.artworkName.c_str());
+    if (!state.importError.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.55f, 0.45f, 1));
+        ImGui::TextWrapped("%s", state.importError.c_str());
+        ImGui::PopStyleColor();
+    }
+    ImGui::SeparatorText("Track labels");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##Title", "Track title", state.title.data(), state.title.size());
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##Artist", "Artist name", state.artist.data(), state.artist.size());
+    ImGui::SeparatorText("Composition time");
+    ImGui::Checkbox("Animate preview", &state.animatePreview);
+    ImGui::SetNextItemWidth(-1);
+    const double start = 0;
+    if (ImGui::SliderScalar("##Time", ImGuiDataType_Double, &state.timeSeconds,
+            &start, &state.durationSeconds, "Time: %.2f s", ImGuiSliderFlags_AlwaysClamp)) {
+        state.animatePreview = false;
+    }
+    ImGui::SetNextItemWidth(-1);
+    const double minDuration = 10, maxDuration = 600;
+    ImGui::SliderScalar("##Duration", ImGuiDataType_Double, &state.durationSeconds,
+        &minDuration, &maxDuration, "Demo length: %.0f s", ImGuiSliderFlags_AlwaysClamp);
+    state.timeSeconds = std::min(state.timeSeconds, state.durationSeconds);
+    ImGui::SetNextItemWidth(-1);
+    ImGui::SliderFloat("##Rotation", &state.discRpm, 0, 45, "Rotation: %.1f RPM", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::TextWrapped("Time and duration are a visual demo; no audio is loaded.");
     ImGui::Spacing();
 
     ImGui::SeparatorText("Preview settings");
-    ImGui::ColorEdit3("Canvas color", state.canvasColor.data(), ImGuiColorEditFlags_NoInputs);
-    ImGui::TextUnformatted("Quick colors");
-    if (ImGui::Button("Dark")) {
-        state.canvasColor = {0.09f, 0.12f, 0.18f};
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Indigo")) {
-        state.canvasColor = {0.19f, 0.13f, 0.32f};
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Warm")) {
-        state.canvasColor = {0.30f, 0.16f, 0.12f};
-    }
     ImGui::SetNextItemWidth(-1);
     ImGui::SliderFloat("##PreviewScale", &state.previewScalePercent, 50.0f, 100.0f,
         "Preview scale: %.0f%%", ImGuiSliderFlags_AlwaysClamp);
     ImGui::Checkbox("Show safe area", &state.showSafeArea);
     if (ImGui::Button("Reset preview", ImVec2(-1, 0))) {
-        state = EditorUiState{};
+        state.previewScalePercent = 100;
+        state.showSafeArea = false;
     }
     ImGui::Spacing();
     ImGui::TextWrapped("Preview settings are kept for this session only.");
@@ -53,7 +67,7 @@ void drawControls(EditorUiState& state) {
     ImGui::TextWrapped("Export is not available yet.");
 }
 
-void drawPreview(const EditorUiState& state) {
+void drawPreview(const EditorUiState& state, std::uint32_t texture) {
     ImGui::TextUnformatted("Preview");
     ImGui::SameLine();
     ImGui::TextDisabled("9:16");
@@ -76,9 +90,7 @@ void drawPreview(const EditorUiState& state) {
         origin.y + (available.y - height) * 0.5f);
     const ImVec2 bottomRight(topLeft.x + width, topLeft.y + height);
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    const ImU32 canvasColor = ImGui::ColorConvertFloat4ToU32(
-        ImVec4(state.canvasColor[0], state.canvasColor[1], state.canvasColor[2], 1.0f));
-    drawList->AddRectFilled(topLeft, bottomRight, canvasColor);
+    drawList->AddImage(static_cast<ImTextureID>(texture), topLeft, bottomRight, ImVec2(0, 1), ImVec2(1, 0));
     drawList->AddRect(topLeft, bottomRight, ImGui::GetColorU32(ImGuiCol_Border));
 
     if (state.showSafeArea) {
@@ -87,14 +99,6 @@ void drawPreview(const EditorUiState& state) {
             IM_COL32(100, 210, 190, 150));
     }
 
-    const char* label = "Your visualizer\nwill appear here";
-    const ImVec2 labelSize = ImGui::CalcTextSize(label);
-    // Hide the placeholder when the canvas is too small to contain its text.
-    if (labelSize.x < width - padding && labelSize.y < height - padding) {
-        drawList->AddText(ImVec2(topLeft.x + (width - labelSize.x) * 0.5f,
-            topLeft.y + (height - labelSize.y) * 0.5f),
-            ImGui::GetColorU32(ImGuiCol_TextDisabled), label);
-    }
     ImGui::Dummy(available);
 }
 }
@@ -126,7 +130,7 @@ void configureEditorStyle(float displayScale) {
     style.FontScaleDpi = displayScale;
 }
 
-void drawEditorUi(EditorUiState& state) {
+void drawEditorUi(EditorUiState& state, std::uint32_t compositionTexture) {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -150,10 +154,10 @@ void drawEditorUi(EditorUiState& state) {
         ImGui::SameLine();
         if (ImGui::BeginChild("Canvas", ImVec2(0, panelHeight), ImGuiChildFlags_Borders,
                 ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
-            drawPreview(state);
+            drawPreview(state, compositionTexture);
         }
         ImGui::EndChild();
-        ImGui::TextDisabled("Ready  |  Canvas preview  |  Audio playback is not available yet");
+        ImGui::TextDisabled("Composition preview  |  MP4 export is not available yet");
     }
     ImGui::End();
 }
