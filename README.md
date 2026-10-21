@@ -88,9 +88,23 @@ than the order in which frames were requested.
 
 FFmpeg and ffprobe are free, open-source external tools. They are not downloaded
 by CMake. Obtain a Windows build through the links on the
-[FFmpeg download page](https://ffmpeg.org/download.html), then either place both
-executables beside `MusDesk.exe`, add their directory to `PATH`, or set
-`MUSDESK_FFMPEG_DIR` to the directory containing them before launching MusDesk.
+[FFmpeg download page](https://ffmpeg.org/download.html) and place `ffmpeg.exe`
+and `ffprobe.exe` in `tools/ffmpeg/bin` at the repository root (ignored by Git).
+CMake automatically copies both beside the selected `MusDesk.exe` on every
+build, including Debug, Release and separate Visual Studio build directories.
+The copy step also runs when the C++ executable itself is already up to date.
+
+Alternatively, before configuring, add the tools directory to `PATH`, set the
+environment variable `MUSDESK_FFMPEG_DIR`, or pass
+`-DMUSDESK_FFMPEG_DIR="path/to/ffmpeg/bin"` to CMake. The CMake cache setting
+applies to that build directory; `tools/ffmpeg/bin` is shared by all build trees.
+Reconfigure CMake after installing or moving tools. If they are missing, CMake
+warns and artwork editing remains available. No configuration can import audio
+without working tool executables. When distributing a build, keep both tools
+alongside the application and satisfy the chosen FFmpeg build's license terms.
+
+At runtime, tools can also be provided directly beside the EXE, through
+`MUSDESK_FFMPEG_DIR`, or through `PATH`.
 The search order is the configured directory, executable directory, then `PATH`.
 Each candidate is checked with `-version`; restart MusDesk after changing tools.
 The panel reports missing or unusable tools without preventing artwork editing.

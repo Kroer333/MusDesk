@@ -5,6 +5,7 @@
 /.vscode/
 /.idea/
 CMakeUserPresets.json
+/tools/ffmpeg/
 *.user
 *.suo
 *.log
