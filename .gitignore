@@ -1,0 +1,25 @@
+# CMake, Visual Studio and IDE build output
+/build/
+/out/
+/.vs/
+/.vscode/
+/.idea/
+CMakeUserPresets.json
+*.user
+*.suo
+*.log
+
+# Generated and user-specific media
+/exports/
+/tmp/
+/temp/
+/local_media/
+/samples/*
+!/samples/README.md
+*.mp4
+*.mov
+*.mkv
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "name": "Soft Glow",
+  "disc": { "rpm": 33.333, "sizeRatio": 0.45 },
+  "background": { "blurStrength": 0.65, "zoomAmount": 0.02 },
+  "reactivity": { "mode": "rms", "intensity": 0.45, "smoothing": 0.85, "glowColor": "#B89BFF" }
+}
