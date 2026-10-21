@@ -18,6 +18,16 @@ struct EditorUiState {
     bool artworkDialogPending = false;
     std::string artworkName;
     std::string importError;
+    bool requestAudio = false;
+    bool audioDialogPending = false;
+    bool audioImportPending = false;
+    bool toolsChecked = false;
+    bool ffprobeReady = false;
+    bool ffmpegReady = false;
+    std::string mediaToolsStatus = "Checking FFmpeg / ffprobe...";
+    std::string audioPath;
+    std::string audioName;
+    std::string audioError;
 };
 
 void configureEditorStyle(float displayScale);

@@ -73,7 +73,7 @@ target_include_directories(musdesk_core PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
-add_library(musdesk_media STATIC src/media/ImageLoader.cpp)
+add_library(musdesk_media STATIC src/media/ImageLoader.cpp src/media/AudioImporter.cpp)
 target_include_directories(musdesk_media PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_include_directories(musdesk_media SYSTEM PRIVATE "${stb_SOURCE_DIR}")
 target_link_libraries(musdesk_media PRIVATE SDL3::SDL3 webpdecoder)
@@ -111,6 +111,10 @@ musdesk_copy_runtime_files(MusDesk)
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(MusDeskAudioTests tests/AudioImporterTests.cpp)
+    target_link_libraries(MusDeskAudioTests PRIVATE musdesk_media SDL3::SDL3)
+    musdesk_copy_runtime_files(MusDeskAudioTests)
+    add_test(NAME MusDeskAudioTests COMMAND MusDeskAudioTests)
     add_executable(MusDeskTimeTests tests/TimeFormatTests.cpp)
     target_link_libraries(MusDeskTimeTests PRIVATE musdesk_core)
     add_test(NAME MusDeskTimeTests COMMAND MusDeskTimeTests)

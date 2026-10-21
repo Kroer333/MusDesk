@@ -15,7 +15,7 @@ struct ArtworkSelection {
 class ArtworkDialog {
 public:
     ArtworkDialog();
-    void open(SDL_Window* window);
+    void open(SDL_Window* window, bool audio = false);
     bool pending() const;
     std::optional<ArtworkSelection> takeSelection();
 

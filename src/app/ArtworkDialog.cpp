@@ -13,7 +13,7 @@ struct ArtworkDialog::State {
 
 ArtworkDialog::ArtworkDialog() : state_(std::make_shared<State>()) {}
 
-void ArtworkDialog::open(SDL_Window* window) {
+void ArtworkDialog::open(SDL_Window* window, bool audio) {
     {
         std::lock_guard lock(state_->mutex);
         if (state_->pending) {
@@ -25,6 +25,7 @@ void ArtworkDialog::open(SDL_Window* window) {
     // Keep the queue alive and only upload textures on the main thread.
     auto* callbackState = new std::shared_ptr<State>(state_);
     static constexpr SDL_DialogFileFilter filters[] = {{"PNG / JPEG / WebP artwork", "png;jpg;jpeg;webp"}};
+    static constexpr SDL_DialogFileFilter audioFilters[] = {{"MP3 / WAV / OGG audio", "mp3;wav;ogg"}};
     SDL_ShowOpenFileDialog([](void* userdata, const char* const* files, int) {
         std::unique_ptr<std::shared_ptr<State>> owner(static_cast<std::shared_ptr<State>*>(userdata));
         ArtworkSelection result;
@@ -36,7 +37,7 @@ void ArtworkDialog::open(SDL_Window* window) {
         std::lock_guard lock((*owner)->mutex);
         (*owner)->selection = std::move(result);
         (*owner)->pending = false;
-    }, callbackState, window, filters, 1, nullptr, false);
+    }, callbackState, window, audio ? audioFilters : filters, 1, nullptr, false);
 }
 
 bool ArtworkDialog::pending() const {

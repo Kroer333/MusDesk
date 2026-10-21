@@ -14,7 +14,7 @@ void drawControls(EditorUiState& state) {
     ImGui::Spacing();
 
     ImGui::SeparatorText("Media");
-    ImGui::BeginDisabled(state.artworkDialogPending);
+    ImGui::BeginDisabled(state.artworkDialogPending || state.audioDialogPending);
     if (ImGui::Button(state.artworkDialogPending ? "Choosing artwork..." : "Import artwork", ImVec2(-1, 0))) {
         state.requestArtwork = true;
     }
@@ -23,6 +23,23 @@ void drawControls(EditorUiState& state) {
     if (!state.importError.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.55f, 0.45f, 1));
         ImGui::TextWrapped("%s", state.importError.c_str());
+        ImGui::PopStyleColor();
+    }
+    ImGui::TextWrapped("%s", state.mediaToolsStatus.c_str());
+    if (state.toolsChecked && (!state.ffmpegReady || !state.ffprobeReady)) {
+        ImGui::TextWrapped("Tools: MUSDESK_FFMPEG_DIR, executable directory, or PATH. Restart after installing.");
+    }
+    ImGui::BeginDisabled(!state.ffprobeReady || state.audioDialogPending || state.artworkDialogPending || state.audioImportPending);
+    const char* audioButton = state.audioImportPending ? "Reading audio..."
+        : (state.audioDialogPending ? "Choosing audio..." : "Import audio");
+    if (ImGui::Button(audioButton, ImVec2(-1, 0))) {
+        state.requestAudio = true;
+    }
+    ImGui::EndDisabled();
+    if (!state.audioName.empty()) ImGui::TextWrapped("%s", state.audioName.c_str());
+    if (!state.audioError.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.55f, 0.45f, 1));
+        ImGui::TextWrapped("%s", state.audioError.c_str());
         ImGui::PopStyleColor();
     }
     ImGui::SeparatorText("Track labels");
@@ -39,13 +56,19 @@ void drawControls(EditorUiState& state) {
         state.animatePreview = false;
     }
     ImGui::SetNextItemWidth(-1);
-    const double minDuration = 10, maxDuration = 600;
-    ImGui::SliderScalar("##Duration", ImGuiDataType_Double, &state.durationSeconds,
-        &minDuration, &maxDuration, "Demo length: %.0f s", ImGuiSliderFlags_AlwaysClamp);
+    if (state.audioPath.empty()) {
+        const double minDuration = 10, maxDuration = 600;
+        ImGui::SliderScalar("##Duration", ImGuiDataType_Double, &state.durationSeconds,
+            &minDuration, &maxDuration, "Demo length: %.0f s", ImGuiSliderFlags_AlwaysClamp);
+    } else {
+        ImGui::Text("Audio duration: %.3f s", state.durationSeconds);
+    }
     state.timeSeconds = std::min(state.timeSeconds, state.durationSeconds);
     ImGui::SetNextItemWidth(-1);
     ImGui::SliderFloat("##Rotation", &state.discRpm, 0, 45, "Rotation: %.1f RPM", ImGuiSliderFlags_AlwaysClamp);
-    ImGui::TextWrapped("Time and duration are a visual demo; no audio is loaded.");
+    ImGui::TextWrapped(state.audioPath.empty()
+        ? "Time and duration are a visual demo; no audio is loaded."
+        : "Duration comes from audio metadata. Preview is silent; audio playback is not available yet.");
     ImGui::Spacing();
 
     ImGui::SeparatorText("Preview settings");

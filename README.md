@@ -2,7 +2,7 @@
 
 **MusDesk** is a planned desktop tool for turning a music track and cover artwork into a vertical, animated music visualizer video for short-form platforms.
 
-> **Project status: animated composition preview (M2).** MusDesk imports PNG, JPEG and still WebP artwork and renders a rotating vinyl record, gently blurred moving background, blue rim, editable track labels and a demo progress bar. The composition is rendered at 1080 × 1920 from an explicit timestamp. Audio, audio-reactive effects and MP4 export are not implemented yet.
+> **Project status: composition preview and audio metadata import (M3 in progress).** MusDesk imports PNG, JPEG and still WebP artwork and renders a rotating vinyl record, gently blurred moving background, blue rim, editable track labels and progress bar. MP3/WAV/OGG import reads track duration through ffprobe. The composition is rendered at 1080 × 1920 from an explicit timestamp. Audio playback, audio-reactive effects and MP4 export are not implemented yet.
 
 ## What the app will do
 
@@ -67,9 +67,10 @@ the console; startup failures produce a nonzero exit code.
 - Artwork fills the background and circular label through centered cropping,
   preserving its proportions. The record and label rotate together. The blue
   rim is static until audio analysis is added.
-- Edit title, artist, rotation speed, demo length and preview time in the left
-  panel. Seeking stops automatic animation. Duration and progress are demo values;
-  no audio is loaded. The composition contains no player transport buttons.
+- Edit title, artist, rotation speed and preview time in the left panel. Seeking
+  stops automatic animation. Without audio, a demo length can be adjusted;
+  importing audio replaces it with the measured duration. The composition
+  contains no player transport buttons.
 - Adjust preview scale, toggle safe-area guides, or press **Reset preview**.
   Guides belong only to the editor; reset preserves artwork and track labels.
   All settings last only for the session. Export remains disabled.
@@ -78,15 +79,38 @@ the console; startup failures produce a nonzero exit code.
 
 Window/context lifetime and the rendering loop are in `src/main.cpp`; editor
 controls and the asynchronous native file dialog are in `src/app/`. Pure time
-calculations live in `musdesk_core`, image decoding in `musdesk_media`, and the
+calculations live in `musdesk_core`, image decoding and audio metadata import in `musdesk_media`, and the
 OpenGL framebuffer and composition drawing in `musdesk_render`. The renderer
 does not depend on Dear ImGui. Its output depends on time and settings rather
 than the order in which frames were requested.
 
+### Audio tools and import
+
+FFmpeg and ffprobe are free, open-source external tools. They are not downloaded
+by CMake. Obtain a Windows build through the links on the
+[FFmpeg download page](https://ffmpeg.org/download.html), then either place both
+executables beside `MusDesk.exe`, add their directory to `PATH`, or set
+`MUSDESK_FFMPEG_DIR` to the directory containing them before launching MusDesk.
+The search order is the configured directory, executable directory, then `PATH`.
+Each candidate is checked with `-version`; restart MusDesk after changing tools.
+The panel reports missing or unusable tools without preventing artwork editing.
+
+Use **Import audio**, drop an MP3/WAV/OGG file, or launch with
+`MusDesk.exe --audio "path/to/track.mp3"`. `--artwork` and `--audio` can be combined.
+Only ffprobe is needed for metadata import; FFmpeg will be used by later audio
+and export stages. Import checks for an audio stream and a finite, positive
+container duration. Failed replacements preserve the previous audio and duration.
+Detection and probing run outside the render loop, with a 15-second limit per
+process and bounded output. Arguments are passed directly through SDL's process
+API without a shell; Unicode paths and spaces are supported. Only local files
+are accepted. The preview remains silent; duration metadata alone does not
+guarantee sample-accurate synchronization or validate the complete audio stream.
+
 ### Tests
 
 The default CTest suite checks time formatting, deterministic animation values,
-PNG/JPEG/WebP decoding, Unicode paths, alpha and malformed input. To also register
+PNG/JPEG/WebP decoding, Unicode paths, alpha, malformed input and missing-tool
+audio diagnostics. To also register
 the integration test requiring an OpenGL 3.3 graphics driver:
 
 ```powershell
@@ -100,6 +124,11 @@ of artwork after an invalid replacement, and identical pixels when seeking back
 to the same time. It can also run against your own image:
 `MusDeskRenderTests.exe "path/to/artwork.png"`. Pixel equality is checked within
 one graphics context; identical results across different GPU drivers are not guaranteed.
+
+For a focused audio integration check with installed tools, run
+`MusDeskAudioTests.exe "path/to/track.mp3"`. Multiple audio paths can be supplied.
+This checks detection, duration probing, missing files and damaged input without
+opening the editor.
 
 ### MSVC debug-information troubleshooting
 
@@ -125,5 +154,7 @@ stb offers [MIT or public-domain licensing](https://github.com/nothings/stb/blob
 libwebp uses a [BSD-style license](https://github.com/webmproject/libwebp/blob/v1.6.0/COPYING)
 with a separate [patent grant](https://github.com/webmproject/libwebp/blob/v1.6.0/PATENTS).
 The bundled Roboto font uses the [Apache 2.0 license](https://github.com/ocornut/imgui/blob/v1.93.0/docs/FONTS.md#fonts-included-in-this-repository).
+FFmpeg and ffprobe are external tools with licensing determined by their build;
+see the [FFmpeg license information](https://ffmpeg.org/legal.html).
 
 A source-code license has not been selected. Before distributing compiled releases, review the licenses and distribution conditions of the chosen dependencies and codecs. Only use media you have permission to distribute.

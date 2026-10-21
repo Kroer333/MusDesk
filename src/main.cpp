@@ -1,6 +1,7 @@
 #include "app/EditorUi.hpp"
 #include "app/ArtworkDialog.hpp"
 #include "musdesk/render/VisualizerRenderer.hpp"
+#include "musdesk/media/AudioImporter.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_opengl3.h>
@@ -14,6 +15,8 @@
 #include <cmath>
 #include <exception>
 #include <string>
+#include <chrono>
+#include <future>
 
 namespace {
 struct ApplicationResources {
@@ -56,11 +59,14 @@ int reportSdlFailure(const char* operation) {
 
 int main(int argc, char* argv[]) {
     std::string startupArtwork;
-    if (argc == 3 && std::string(argv[1]) == "--artwork") {
-        startupArtwork = argv[2];
-    } else if (argc != 1) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Usage: MusDesk [--artwork image.png]");
-        return EXIT_FAILURE;
+    std::string startupAudio;
+    for (int i = 1; i < argc; i += 2) {
+        if (i + 1 < argc && std::string(argv[i]) == "--artwork") startupArtwork = argv[i + 1];
+        else if (i + 1 < argc && std::string(argv[i]) == "--audio") startupAudio = argv[i + 1];
+        else {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Usage: MusDesk [--artwork image.png] [--audio track.mp3]");
+            return EXIT_FAILURE;
+        }
     }
     ApplicationResources resources;
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -126,6 +132,23 @@ int main(int argc, char* argv[]) {
         musdesk::VisualizerRenderer composition(fontPath);
         musdesk::EditorUiState editorState;
         musdesk::ArtworkDialog artworkDialog;
+        musdesk::ArtworkDialog audioDialog;
+        musdesk::MediaTools mediaTools;
+        auto toolsFuture = std::async(std::launch::async, musdesk::detectMediaTools);
+        std::future<musdesk::AudioMetadata> audioFuture;
+        auto importAudio = [&](const std::string& path) {
+            if (!editorState.toolsChecked) {
+                startupAudio = path;
+                return;
+            }
+            if (audioFuture.valid()) {
+                editorState.audioError = "An audio import is already in progress.";
+                return;
+            }
+            editorState.audioError.clear();
+            editorState.audioImportPending = true;
+            audioFuture = std::async(std::launch::async, musdesk::importAudio, path, mediaTools);
+        };
         auto importArtwork = [&](const std::string& path) {
             try {
                 const auto image = musdesk::loadArtwork(path);
@@ -152,7 +175,8 @@ int main(int argc, char* argv[]) {
                 ImGui_ImplSDL3_ProcessEvent(&event);
                 if (event.type == SDL_EVENT_DROP_FILE && event.drop.data != nullptr
                     && event.drop.windowID == SDL_GetWindowID(resources.window)) {
-                    importArtwork(event.drop.data);
+                    if (musdesk::isAudioPath(event.drop.data)) importAudio(event.drop.data);
+                    else importArtwork(event.drop.data);
                 }
                 if (event.type == SDL_EVENT_QUIT ||
                     (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
@@ -167,11 +191,49 @@ int main(int argc, char* argv[]) {
             if (!running) {
                 break;
             }
+            if (toolsFuture.valid() && toolsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                try {
+                    mediaTools = toolsFuture.get();
+                    editorState.ffprobeReady = !mediaTools.ffprobePath.empty();
+                    editorState.ffmpegReady = !mediaTools.ffmpegPath.empty();
+                    editorState.mediaToolsStatus = mediaTools.status;
+                    SDL_Log("%s", mediaTools.status.c_str());
+                } catch (const std::exception& error) {
+                    editorState.mediaToolsStatus = std::string("Media tool detection failed: ") + error.what();
+                }
+                editorState.toolsChecked = true;
+                if (!startupAudio.empty()) {
+                    importAudio(startupAudio);
+                    startupAudio.clear();
+                }
+            }
+            if (audioFuture.valid() && audioFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                try {
+                    const auto audio = audioFuture.get();
+                    editorState.audioPath = audio.path;
+                    const auto slash = audio.path.find_last_of("/\\");
+                    editorState.audioName = audio.path.substr(slash == std::string::npos ? 0 : slash + 1);
+                    editorState.durationSeconds = audio.durationSeconds;
+                    editorState.timeSeconds = 0;
+                    anchorTime = 0;
+                    anchorTicks = SDL_GetTicksNS();
+                    SDL_Log("Audio imported: %.3f seconds", audio.durationSeconds);
+                } catch (const std::exception& error) {
+                    editorState.audioError = error.what();
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", error.what());
+                }
+                editorState.audioImportPending = false;
+            }
             if (auto selection = artworkDialog.takeSelection()) {
                 if (!selection->error.empty()) editorState.importError = selection->error;
                 else if (!selection->path.empty()) importArtwork(selection->path);
             }
             editorState.artworkDialogPending = artworkDialog.pending();
+            if (auto selection = audioDialog.takeSelection()) {
+                if (!selection->error.empty()) editorState.audioError = selection->error;
+                else if (!selection->path.empty()) importAudio(selection->path);
+            }
+            editorState.audioDialogPending = audioDialog.pending();
             if ((SDL_GetWindowFlags(resources.window) & SDL_WINDOW_MINIMIZED) != 0) {
                 SDL_Delay(50);
                 continue;
@@ -207,6 +269,10 @@ int main(int argc, char* argv[]) {
             if (editorState.requestArtwork) {
                 editorState.requestArtwork = false;
                 artworkDialog.open(resources.window);
+            }
+            if (editorState.requestAudio) {
+                editorState.requestAudio = false;
+                audioDialog.open(resources.window, true);
             }
             const musdesk::CompositionSettings settings{editorState.title.data(), editorState.artist.data(),
                 editorState.durationSeconds, editorState.discRpm};
