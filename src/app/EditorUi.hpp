@@ -49,6 +49,14 @@ struct EditorUiState {
     bool muteAudio = false;
     float previewVolume = 75;
     float audioEnergy = 0;
+    bool exportBusy = false;
+    bool exportActive = false;
+    bool exportDialogPending = false;
+    bool requestExport = false;
+    bool requestCancelExport = false;
+    float exportProgress = 0;
+    std::string exportStatus;
+    bool exportError = false;
 };
 
 void configureEditorStyle(float displayScale);

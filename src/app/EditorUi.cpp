@@ -63,6 +63,7 @@ void drawPresetControls(EditorUiState& state) {
 }
 
 void drawControls(EditorUiState& state) {
+    ImGui::BeginDisabled(state.exportBusy);
     ImGui::SeparatorText("Composition");
     ImGui::TextUnformatted("Vertical music visualizer");
     ImGui::TextDisabled("1080 x 1920  /  9:16");
@@ -168,11 +169,23 @@ void drawControls(EditorUiState& state) {
     ImGui::Spacing();
     ImGui::TextWrapped("Preview settings are kept for this session only.");
 
-    ImGui::SeparatorText("Export");
-    ImGui::BeginDisabled();
-    ImGui::Button("Export MP4", ImVec2(-1, 0));
     ImGui::EndDisabled();
-    ImGui::TextWrapped("Export is not available yet.");
+    ImGui::SeparatorText("Export");
+    const bool ready = state.audioReady && !state.artworkName.empty() && state.ffmpegReady && state.ffprobeReady;
+    ImGui::BeginDisabled(!ready || state.exportBusy || state.audioImportPending || state.artworkDialogPending
+        || state.audioDialogPending || state.presetDialogPending);
+    if (ImGui::Button("Export MP4", ImVec2(-1, 0))) state.requestExport = true;
+    ImGui::EndDisabled();
+    if (!ready) ImGui::TextWrapped("Import artwork and audio; FFmpeg and ffprobe are required.");
+    if (state.exportDialogPending) ImGui::TextUnformatted("Choosing export destination...");
+    if (state.exportActive) {
+        ImGui::ProgressBar(state.exportProgress, ImVec2(-1, 0));
+        if (ImGui::Button("Cancel export", ImVec2(-1, 0))) state.requestCancelExport = true;
+    }
+    if (state.exportError) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.55f, 0.45f, 1));
+    if (!state.exportStatus.empty()) ImGui::TextWrapped("%s", state.exportStatus.c_str());
+    if (state.exportError) ImGui::PopStyleColor();
+    ImGui::TextWrapped("H.264 / AAC, 1080 x 1920, 30 FPS. Exports the full track with original audio; preview volume and loop are ignored.");
 }
 
 void drawPreview(const EditorUiState& state, std::uint32_t texture) {
@@ -265,7 +278,7 @@ void drawEditorUi(EditorUiState& state, std::uint32_t compositionTexture) {
             drawPreview(state, compositionTexture);
         }
         ImGui::EndChild();
-        ImGui::TextDisabled("Composition preview  |  MP4 export is not available yet");
+        ImGui::TextDisabled("Composition preview  |  MP4: 1080 x 1920 / 30 FPS");
     }
     ImGui::End();
 }

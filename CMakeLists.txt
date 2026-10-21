@@ -101,12 +101,16 @@ target_include_directories(musdesk_render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/in
 target_include_directories(musdesk_render SYSTEM PRIVATE "${stb_SOURCE_DIR}")
 target_link_libraries(musdesk_render PUBLIC musdesk_core musdesk_media PRIVATE SDL3::SDL3 OpenGL::GL)
 
+add_library(musdesk_export STATIC src/export/ExportEngine.cpp)
+target_include_directories(musdesk_export PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(musdesk_export PUBLIC musdesk_render PRIVATE SDL3::SDL3 nlohmann_json::nlohmann_json)
+
 add_executable(MusDesk
     src/main.cpp
     src/app/EditorUi.cpp
     src/app/ArtworkDialog.cpp
 )
-target_link_libraries(MusDesk PRIVATE musdesk_render musdesk_audio musdesk_presets musdesk_imgui SDL3::SDL3 OpenGL::GL)
+target_link_libraries(MusDesk PRIVATE musdesk_export musdesk_audio musdesk_presets musdesk_imgui SDL3::SDL3 OpenGL::GL)
 
 function(musdesk_copy_runtime_files target)
     add_custom_command(TARGET ${target} POST_BUILD
@@ -131,6 +135,13 @@ musdesk_stage_media_tools(MusDesk)
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(MusDeskExportTests tests/ExportTests.cpp)
+    target_link_libraries(MusDeskExportTests PRIVATE musdesk_export SDL3::SDL3 OpenGL::GL)
+    musdesk_copy_runtime_files(MusDeskExportTests)
+    if(TARGET MusDeskMediaTools)
+        add_dependencies(MusDeskExportTests MusDeskMediaTools)
+    endif()
+    add_test(NAME MusDeskExportTimelineTests COMMAND MusDeskExportTests --timeline)
     add_executable(MusDeskPresetTests tests/PresetTests.cpp)
     target_link_libraries(MusDeskPresetTests PRIVATE musdesk_presets SDL3::SDL3)
     musdesk_copy_runtime_files(MusDeskPresetTests)
@@ -178,6 +189,8 @@ if(BUILD_TESTING)
     option(MUSDESK_ENABLE_RENDER_TESTS "Register tests requiring an OpenGL 3.3 graphics driver" OFF)
     if(MUSDESK_ENABLE_RENDER_TESTS)
         add_test(NAME MusDeskRenderTests COMMAND MusDeskRenderTests)
+        add_test(NAME MusDeskExportTests COMMAND MusDeskExportTests)
+        set_tests_properties(MusDeskExportTests PROPERTIES TIMEOUT 180 SKIP_RETURN_CODE 77)
     endif()
     if(MSVC)
         target_compile_options(MusDeskImageTests PRIVATE /utf-8)

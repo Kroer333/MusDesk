@@ -27,6 +27,7 @@ void ArtworkDialog::open(SDL_Window* window, FileDialogKind kind) {
     static constexpr SDL_DialogFileFilter filters[] = {{"PNG / JPEG / WebP artwork", "png;jpg;jpeg;webp"}};
     static constexpr SDL_DialogFileFilter audioFilters[] = {{"MP3 / WAV / OGG audio", "mp3;wav;ogg"}};
     static constexpr SDL_DialogFileFilter jsonFilters[] = {{"MusDesk preset JSON", "json"}};
+    static constexpr SDL_DialogFileFilter videoFilters[] = {{"MP4 video", "mp4"}};
     const auto callback = [](void* userdata, const char* const* files, int) {
         std::unique_ptr<std::shared_ptr<State>> owner(static_cast<std::shared_ptr<State>*>(userdata));
         ArtworkSelection result;
@@ -39,7 +40,9 @@ void ArtworkDialog::open(SDL_Window* window, FileDialogKind kind) {
         (*owner)->selection = std::move(result);
         (*owner)->pending = false;
     };
-    if (kind == FileDialogKind::PresetSave) {
+    if (kind == FileDialogKind::ExportSave) {
+        SDL_ShowSaveFileDialog(callback, callbackState, window, videoFilters, 1, "MusDesk.mp4");
+    } else if (kind == FileDialogKind::PresetSave) {
         SDL_ShowSaveFileDialog(callback, callbackState, window, jsonFilters, 1, "preset.json");
     } else {
         const auto* selectedFilters = kind == FileDialogKind::Audio ? audioFilters

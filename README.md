@@ -2,7 +2,7 @@
 
 **MusDesk** is a planned desktop tool for turning a music track and cover artwork into a vertical, animated music visualizer video for short-form platforms.
 
-> **Project status: configurable audio-reactive preview (M4).** MusDesk imports artwork and audio, renders a vinyl composition, and supports editable Soft Glow / Beat Pulse presets with JSON save/load. The composition is rendered at 1080 × 1920 from an explicit timestamp. MP4 export is not implemented yet.
+> **Project status: MP4 export (M5).** MusDesk imports artwork and audio, renders a vinyl composition, supports editable Soft Glow / Beat Pulse presets with JSON save/load, and exports H.264/AAC MP4 at 1080 × 1920 and 30 FPS.
 
 ## What the app will do
 
@@ -75,7 +75,7 @@ the console; startup failures produce a nonzero exit code.
 - Adjust preview scale, toggle safe-area guides, or press **Reset preview**.
   Guides belong only to the editor; reset preserves artwork and track labels.
   Preview-only settings last for the session; visual presets can be saved as JSON.
-  Export remains disabled.
+  Export uses composition settings and excludes editor guides.
 - Keyboard navigation is enabled: **Tab**, arrow keys, and **Space** can operate
   the controls. The controls panel scrolls when space is limited.
 
@@ -191,6 +191,40 @@ Arguments go directly through SDL's process API without a shell; Unicode paths
 and spaces are supported. Only local files are accepted. Playback requires a
 working audio output device; preparation errors are shown in the panel.
 
+### MP4 export
+
+Import artwork and audio, set the labels and effects, then scroll to **Export MP4**.
+Choose a destination in the native save dialog. FFmpeg must include the `libx264`
+and AAC encoders. Both FFmpeg and ffprobe must be available.
+
+Export pauses monitoring and renders the complete track from zero, regardless of
+the preview position, volume, mute or loop. Composition settings and media imports
+are locked until it finishes; the preview displays frames being exported.
+**Cancel export** stops processing; closing the app also cancels and waits for
+the encoder to stop. Export continues while the window is minimized.
+
+Frames are rendered offscreen at **1080 × 1920**, with timestamps `i / 30.0`.
+The frame count rounds decoded audio duration up to the next 1/30 second; the
+audio tail is padded with silence by less than one frame. FFmpeg reads bottom-up
+RGBA through a pipe, flips the image vertically, encodes H.264 (`yuv420p`, CRF 20,
+fast preset) and AAC stereo (48 kHz, 192 kbit/s), and writes MP4 with fast-start
+metadata. Audio comes from the original imported file, which must remain available
+and unchanged until export ends. Preview gain never modifies the exported audio.
+
+GPU rendering remains on the main thread. A worker writes frames through a
+nonblocking process pipe; a queue holds at most two waiting frames, avoiding
+storage of an entire uncompressed movie. The displayed progress counts frames
+delivered to FFmpeg; final encoding and ffprobe verification follow separately.
+Encoding speed depends on the GPU and CPU and can be slower than real time.
+
+The destination is replaced only after ffprobe verifies both codecs, dimensions,
+pixel format, 30 FPS, frame count, stream start times and durations. Encoding
+uses a uniquely reserved temporary MP4 beside the destination. Cancellation or
+failure removes that temporary file and preserves an existing destination.
+Errors include the encoder's diagnostic output. A stalled pipe/finalization has
+a 120-second timeout; verification has a 30-second timeout. These limits do not
+restrict the overall duration of an export that is progressing.
+
 ### Tests
 
 The default CTest suite checks time formatting, deterministic animation values,
@@ -211,6 +245,15 @@ to the same time. It also checks distinct presets, disabled pulse and identical
 pixels after saving/reloading a preset. It can also run against your own image:
 `MusDeskRenderTests.exe "path/to/artwork.png"`. Pixel equality is checked within
 one graphics context; identical results across different GPU drivers are not guaranteed.
+
+`MusDeskExportTimelineTests` checks frame rounding, timestamp calculation and
+duration limits. With `MUSDESK_ENABLE_RENDER_TESTS=ON`, `MusDeskExportTests` also
+exports a short generated pulse track through the real renderer and FFmpeg,
+checks image orientation and audio pulse timing after decoding, decodes the
+whole MP4, and exercises cancellation, shutdown, process failures and preservation
+of an existing destination. This integration test needs both external tools;
+CTest marks it skipped when they are unavailable. Generated fixtures stay inside
+the ignored build directory.
 
 For a focused audio integration check with installed tools, run
 `MusDeskAudioTests.exe "path/to/track.mp3"`. Multiple audio paths can be supplied.

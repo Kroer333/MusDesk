@@ -4,6 +4,7 @@
 #include "musdesk/media/AudioImporter.hpp"
 #include "musdesk/audio/AudioPlayer.hpp"
 #include "musdesk/presets/PresetStore.hpp"
+#include "musdesk/export/ExportEngine.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_opengl3.h>
@@ -158,6 +159,8 @@ int main(int argc, char* argv[]) {
         musdesk::ArtworkDialog audioDialog;
         musdesk::ArtworkDialog presetOpenDialog;
         musdesk::ArtworkDialog presetSaveDialog;
+        musdesk::ArtworkDialog exportDialog;
+        std::unique_ptr<musdesk::ExportEngine> exporter;
         auto importPreset = [&](const std::string& path) {
             editorState.presetStatus.clear();
             try {
@@ -222,7 +225,7 @@ int main(int argc, char* argv[]) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", error.what());
         };
         auto refreshPlayback = [&] {
-            if (!editorState.audioReady) return;
+            if (!editorState.audioReady || editorState.exportActive) return;
             try {
                 auto playback = audioPlayer.state();
                 if (playback.ended && editorState.audioPlaying && editorState.loopAudio && !editorState.audioSeeking) {
@@ -243,7 +246,8 @@ int main(int argc, char* argv[]) {
                 ImGui_ImplSDL3_ProcessEvent(&event);
                 if (event.type == SDL_EVENT_DROP_FILE && event.drop.data != nullptr
                     && event.drop.windowID == SDL_GetWindowID(resources.window)) {
-                    if (isJsonPath(event.drop.data)) importPreset(event.drop.data);
+                    if (editorState.exportBusy) editorState.exportStatus = "Finish or cancel export before importing files.";
+                    else if (isJsonPath(event.drop.data)) importPreset(event.drop.data);
                     else if (musdesk::isAudioPath(event.drop.data)) importAudio(event.drop.data);
                     else importArtwork(event.drop.data);
                 }
@@ -334,9 +338,51 @@ int main(int argc, char* argv[]) {
                 }
             }
             editorState.presetDialogPending = presetOpenDialog.pending() || presetSaveDialog.pending();
+            if (auto selection = exportDialog.takeSelection()) {
+                editorState.exportError = false;
+                if (!selection->error.empty()) {
+                    editorState.exportStatus = selection->error;
+                    editorState.exportError = true;
+                } else if (!selection->path.empty()) {
+                    try {
+                        auto path = selection->path;
+                        const auto slash = path.find_last_of("/\\");
+                        const auto dot = path.find_last_of('.');
+                        if (dot == std::string::npos || (slash != std::string::npos && dot < slash)) path += ".mp4";
+                        if (!audioClip || editorState.artworkName.empty()) throw std::runtime_error("Import artwork and audio before exporting.");
+                        audioPlayer.pause();
+                        editorState.audioPlaying = false;
+                        editorState.audioSeeking = false;
+                        resumeAfterSeek = false;
+                        const musdesk::CompositionSettings settings{editorState.title.data(), editorState.artist.data(),
+                            audioClip->durationSeconds(), editorState.preset};
+                        exporter = std::make_unique<musdesk::ExportEngine>(composition, settings, audioClip, mediaTools, path);
+                    } catch (const std::exception& error) {
+                        editorState.exportStatus = error.what();
+                        editorState.exportError = true;
+                    }
+                }
+            }
+            editorState.exportDialogPending = exportDialog.pending();
+            if (exporter) {
+                exporter->update();
+                const auto status = exporter->status();
+                editorState.exportActive = status.active();
+                editorState.exportProgress = status.phase == musdesk::ExportPhase::Completed ? 1.0f
+                    : std::min(0.98f, static_cast<float>(status.framesWritten) / static_cast<float>(status.totalFrames));
+                editorState.exportStatus = status.phase == musdesk::ExportPhase::Verifying ? "Verifying MP4 with ffprobe..."
+                    : status.phase == musdesk::ExportPhase::Encoding ? "Encoding frame " + std::to_string(status.framesWritten)
+                        + " / " + std::to_string(status.totalFrames) : status.message;
+                editorState.exportError = status.phase == musdesk::ExportPhase::Failed;
+                if (!status.active()) {
+                    SDL_Log("%s", editorState.exportStatus.c_str());
+                    exporter.reset();
+                }
+            }
+            editorState.exportBusy = editorState.exportActive || editorState.exportDialogPending;
             refreshPlayback();
             if ((SDL_GetWindowFlags(resources.window) & SDL_WINDOW_MINIMIZED) != 0) {
-                SDL_Delay(50);
+                SDL_Delay(editorState.exportActive ? 2 : 50);
                 continue;
             }
 
@@ -365,7 +411,7 @@ int main(int argc, char* argv[]) {
             const float beforeVolume = editorState.previewVolume;
             const bool beforeMute = editorState.muteAudio;
             musdesk::drawEditorUi(editorState, composition.textureId());
-            if (editorState.audioReady && !io.WantCaptureKeyboard) {
+            if (editorState.audioReady && !editorState.exportBusy && !io.WantCaptureKeyboard) {
                 if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) editorState.requestPlayPause = true;
                 const double shift = (ImGui::IsKeyPressed(ImGuiKey_RightArrow) ? 5.0 : 0)
                     - (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) ? 5.0 : 0);
@@ -428,9 +474,26 @@ int main(int argc, char* argv[]) {
                     presetSaveDialog.open(resources.window, musdesk::FileDialogKind::PresetSave);
                 } catch (const std::exception& error) { editorState.presetError = error.what(); }
             }
+            if (editorState.requestCancelExport) {
+                editorState.requestCancelExport = false;
+                if (exporter) exporter->cancel();
+            }
+            if (editorState.requestExport) {
+                editorState.requestExport = false;
+                try {
+                    musdesk::validatePreset(editorState.preset);
+                    exportDialog.open(resources.window, musdesk::FileDialogKind::ExportSave);
+                    editorState.exportBusy = editorState.exportDialogPending = exportDialog.pending();
+                    editorState.exportStatus.clear();
+                    editorState.exportError = false;
+                } catch (const std::exception& error) {
+                    editorState.exportStatus = error.what();
+                    editorState.exportError = true;
+                }
+            }
             const musdesk::CompositionSettings settings{editorState.title.data(), editorState.artist.data(),
                 editorState.durationSeconds, editorState.preset};
-            composition.renderFrame(editorState.timeSeconds, settings, editorState.audioEnergy);
+            if (!editorState.exportActive) composition.renderFrame(editorState.timeSeconds, settings, editorState.audioEnergy);
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             if (!SDL_GL_SwapWindow(resources.window)) {
