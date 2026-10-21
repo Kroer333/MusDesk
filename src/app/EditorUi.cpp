@@ -1,4 +1,5 @@
 #include "EditorUi.hpp"
+#include "musdesk/core/TimeFormat.hpp"
 
 #include <imgui.h>
 
@@ -29,35 +30,65 @@ void drawControls(EditorUiState& state) {
     if (state.toolsChecked && (!state.ffmpegReady || !state.ffprobeReady)) {
         ImGui::TextWrapped("Tools: MUSDESK_FFMPEG_DIR, executable directory, or PATH. Restart after installing.");
     }
-    ImGui::BeginDisabled(!state.ffprobeReady || state.audioDialogPending || state.artworkDialogPending || state.audioImportPending);
-    const char* audioButton = state.audioImportPending ? "Reading audio..."
+    ImGui::BeginDisabled(!state.ffprobeReady || !state.ffmpegReady || state.audioDialogPending || state.artworkDialogPending || state.audioImportPending);
+    const char* audioButton = state.audioImportPending ? "Preparing audio..."
         : (state.audioDialogPending ? "Choosing audio..." : "Import audio");
     if (ImGui::Button(audioButton, ImVec2(-1, 0))) {
         state.requestAudio = true;
     }
     ImGui::EndDisabled();
+    if (state.audioImportPending) {
+        ImGui::TextWrapped("Decoding audio and analyzing energy...");
+        if (ImGui::Button("Cancel import", ImVec2(-1, 0))) state.requestCancelAudio = true;
+    }
     if (!state.audioName.empty()) ImGui::TextWrapped("%s", state.audioName.c_str());
     if (!state.audioError.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.55f, 0.45f, 1));
         ImGui::TextWrapped("%s", state.audioError.c_str());
         ImGui::PopStyleColor();
     }
+    if (state.audioReady) {
+        ImGui::SeparatorText("Preview audio");
+        if (ImGui::Button(state.audioPlaying ? "Pause" : "Play")) state.requestPlayPause = true;
+        ImGui::SameLine();
+        if (ImGui::Button("Restart")) state.requestRestart = true;
+        const auto position = formatTime(static_cast<std::uint64_t>(state.timeSeconds));
+        const auto duration = formatTime(static_cast<std::uint64_t>(state.durationSeconds));
+        ImGui::Text("%s / %s", position.c_str(), duration.c_str());
+        const double start = 0;
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::SliderScalar("##AudioTime", ImGuiDataType_Double, &state.timeSeconds,
+                &start, &state.durationSeconds, "%.2f s", ImGuiSliderFlags_AlwaysClamp)) state.seekAudio = true;
+        if (ImGui::IsItemActivated()) {
+            state.beginAudioSeek = true;
+            state.audioSeeking = true;
+        }
+        if (ImGui::IsItemDeactivated()) {
+            state.endAudioSeek = true;
+            state.audioSeeking = false;
+        }
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderFloat("##Volume", &state.previewVolume, 0, 100, "Volume: %.0f%%", ImGuiSliderFlags_AlwaysClamp);
+        ImGui::Checkbox("Mute", &state.muteAudio);
+        ImGui::SameLine();
+        ImGui::Checkbox("Loop", &state.loopAudio);
+        ImGui::ProgressBar(state.audioEnergy, ImVec2(-1, 0), "Audio energy");
+        ImGui::TextDisabled("Volume affects monitoring only.");
+    }
     ImGui::SeparatorText("Track labels");
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##Title", "Track title", state.title.data(), state.title.size());
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##Artist", "Artist name", state.artist.data(), state.artist.size());
-    ImGui::SeparatorText("Composition time");
-    ImGui::Checkbox("Animate preview", &state.animatePreview);
-    ImGui::SetNextItemWidth(-1);
-    const double start = 0;
-    if (ImGui::SliderScalar("##Time", ImGuiDataType_Double, &state.timeSeconds,
-            &start, &state.durationSeconds, "Time: %.2f s", ImGuiSliderFlags_AlwaysClamp)) {
-        state.animatePreview = false;
-    }
-    ImGui::SetNextItemWidth(-1);
+    ImGui::SeparatorText("Composition");
     if (state.audioPath.empty()) {
+        ImGui::Checkbox("Animate demo", &state.animatePreview);
+        ImGui::SetNextItemWidth(-1);
+        const double start = 0;
+        if (ImGui::SliderScalar("##Time", ImGuiDataType_Double, &state.timeSeconds,
+                &start, &state.durationSeconds, "Time: %.2f s", ImGuiSliderFlags_AlwaysClamp)) state.animatePreview = false;
         const double minDuration = 10, maxDuration = 600;
+        ImGui::SetNextItemWidth(-1);
         ImGui::SliderScalar("##Duration", ImGuiDataType_Double, &state.durationSeconds,
             &minDuration, &maxDuration, "Demo length: %.0f s", ImGuiSliderFlags_AlwaysClamp);
     } else {
@@ -68,7 +99,7 @@ void drawControls(EditorUiState& state) {
     ImGui::SliderFloat("##Rotation", &state.discRpm, 0, 45, "Rotation: %.1f RPM", ImGuiSliderFlags_AlwaysClamp);
     ImGui::TextWrapped(state.audioPath.empty()
         ? "Time and duration are a visual demo; no audio is loaded."
-        : "Duration comes from audio metadata. Preview is silent; audio playback is not available yet.");
+        : "Audio and visuals share the playback timeline. Controls are editor-only.");
     ImGui::Spacing();
 
     ImGui::SeparatorText("Preview settings");

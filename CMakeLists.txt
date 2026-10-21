@@ -67,6 +67,7 @@ target_link_libraries(musdesk_imgui PRIVATE SDL3::SDL3 OpenGL::GL)
 add_library(musdesk_core STATIC
     src/core/TimeFormat.cpp
     src/core/Composition.cpp
+    src/core/AudioAnalysis.cpp
 )
 
 target_include_directories(musdesk_core PUBLIC
@@ -76,7 +77,11 @@ target_include_directories(musdesk_core PUBLIC
 add_library(musdesk_media STATIC src/media/ImageLoader.cpp src/media/AudioImporter.cpp)
 target_include_directories(musdesk_media PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_include_directories(musdesk_media SYSTEM PRIVATE "${stb_SOURCE_DIR}")
-target_link_libraries(musdesk_media PRIVATE SDL3::SDL3 webpdecoder)
+target_link_libraries(musdesk_media PUBLIC musdesk_core PRIVATE SDL3::SDL3 webpdecoder)
+
+add_library(musdesk_audio STATIC src/audio/AudioPlayer.cpp)
+target_include_directories(musdesk_audio PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(musdesk_audio PUBLIC musdesk_media PRIVATE SDL3::SDL3)
 
 add_library(musdesk_render STATIC src/render/VisualizerRenderer.cpp)
 target_include_directories(musdesk_render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -88,7 +93,7 @@ add_executable(MusDesk
     src/app/EditorUi.cpp
     src/app/ArtworkDialog.cpp
 )
-target_link_libraries(MusDesk PRIVATE musdesk_render musdesk_imgui SDL3::SDL3 OpenGL::GL)
+target_link_libraries(MusDesk PRIVATE musdesk_render musdesk_audio musdesk_imgui SDL3::SDL3 OpenGL::GL)
 
 function(musdesk_copy_runtime_files target)
     add_custom_command(TARGET ${target} POST_BUILD
@@ -111,6 +116,16 @@ musdesk_copy_runtime_files(MusDesk)
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(MusDeskAnalysisTests tests/AudioAnalysisTests.cpp)
+    target_link_libraries(MusDeskAnalysisTests PRIVATE musdesk_core)
+    add_test(NAME MusDeskAnalysisTests COMMAND MusDeskAnalysisTests)
+
+    add_executable(MusDeskPlaybackTests tests/AudioPlayerTests.cpp)
+    target_link_libraries(MusDeskPlaybackTests PRIVATE musdesk_audio SDL3::SDL3)
+    musdesk_copy_runtime_files(MusDeskPlaybackTests)
+    add_test(NAME MusDeskPlaybackTests COMMAND MusDeskPlaybackTests)
+    set_tests_properties(MusDeskPlaybackTests PROPERTIES ENVIRONMENT "SDL_AUDIO_DRIVER=dummy")
+
     add_executable(MusDeskAudioTests tests/AudioImporterTests.cpp)
     target_link_libraries(MusDeskAudioTests PRIVATE musdesk_media SDL3::SDL3)
     musdesk_copy_runtime_files(MusDeskAudioTests)

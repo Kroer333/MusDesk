@@ -28,6 +28,19 @@ struct EditorUiState {
     std::string audioPath;
     std::string audioName;
     std::string audioError;
+    bool audioReady = false;
+    bool audioPlaying = false;
+    bool audioSeeking = false;
+    bool requestPlayPause = false;
+    bool requestRestart = false;
+    bool requestCancelAudio = false;
+    bool beginAudioSeek = false;
+    bool seekAudio = false;
+    bool endAudioSeek = false;
+    bool loopAudio = false;
+    bool muteAudio = false;
+    float previewVolume = 75;
+    float audioEnergy = 0;
 };
 
 void configureEditorStyle(float displayScale);

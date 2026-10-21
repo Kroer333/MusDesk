@@ -97,6 +97,7 @@ uniform float backgroundAngle;
 uniform float backgroundZoom;
 uniform vec2 backgroundOffset;
 uniform float progress;
+uniform float audioEnergy;
 
 vec2 rotatePoint(vec2 p, float angle) {
     float c = cos(angle), s = sin(angle);
@@ -131,8 +132,10 @@ void main() {
     vec2 material = rotatePoint(discPoint,-discAngle);
     float phi = atan(material.y,material.x);
     vec3 accent = vec3(0.24,0.60,1.0);
-    // A constant rim in M2; audio will modulate it in a later stage.
-    color += accent * (0.25*exp(-abs(r-1.0)*24.0) + 0.65*exp(-abs(r-1.0)*180.0));
+    float rimRadius = 1.0 + 0.025*audioEnergy;
+    float rimDistance = abs(r-rimRadius);
+    color += accent * (1.0+2.0*audioEnergy)
+        * (0.25*exp(-rimDistance*(24.0-8.0*audioEnergy)) + 0.65*exp(-rimDistance*180.0));
     if (r < 1.0) {
         float grooves = 0.009*sin(r*950.0) + 0.006*sin(r*420.0);
         float reflection = pow(abs(cos(phi-0.5)),22.0)*0.10;
@@ -373,7 +376,7 @@ void VisualizerRenderer::setArtwork(const ImageData& image) {
     impl_->imageAspect = static_cast<float>(image.width) / image.height;
 }
 
-void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettings& settings) {
+void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettings& settings, float audioEnergy) {
     auto& gl = impl_->gl;
     const auto frame = compositionAt(timeSeconds, settings);
     GLint oldFramebuffer = 0;
@@ -401,6 +404,7 @@ void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettin
     scalar("backgroundAngle", frame.backgroundAngleRadians);
     scalar("backgroundZoom", frame.backgroundZoom);
     scalar("progress", frame.progress);
+    scalar("audioEnergy", std::isfinite(audioEnergy) ? std::clamp(audioEnergy, 0.0f, 1.0f) : 0);
     gl.Uniform2f(gl.GetUniformLocation(impl_->sceneProgram, "backgroundOffset"),
         static_cast<float>(frame.backgroundOffsetX), static_cast<float>(frame.backgroundOffsetY));
     gl.BindVertexArray(impl_->sceneVao);

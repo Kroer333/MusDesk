@@ -51,6 +51,12 @@ int main(int argc, char* argv[]) {
         require(first != different, "Different timestamps must change the composition");
         renderer.renderFrame(0, settings);
         require(first == renderer.readPixels(), "Seeking back must reproduce identical pixels");
+        renderer.renderFrame(0, settings, 1);
+        const auto reactive = renderer.readPixels();
+        require(first != reactive, "Audio energy must change the rim at the same timestamp");
+        renderer.renderFrame(10, settings, 0.2f);
+        renderer.renderFrame(0, settings, 1);
+        require(reactive == renderer.readPixels(), "Audio-reactive rendering must be repeatable after seeking");
         bool rejected = false;
         try { renderer.setArtwork({}); } catch (const std::exception&) { rejected = true; }
         require(rejected, "Invalid replacement must be rejected");

@@ -2,7 +2,7 @@
 
 **MusDesk** is a planned desktop tool for turning a music track and cover artwork into a vertical, animated music visualizer video for short-form platforms.
 
-> **Project status: composition preview and audio metadata import (M3 in progress).** MusDesk imports PNG, JPEG and still WebP artwork and renders a rotating vinyl record, gently blurred moving background, blue rim, editable track labels and progress bar. MP3/WAV/OGG import reads track duration through ffprobe. The composition is rendered at 1080 × 1920 from an explicit timestamp. Audio playback, audio-reactive effects and MP4 export are not implemented yet.
+> **Project status: audio-reactive composition preview (M3).** MusDesk imports PNG, JPEG and still WebP artwork, plays MP3/WAV/OGG audio, and renders a rotating vinyl record, gently blurred moving background, audio-reactive blue rim, editable track labels and progress bar. The composition is rendered at 1080 × 1920 from an explicit timestamp. Presets and MP4 export are not implemented yet.
 
 ## What the app will do
 
@@ -66,10 +66,10 @@ the console; startup failures produce a nonzero exit code.
   1080 × 1920 format.
 - Artwork fills the background and circular label through centered cropping,
   preserving its proportions. The record and label rotate together. The blue
-  rim is static until audio analysis is added.
-- Edit title, artist, rotation speed and preview time in the left panel. Seeking
-  stops automatic animation. Without audio, a demo length can be adjusted;
-  importing audio replaces it with the measured duration. The composition
+  rim expands and brightens with the precomputed audio energy.
+- Edit title, artist, rotation speed and preview time in the left panel.
+  Without audio, a demo length can be adjusted;
+  importing audio replaces it with the decoded duration. The composition
   contains no player transport buttons.
 - Adjust preview scale, toggle safe-area guides, or press **Reset preview**.
   Guides belong only to the editor; reset preserves artwork and track labels.
@@ -97,20 +97,45 @@ The panel reports missing or unusable tools without preventing artwork editing.
 
 Use **Import audio**, drop an MP3/WAV/OGG file, or launch with
 `MusDesk.exe --audio "path/to/track.mp3"`. `--artwork` and `--audio` can be combined.
-Only ffprobe is needed for metadata import; FFmpeg will be used by later audio
-and export stages. Import checks for an audio stream and a finite, positive
-container duration. Failed replacements preserve the previous audio and duration.
-Detection and probing run outside the render loop, with a 15-second limit per
-process and bounded output. Arguments are passed directly through SDL's process
-API without a shell; Unicode paths and spaces are supported. Only local files
-are accepted. The preview remains silent; duration metadata alone does not
-guarantee sample-accurate synchronization or validate the complete audio stream.
+Both tools are needed for preview import. ffprobe validates metadata; FFmpeg
+decodes the first audio stream to 48 kHz stereo signed 16-bit PCM. The timeline
+uses decoded sample count, which can differ slightly from container duration
+because of codec padding. Failed or cancelled imports preserve the previous clip.
+Detection, decoding and analysis run outside the render loop. Use **Cancel import**
+to stop preparation; closing the editor also requests cancellation.
+
+Imported audio starts paused. In **Preview audio**, use **Play/Pause**, **Restart**,
+the seek slider, **Volume**, **Mute** and optional **Loop**. Dragging the timeline
+temporarily pauses audio and resumes it on release if it was playing. Seeking
+while paused keeps it paused. Without Loop, playback stops at the end; Play then
+starts again from the beginning. Space toggles playback and Left/Right seek five
+seconds when keyboard input is not captured by an editor control.
+
+SDL requests PCM samples on its audio thread. Preview time follows consumed
+input frames instead of a separate wall clock, avoiding cumulative audio/video
+drift. Output-device buffering can introduce a small latency; sample-accurate
+hardware presentation timing is not guaranteed. Audio continues while the window
+is minimized, with rendering suspended. Volume and mute affect monitoring only.
+
+RMS measures both stereo channels in 20 ms windows, normalizes energy against the
+track peak with a minimum reference level, and applies 30 ms attack / 180 ms
+release smoothing. The envelope is interpolated at the requested timestamp;
+seeking reproduces the same rim, and pausing freezes the matching frame. This is
+an energy visualizer rather than a beat detector or frequency spectrum.
+
+PCM stays in memory for immediate seeking. Preview currently accepts tracks up
+to 20 minutes, with a corresponding PCM byte limit and a 120-second decode limit.
+Metadata/version processes retain a 15-second limit and 64 KiB output limit.
+Arguments go directly through SDL's process API without a shell; Unicode paths
+and spaces are supported. Only local files are accepted. Playback requires a
+working audio output device; preparation errors are shown in the panel.
 
 ### Tests
 
 The default CTest suite checks time formatting, deterministic animation values,
 PNG/JPEG/WebP decoding, Unicode paths, alpha, malformed input and missing-tool
-audio diagnostics. To also register
+audio diagnostics, RMS smoothing and playback state using SDL's silent dummy
+audio driver. To also register
 the integration test requiring an OpenGL 3.3 graphics driver:
 
 ```powershell
@@ -127,8 +152,10 @@ one graphics context; identical results across different GPU drivers are not gua
 
 For a focused audio integration check with installed tools, run
 `MusDeskAudioTests.exe "path/to/track.mp3"`. Multiple audio paths can be supplied.
-This checks detection, duration probing, missing files and damaged input without
-opening the editor.
+This checks detection, metadata, full PCM decoding, RMS generation, missing files
+and damaged input without opening the editor. `MusDeskPlaybackTests` exercises
+play/pause, sample-position seeks, end/restart, gain and invalid replacement;
+CTest selects the dummy audio driver for this test.
 
 ### MSVC debug-information troubleshooting
 

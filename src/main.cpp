@@ -2,6 +2,7 @@
 #include "app/ArtworkDialog.hpp"
 #include "musdesk/render/VisualizerRenderer.hpp"
 #include "musdesk/media/AudioImporter.hpp"
+#include "musdesk/audio/AudioPlayer.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_opengl3.h>
@@ -17,6 +18,10 @@
 #include <string>
 #include <chrono>
 #include <future>
+#include <stop_token>
+#include <algorithm>
+#include <memory>
+#include <stdexcept>
 
 namespace {
 struct ApplicationResources {
@@ -55,6 +60,11 @@ int reportSdlFailure(const char* operation) {
     SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s: %s", operation, SDL_GetError());
     return EXIT_FAILURE;
 }
+
+struct StopImportOnExit {
+    std::stop_source& source;
+    ~StopImportOnExit() { source.request_stop(); }
+};
 }
 
 int main(int argc, char* argv[]) {
@@ -134,8 +144,14 @@ int main(int argc, char* argv[]) {
         musdesk::ArtworkDialog artworkDialog;
         musdesk::ArtworkDialog audioDialog;
         musdesk::MediaTools mediaTools;
+        musdesk::AudioPlayer audioPlayer;
+        audioPlayer.setVolume(editorState.previewVolume / 100);
+        std::shared_ptr<const musdesk::DecodedAudio> audioClip;
         auto toolsFuture = std::async(std::launch::async, musdesk::detectMediaTools);
-        std::future<musdesk::AudioMetadata> audioFuture;
+        std::stop_source audioCancellation;
+        std::future<std::shared_ptr<const musdesk::DecodedAudio>> audioFuture;
+        StopImportOnExit stopImport{audioCancellation};
+        bool resumeAfterSeek = false;
         auto importAudio = [&](const std::string& path) {
             if (!editorState.toolsChecked) {
                 startupAudio = path;
@@ -147,7 +163,11 @@ int main(int argc, char* argv[]) {
             }
             editorState.audioError.clear();
             editorState.audioImportPending = true;
-            audioFuture = std::async(std::launch::async, musdesk::importAudio, path, mediaTools);
+            audioCancellation = std::stop_source{};
+            audioFuture = std::async(std::launch::async, [path, tools = mediaTools, token = audioCancellation.get_token()]
+                    () -> std::shared_ptr<const musdesk::DecodedAudio> {
+                return std::make_shared<musdesk::DecodedAudio>(musdesk::prepareAudio(path, tools, token));
+            });
         };
         auto importArtwork = [&](const std::string& path) {
             try {
@@ -166,6 +186,26 @@ int main(int argc, char* argv[]) {
         if (!startupArtwork.empty()) importArtwork(startupArtwork);
         double anchorTime = 0;
         Uint64 anchorTicks = SDL_GetTicksNS();
+        auto playbackError = [&](const std::exception& error) {
+            editorState.audioError = error.what();
+            editorState.audioPlaying = false;
+            editorState.audioReady = false;
+            try { audioPlayer.pause(); } catch (const std::exception&) {}
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", error.what());
+        };
+        auto refreshPlayback = [&] {
+            if (!editorState.audioReady) return;
+            try {
+                auto playback = audioPlayer.state();
+                if (playback.ended && editorState.audioPlaying && editorState.loopAudio && !editorState.audioSeeking) {
+                    audioPlayer.play();
+                    playback = audioPlayer.state();
+                }
+                if (!editorState.audioSeeking) editorState.timeSeconds = playback.timeSeconds;
+                editorState.audioPlaying = playback.playing;
+                editorState.audioEnergy = audioClip->envelope.at(editorState.timeSeconds);
+            } catch (const std::exception& error) { playbackError(error); }
+        };
 
         bool running = true;
         while (running) {
@@ -210,17 +250,27 @@ int main(int argc, char* argv[]) {
             if (audioFuture.valid() && audioFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
                 try {
                     const auto audio = audioFuture.get();
-                    editorState.audioPath = audio.path;
-                    const auto slash = audio.path.find_last_of("/\\");
-                    editorState.audioName = audio.path.substr(slash == std::string::npos ? 0 : slash + 1);
-                    editorState.durationSeconds = audio.durationSeconds;
+                    if (audioCancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
+                    audioPlayer.load(audio);
+                    audioClip = audio;
+                    editorState.audioPath = audio->path;
+                    const auto slash = audio->path.find_last_of("/\\");
+                    editorState.audioName = audio->path.substr(slash == std::string::npos ? 0 : slash + 1);
+                    editorState.durationSeconds = audio->durationSeconds();
                     editorState.timeSeconds = 0;
+                    editorState.audioReady = true;
+                    editorState.audioPlaying = false;
+                    editorState.audioSeeking = false;
+                    editorState.animatePreview = false;
+                    resumeAfterSeek = false;
                     anchorTime = 0;
                     anchorTicks = SDL_GetTicksNS();
-                    SDL_Log("Audio imported: %.3f seconds", audio.durationSeconds);
+                    SDL_Log("Audio ready: %.3f seconds, %zu RMS values", audio->durationSeconds(), audio->envelope.values.size());
                 } catch (const std::exception& error) {
-                    editorState.audioError = error.what();
-                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", error.what());
+                    if (!audioCancellation.stop_requested()) {
+                        editorState.audioError = error.what();
+                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", error.what());
+                    }
                 }
                 editorState.audioImportPending = false;
             }
@@ -234,6 +284,7 @@ int main(int argc, char* argv[]) {
                 else if (!selection->path.empty()) importAudio(selection->path);
             }
             editorState.audioDialogPending = audioDialog.pending();
+            refreshPlayback();
             if ((SDL_GetWindowFlags(resources.window) & SDL_WINDOW_MINIMIZED) != 0) {
                 SDL_Delay(50);
                 continue;
@@ -255,13 +306,55 @@ int main(int argc, char* argv[]) {
             ImGui_ImplSDL3_NewFrame();
             ImGui::NewFrame();
             const Uint64 now = SDL_GetTicksNS();
-            if (editorState.animatePreview) {
+            if (editorState.audioPath.empty() && editorState.animatePreview) {
                 editorState.timeSeconds = std::fmod(anchorTime + (now - anchorTicks) / 1.0e9,
                     editorState.durationSeconds);
             }
             const bool wasAnimating = editorState.animatePreview;
             const double beforeUiTime = editorState.timeSeconds;
+            const float beforeVolume = editorState.previewVolume;
+            const bool beforeMute = editorState.muteAudio;
             musdesk::drawEditorUi(editorState, composition.textureId());
+            if (editorState.audioReady && !io.WantCaptureKeyboard) {
+                if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) editorState.requestPlayPause = true;
+                const double shift = (ImGui::IsKeyPressed(ImGuiKey_RightArrow) ? 5.0 : 0)
+                    - (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) ? 5.0 : 0);
+                if (shift != 0) {
+                    editorState.timeSeconds = std::clamp(editorState.timeSeconds + shift, 0.0, editorState.durationSeconds);
+                    editorState.seekAudio = true;
+                }
+            }
+            if (editorState.requestCancelAudio) {
+                editorState.requestCancelAudio = false;
+                audioCancellation.request_stop();
+            }
+            try {
+                if (beforeVolume != editorState.previewVolume || beforeMute != editorState.muteAudio)
+                    audioPlayer.setVolume(editorState.muteAudio ? 0 : editorState.previewVolume / 100);
+                if (editorState.audioReady) {
+                    if (editorState.beginAudioSeek) {
+                        resumeAfterSeek = audioPlayer.state().playing;
+                        audioPlayer.pause();
+                        editorState.audioPlaying = false;
+                    }
+                    if (editorState.seekAudio) audioPlayer.seek(editorState.timeSeconds);
+                    if (editorState.endAudioSeek && resumeAfterSeek && editorState.timeSeconds < editorState.durationSeconds)
+                        audioPlayer.play();
+                    if (editorState.requestPlayPause) {
+                        if (audioPlayer.state().playing) {
+                            audioPlayer.pause();
+                            editorState.audioPlaying = false;
+                        } else audioPlayer.play();
+                    }
+                    if (editorState.requestRestart) {
+                        audioPlayer.seek(0);
+                        audioPlayer.play();
+                    }
+                }
+            } catch (const std::exception& error) { playbackError(error); }
+            editorState.beginAudioSeek = editorState.seekAudio = editorState.endAudioSeek = false;
+            editorState.requestPlayPause = editorState.requestRestart = false;
+            refreshPlayback();
             if (wasAnimating != editorState.animatePreview || beforeUiTime != editorState.timeSeconds) {
                 anchorTime = editorState.timeSeconds;
                 anchorTicks = now;
@@ -276,7 +369,7 @@ int main(int argc, char* argv[]) {
             }
             const musdesk::CompositionSettings settings{editorState.title.data(), editorState.artist.data(),
                 editorState.durationSeconds, editorState.discRpm};
-            composition.renderFrame(editorState.timeSeconds, settings);
+            composition.renderFrame(editorState.timeSeconds, settings, editorState.audioEnergy);
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             if (!SDL_GL_SwapWindow(resources.window)) {

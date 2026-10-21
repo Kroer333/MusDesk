@@ -33,6 +33,13 @@ int main(int argc, char* argv[]) {
                 const auto audio = musdesk::importAudio(argv[i], tools);
                 require(std::isfinite(audio.durationSeconds) && audio.durationSeconds > 0, "Positive duration expected");
                 std::cout << "Audio duration: " << audio.durationSeconds << " seconds\n";
+                const auto decoded = musdesk::prepareAudio(argv[i], tools);
+                require(!decoded.samples.empty() && std::abs(decoded.durationSeconds() - audio.durationSeconds) < 1,
+                    "Decoded PCM duration must agree with container metadata within codec padding");
+                require(!decoded.envelope.values.empty(), "Decoded audio must include the RMS envelope");
+                const auto energy = decoded.envelope.at(decoded.durationSeconds() / 2);
+                require(std::isfinite(energy) && energy >= 0 && energy <= 1, "Invalid decoded envelope");
+                std::cout << "Decoded duration: " << decoded.durationSeconds() << " seconds; RMS windows: " << decoded.envelope.values.size() << '\n';
             }
             rejected = false;
             try { (void)musdesk::importAudio("nonexistent-audio-file.mp3", tools); }
