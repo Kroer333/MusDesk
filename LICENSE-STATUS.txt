@@ -1,0 +1,10 @@
+MusDesk 0.1.0 - local evaluation build
+
+A license for MusDesk's own source code has not been selected.
+This package is prepared only for local evaluation. No redistribution license
+for MusDesk is granted by this notice.
+
+Third-party components retain their respective licenses and notices.
+See THIRD_PARTY_NOTICES.md and the licenses directory.
+Optional FFmpeg executables are independent external tools; their license
+depends on the selected build. Public distribution has not been prepared.

@@ -175,12 +175,12 @@ void drawControls(EditorUiState& state) {
     ImGui::SetNextItemWidth(-1);
     ImGui::Combo("##ExportEncoder", &state.exportEncoder, "Automatic (GPU / CPU)\0CPU (veryfast)\0");
     ImGui::EndDisabled();
-    const bool ready = state.audioReady && !state.artworkName.empty() && state.ffmpegReady && state.ffprobeReady;
+    const bool ready = state.exportBlockedReason.empty();
     ImGui::BeginDisabled(!ready || state.exportBusy || state.audioImportPending || state.artworkDialogPending
         || state.audioDialogPending || state.presetDialogPending);
     if (ImGui::Button("Export MP4", ImVec2(-1, 0))) state.requestExport = true;
     ImGui::EndDisabled();
-    if (!ready) ImGui::TextWrapped("Import artwork and audio; FFmpeg and ffprobe are required.");
+    if (!ready) ImGui::TextWrapped("%s", state.exportBlockedReason.c_str());
     if (state.exportDialogPending) ImGui::TextUnformatted("Choosing export destination...");
     if (state.exportActive) {
         ImGui::ProgressBar(state.exportProgress, ImVec2(-1, 0));
@@ -263,7 +263,7 @@ void drawEditorUi(EditorUiState& state, std::uint32_t compositionTexture) {
         | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
         | ImGuiWindowFlags_NoBringToFrontOnFocus;
     if (ImGui::Begin("MusDesk workspace", nullptr, flags)) {
-        ImGui::TextUnformatted("MusDesk");
+        ImGui::TextUnformatted("MusDesk " MUSDESK_VERSION);
         ImGui::SameLine();
         ImGui::TextDisabled("Music visualizer");
         ImGui::Separator();

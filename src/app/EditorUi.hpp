@@ -25,6 +25,7 @@ struct EditorUiState {
     bool requestArtwork = false;
     bool artworkDialogPending = false;
     std::string artworkName;
+    std::string artworkPath;
     std::string importError;
     bool requestAudio = false;
     bool audioDialogPending = false;
@@ -58,6 +59,7 @@ struct EditorUiState {
     std::string exportStatus;
     bool exportError = false;
     int exportEncoder = 0;
+    std::string exportBlockedReason;
 };
 
 void configureEditorStyle(float displayScale);

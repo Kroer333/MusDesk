@@ -1,10 +1,40 @@
 # MusDesk
 
-**MusDesk** is a planned desktop tool for turning a music track and cover artwork into a vertical, animated music visualizer video for short-form platforms.
+**MusDesk** is a desktop tool for turning a music track and cover artwork into a vertical, animated music visualizer video for short-form platforms.
 
-> **Project status: MP4 export (M5).** MusDesk imports artwork and audio, renders a vinyl composition, supports editable Soft Glow / Beat Pulse presets with JSON save/load, and exports H.264/AAC MP4 at 1080 × 1920 and 30 FPS.
+> **Version 0.1.0 — local evaluation (M6).** Artwork/audio import, editable presets and 1080 × 1920 / 30 FPS H.264/AAC export are implemented. This is a local evaluation build; no public release or license for MusDesk's own code has been selected.
 
-## What the app will do
+## Local evaluation ZIP
+
+Build and package from a Visual Studio Developer PowerShell:
+
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release --parallel 1 -- /nr:false
+ctest --test-dir build -C Release --output-on-failure
+cpack --config build/CPackConfig.cmake -C Release -D CPACK_PACKAGE_CHECKSUM=SHA256
+```
+
+The ZIP and checksum are placed in `build/packages`. Extract the entire folder
+to a writable local directory and run `MusDesk.exe`; keep `SDL3.dll`, the MSVC
+runtime DLLs and `assets/Roboto-Medium.ttf` alongside it. Windows 10/11 x64 with
+an OpenGL 3.3 driver is required. Source archives are not configured; the binary
+ZIP uses an explicit file list and includes no imported media or exports.
+
+The default package omits FFmpeg. For a **local evaluation package with the
+already installed tools**, configure with `-DMUSDESK_PACKAGE_MEDIA_TOOLS=ON`.
+This requires both tools and `tools/ffmpeg/LICENSE` (or
+`-DMUSDESK_FFMPEG_LICENSE_FILE="path/to/the/build/LICENSE"`). Without packaged
+tools, place independently obtained FFmpeg/ffprobe beside the EXE or use the
+runtime search described below. Do not treat the local-tools option as a public
+redistribution workflow; see [third-party notices](THIRD_PARTY_NOTICES.md).
+
+`MusDesk.exe --version` prints the version without opening a window;
+`MusDesk.exe --help` lists supported startup options. Build Release before
+packaging: installation deliberately rejects Debug builds. This machine's
+working package does not establish compatibility with a clean Windows machine.
+
+## Features
 
 1. Import a music track (MP3, WAV, or OGG) and cover artwork (PNG, JPEG, or WebP).
 2. Display a spinning vinyl record with centered artwork, a blurred image background, track title, artist, and progress timer.
@@ -106,6 +136,8 @@ writing and closing it successfully. Unicode names and file paths are supported.
 You can also drop a JSON file onto the editor or launch with
 `MusDesk.exe --preset "path/to/preset.json"`; this combines with `--artwork` and
 `--audio`. Example files are in `presets/soft-glow.json` and `presets/beat-pulse.json`.
+Older `schemaVersion` presets, including the legacy `soft_glow.json`, are not
+the current format and are rejected; they are not included in the package.
 
 Presets contain visual settings and their name. They do not contain media paths,
 track labels, preview volume, playback position, guides or window settings.
@@ -211,6 +243,10 @@ RGBA through a pipe, flips the image vertically, encodes H.264 (`yuv420p`)
 and AAC stereo (48 kHz, 192 kbit/s), and writes MP4 with fast-start
 metadata. Audio comes from the original imported file, which must remain available
 and unchanged until export ends. Preview gain never modifies the exported audio.
+The imported source's size and last-write time are checked after decoding,
+before export and before accepting the result. Missing or changed audio requires
+reimport. The editor checks availability periodically and explains why export
+is disabled. This is ordinary change detection, not a content hash.
 
 GPU rendering remains on the main thread. A worker writes frames through a
 nonblocking process pipe; a queue holds at most two waiting frames, avoiding
@@ -245,6 +281,25 @@ failure removes that temporary file and preserves an existing destination.
 Errors include the encoder's diagnostic output. A stalled pipe/finalization has
 a 120-second timeout; verification has a 30-second timeout. These limits do not
 restrict the overall duration of an export that is progressing.
+The destination must be an MP4 file in an existing folder, and cannot replace
+source audio or the imported artwork. Invalid presets, unfinished imports and
+missing required media/tools block export with a specific explanation. Imported
+artwork is retained on the GPU; removing its original file does not clear it.
+
+## Original demonstration materials
+
+On Windows with PowerShell 7, run `pwsh -NoProfile -File scripts/GenerateDemo.ps1`.
+It creates a procedurally drawn night seascape and a synthesized 12-second pulse
+track in ignored `build/demo`; it downloads no media and changes no system settings.
+Launch with `--artwork build/demo/musdesk-demo.png --audio build/demo/musdesk-demo.wav`.
+The demonstration is generated from project code, not a supplied private track.
+
+![MusDesk 0.1.0 with original demonstration media](screenshots/workspace.jpg)
+
+![MP4 export controls](screenshots/export.jpg)
+
+After packaging, check the ZIP file list and checksum with:
+`pwsh -NoProfile -File scripts/TestPackage.ps1 -Archive build/packages/MusDesk-0.1.0-local-win64.zip`.
 
 ### Tests
 
@@ -325,3 +380,6 @@ FFmpeg and ffprobe are external tools with licensing determined by their build;
 see the [FFmpeg license information](https://ffmpeg.org/legal.html).
 
 A source-code license has not been selected. Before distributing compiled releases, review the licenses and distribution conditions of the chosen dependencies and codecs. Only use media you have permission to distribute.
+Full dependency notices are included in the ZIP under `licenses/`; see also
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [LICENSE-STATUS.txt](LICENSE-STATUS.txt)
+and [CHANGELOG.md](CHANGELOG.md). The local evaluation package is not published.

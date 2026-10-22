@@ -27,6 +27,23 @@ std::uint64_t exportFrameCount(std::uint64_t samples) {
     return (samples * 30 + 47999) / 48000;
 }
 double exportFrameTime(std::uint64_t index) { return static_cast<double>(index) / 30.0; }
+void validateExportDestination(const std::string& path, const std::string& audioPath, const std::string& artworkPath) {
+    if (path.empty()) throw std::runtime_error("Choose an MP4 destination.");
+    const auto output = std::filesystem::absolute(std::filesystem::u8path(path));
+    auto extension = output.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return SDL_tolower(c); });
+    if (extension != ".mp4") throw std::runtime_error("Export destination must use the .mp4 extension.");
+    if (!std::filesystem::is_directory(output.parent_path()))
+        throw std::runtime_error("Export folder does not exist. Choose an existing writable folder.");
+    if (std::filesystem::exists(output)) {
+        if (!std::filesystem::is_regular_file(output)) throw std::runtime_error("Export destination must be a regular file, not a folder.");
+        for (const auto& source : {audioPath, artworkPath}) {
+            if (!source.empty() && std::filesystem::exists(std::filesystem::u8path(source))
+                && std::filesystem::equivalent(output, std::filesystem::u8path(source)))
+                throw std::runtime_error("Export cannot replace a source media file. Choose another destination.");
+        }
+    }
+}
 
 namespace {
 using Clock = std::chrono::steady_clock;
@@ -212,14 +229,8 @@ struct ExportEngine::Impl {
         validatePreset(settings.preset);
         state.totalFrames = exportFrameCount(audio->samples.size() / DecodedAudio::channels);
         settings.durationSeconds = audio->durationSeconds();
-        const auto outputFile = std::filesystem::absolute(std::filesystem::u8path(destination));
-        auto extension = outputFile.extension().string();
-        std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return SDL_tolower(c); });
-        if (extension != ".mp4") throw std::runtime_error("Export destination must use the .mp4 extension.");
-        if (!std::filesystem::is_regular_file(std::filesystem::u8path(audio->path)))
-            throw std::runtime_error("The original audio file is no longer available.");
-        if (std::filesystem::exists(outputFile) && std::filesystem::equivalent(outputFile, std::filesystem::u8path(audio->path)))
-            throw std::runtime_error("Export cannot replace the source audio.");
+        validateAudioSource(*audio);
+        validateExportDestination(destination, audio->path);
         if (tools.ffmpegPath.empty() || tools.ffprobePath.empty()) throw std::runtime_error("FFmpeg and ffprobe are required for export.");
         worker = std::jthread([this] { run(); });
     }
@@ -264,6 +275,8 @@ struct ExportEngine::Impl {
     }
     void run() {
         try {
+            TemporaryFile temporary;
+            temporary.reserve(destination);
             const auto selected = selectEncoder();
             checkCancel();
             {
@@ -272,8 +285,6 @@ struct ExportEngine::Impl {
                 state.phase = ExportPhase::Encoding;
                 state.message.clear();
             }
-            TemporaryFile temporary;
-            temporary.reserve(destination);
             const auto count = state.totalFrames;
             std::vector<std::string> arguments{tools.ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
                 "-f", "rawvideo", "-pixel_format", "rgba", "-video_size", "1080x1920", "-framerate", "30", "-i", "pipe:0",
@@ -358,6 +369,7 @@ struct ExportEngine::Impl {
             probe.drainErrors();
             if (exitCode != 0) throw std::runtime_error("ffprobe failed: " + probe.diagnostic);
             validateMovie(metadata, count);
+            validateAudioSource(*audio);
             // Serialize cancellation with the final replacement: a completed export wins afterwards.
             std::lock_guard lock(mutex);
             checkCancel();

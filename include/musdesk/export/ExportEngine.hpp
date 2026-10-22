@@ -10,6 +10,7 @@
 namespace musdesk {
 std::uint64_t exportFrameCount(std::uint64_t sampleFrames);
 double exportFrameTime(std::uint64_t index);
+void validateExportDestination(const std::string& path, const std::string& audioPath, const std::string& artworkPath = {});
 
 enum class ExportPhase { Preparing, Encoding, Verifying, Completed, Cancelled, Failed };
 enum class ExportEncoder { Automatic, Cpu };

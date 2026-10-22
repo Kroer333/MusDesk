@@ -111,6 +111,7 @@ add_executable(MusDesk
     src/app/ArtworkDialog.cpp
 )
 target_link_libraries(MusDesk PRIVATE musdesk_export musdesk_audio musdesk_presets musdesk_imgui SDL3::SDL3 OpenGL::GL)
+target_compile_definitions(MusDesk PRIVATE MUSDESK_VERSION="${PROJECT_VERSION}")
 
 function(musdesk_copy_runtime_files target)
     add_custom_command(TARGET ${target} POST_BUILD
@@ -142,6 +143,10 @@ if(BUILD_TESTING)
         add_dependencies(MusDeskExportTests MusDeskMediaTools)
     endif()
     add_test(NAME MusDeskExportTimelineTests COMMAND MusDeskExportTests --timeline)
+    add_test(NAME MusDeskVersion COMMAND MusDesk --version)
+    set_tests_properties(MusDeskVersion PROPERTIES PASS_REGULAR_EXPRESSION "MusDesk ${PROJECT_VERSION}")
+    add_test(NAME MusDeskInvalidArguments COMMAND MusDesk --invalid-option)
+    set_tests_properties(MusDeskInvalidArguments PROPERTIES WILL_FAIL TRUE)
     add_executable(MusDeskPresetTests tests/PresetTests.cpp)
     target_link_libraries(MusDeskPresetTests PRIVATE musdesk_presets SDL3::SDL3)
     musdesk_copy_runtime_files(MusDeskPresetTests)
@@ -197,3 +202,5 @@ if(BUILD_TESTING)
         target_compile_options(MusDeskPresetTests PRIVATE /utf-8)
     endif()
 endif()
+
+include(cmake/Packaging.cmake)

@@ -1,0 +1,8 @@
+Roboto Medium
+Copyright 2011 Google Inc. All Rights Reserved.
+Font design: Christian Robertson.
+
+The unmodified Roboto-Medium.ttf file is taken from Dear ImGui 1.93.0,
+misc/fonts/Roboto-Medium.ttf. Dear ImGui's docs/FONTS.md identifies it as
+Apache License 2.0. The license text is included in Roboto-Apache-2.0.txt.
+Source: https://github.com/ocornut/imgui/tree/v1.93.0/misc/fonts

@@ -21,6 +21,17 @@ std::string utf8(const std::filesystem::path& path) {
     const auto text = path.u8string();
     return {text.begin(), text.end()};
 }
+DecodedAudio::SourceStamp audioSourceStamp(const std::string& path) {
+    const auto file = std::filesystem::u8path(path);
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(file, error))
+        throw std::runtime_error("Original audio is missing or inaccessible. Import it again before exporting.");
+    const auto size = std::filesystem::file_size(file, error);
+    if (error) throw std::runtime_error("Cannot inspect original audio. Check file access and import it again.");
+    const auto modified = std::filesystem::last_write_time(file, error);
+    if (error) throw std::runtime_error("Cannot inspect original audio modification time.");
+    return {size, modified};
+}
 
 std::string run(const std::vector<std::string>& arguments, std::stop_token cancellation = {},
     std::size_t maxBytes = 64 * 1024, int timeoutSeconds = 15) {
@@ -165,6 +176,7 @@ DecodedAudio prepareAudio(const std::string& path, const MediaTools& tools, std:
     if (metadata.durationSeconds > maxDuration) throw std::runtime_error("Audio preview currently supports tracks up to 20 minutes.");
     DecodedAudio audio;
     audio.path = metadata.path;
+    audio.sourceStamp = audioSourceStamp(audio.path);
     {
         constexpr std::size_t maxBytes = 48000ULL * 2 * sizeof(std::int16_t) * 1200;
         const auto pcm = run({tools.ffmpegPath, "-v", "error", "-xerror", "-nostdin", "-protocol_whitelist", "file",
@@ -182,6 +194,12 @@ DecodedAudio prepareAudio(const std::string& path, const MediaTools& tools, std:
         }
     }
     audio.envelope = analyzeRms(audio.samples, DecodedAudio::sampleRate, DecodedAudio::channels, cancellation);
+    validateAudioSource(audio);
     return audio;
+}
+void validateAudioSource(const DecodedAudio& audio) {
+    const auto current = audioSourceStamp(audio.path);
+    if (!audio.sourceStamp || current != *audio.sourceStamp)
+        throw std::runtime_error("Original audio changed after import. Import it again to keep video and audio synchronized.");
 }
 }

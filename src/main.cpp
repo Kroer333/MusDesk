@@ -24,6 +24,8 @@
 #include <algorithm>
 #include <memory>
 #include <stdexcept>
+#include <filesystem>
+#include <iostream>
 
 namespace {
 struct ApplicationResources {
@@ -80,6 +82,14 @@ bool isJsonPath(const std::string& path) {
 }
 
 int main(int argc, char* argv[]) {
+    if (argc == 2 && std::string(argv[1]) == "--version") {
+        std::cout << "MusDesk " MUSDESK_VERSION "\n";
+        return EXIT_SUCCESS;
+    }
+    if (argc == 2 && std::string(argv[1]) == "--help") {
+        std::cout << "MusDesk " MUSDESK_VERSION "\nUsage: MusDesk [--artwork image.png] [--audio track.mp3] [--preset preset.json]\n";
+        return EXIT_SUCCESS;
+    }
     std::string startupArtwork;
     std::string startupAudio;
     std::string startupPreset;
@@ -205,7 +215,9 @@ int main(int argc, char* argv[]) {
         auto importArtwork = [&](const std::string& path) {
             try {
                 const auto image = musdesk::loadArtwork(path);
+                const auto absolute = std::filesystem::absolute(std::filesystem::u8path(path)).u8string();
                 composition.setArtwork(image);
+                editorState.artworkPath.assign(absolute.begin(), absolute.end());
                 const auto slash = path.find_last_of("/\\");
                 editorState.artworkName = path.substr(slash == std::string::npos ? 0 : slash + 1);
                 editorState.importError.clear();
@@ -241,6 +253,8 @@ int main(int argc, char* argv[]) {
         };
 
         bool running = true;
+        Uint64 lastSourceCheck = 0;
+        std::string sourceError;
         while (running) {
             const Uint64 frameStart = SDL_GetTicks();
             SDL_Event event{};
@@ -288,6 +302,8 @@ int main(int argc, char* argv[]) {
                     if (audioCancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
                     audioPlayer.load(audio);
                     audioClip = audio;
+                    sourceError.clear();
+                    lastSourceCheck = 0;
                     editorState.audioPath = audio->path;
                     const auto slash = audio->path.find_last_of("/\\");
                     editorState.audioName = audio->path.substr(slash == std::string::npos ? 0 : slash + 1);
@@ -352,6 +368,7 @@ int main(int argc, char* argv[]) {
                         const auto dot = path.find_last_of('.');
                         if (dot == std::string::npos || (slash != std::string::npos && dot < slash)) path += ".mp4";
                         if (!audioClip || editorState.artworkName.empty()) throw std::runtime_error("Import artwork and audio before exporting.");
+                        musdesk::validateExportDestination(path, audioClip->path, editorState.artworkPath);
                         audioPlayer.pause();
                         editorState.audioPlaying = false;
                         editorState.audioSeeking = false;
@@ -393,6 +410,21 @@ int main(int argc, char* argv[]) {
                 }
             }
             editorState.exportBusy = editorState.exportActive || editorState.exportDialogPending;
+            if (audioClip && !editorState.exportActive && (lastSourceCheck == 0 || SDL_GetTicks() - lastSourceCheck >= 1000)) {
+                lastSourceCheck = SDL_GetTicks();
+                try { musdesk::validateAudioSource(*audioClip); sourceError.clear(); }
+                catch (const std::exception& error) { sourceError = error.what(); }
+            }
+            editorState.exportBlockedReason = !editorState.toolsChecked ? "Checking FFmpeg and ffprobe..."
+                : !editorState.ffmpegReady || !editorState.ffprobeReady ? "Install FFmpeg and ffprobe, then restart MusDesk."
+                : editorState.audioImportPending ? "Wait for audio preparation to finish."
+                : editorState.artworkName.empty() ? "Import artwork before exporting."
+                : !editorState.audioReady ? "Import audio with a working preview before exporting."
+                : sourceError;
+            if (editorState.exportBlockedReason.empty()) {
+                try { musdesk::validatePreset(editorState.preset); }
+                catch (const std::exception&) { editorState.exportBlockedReason = "Enter a valid preset name and effect settings before exporting."; }
+            }
             if (editorState.exportActive && !exportVsyncDisabled) {
                 exportVsyncDisabled = SDL_GL_SetSwapInterval(0);
             } else if (!editorState.exportActive && exportVsyncDisabled) {

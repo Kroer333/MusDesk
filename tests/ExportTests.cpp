@@ -142,6 +142,30 @@ int main(int argc, char* argv[]) {
         const auto input = folder / std::filesystem::path(L"d\u017Awi\u0119k testowy.wav");
         wav(input);
         auto clip = std::make_shared<musdesk::DecodedAudio>(musdesk::prepareAudio(utf8(input), tools));
+        musdesk::validateAudioSource(*clip);
+        const auto rejects = [](auto action) {
+            try { action(); } catch (const std::exception&) { return true; }
+            return false;
+        };
+        require(rejects([&] { musdesk::validateExportDestination(utf8(folder / "missing-folder" / "out.mp4"), clip->path); }), "Missing export directory accepted");
+        require(rejects([&] { musdesk::validateExportDestination(utf8(folder / "out.avi"), clip->path); }), "Unsupported output extension accepted");
+        const auto protectedImage = folder / "source-image.mp4";
+        { std::ofstream file(protectedImage); file << "source artwork"; }
+        require(rejects([&] { musdesk::validateExportDestination(utf8(protectedImage), clip->path, utf8(protectedImage)); }), "Source artwork may be overwritten");
+        const auto directoryTarget = folder / "directory.mp4";
+        std::filesystem::create_directories(directoryTarget);
+        require(rejects([&] { musdesk::validateExportDestination(utf8(directoryTarget), clip->path); }), "Directory accepted as export file");
+        const auto savedTime = std::filesystem::last_write_time(input);
+        std::filesystem::last_write_time(input, savedTime + std::chrono::seconds(2));
+        require(rejects([&] { musdesk::validateAudioSource(*clip); }), "Changed audio timestamp was accepted");
+        std::filesystem::last_write_time(input, savedTime);
+        { std::ofstream file(input, std::ios::binary | std::ios::app); file.put('\0'); }
+        require(rejects([&] { musdesk::validateAudioSource(*clip); }), "Changed audio size was accepted");
+        wav(input);
+        clip = std::make_shared<musdesk::DecodedAudio>(musdesk::prepareAudio(utf8(input), tools));
+        auto missingClip = *clip;
+        missingClip.path = utf8(folder / "missing.wav");
+        require(rejects([&] { musdesk::validateAudioSource(missingClip); }), "Missing source audio was accepted");
         musdesk::CompositionSettings settings;
         settings.durationSeconds = clip->durationSeconds();
         const auto output = folder / std::filesystem::path(L"gotowy film.mp4");

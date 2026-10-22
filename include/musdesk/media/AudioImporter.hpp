@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+#include <filesystem>
+#include <optional>
 #include "musdesk/core/AudioAnalysis.hpp"
 
 namespace musdesk {
@@ -21,6 +23,12 @@ struct DecodedAudio {
     std::string path;
     std::vector<std::int16_t> samples;
     AudioEnvelope envelope;
+    struct SourceStamp {
+        std::uintmax_t size;
+        std::filesystem::file_time_type modified;
+        bool operator==(const SourceStamp&) const = default;
+    };
+    std::optional<SourceStamp> sourceStamp;
 
     double durationSeconds() const {
         return static_cast<double>(samples.size() / channels) / sampleRate;
@@ -32,4 +40,5 @@ MediaTools detectMediaTools();
 bool isAudioPath(const std::string& path);
 AudioMetadata importAudio(const std::string& path, const MediaTools& tools, std::stop_token cancellation = {});
 DecodedAudio prepareAudio(const std::string& path, const MediaTools& tools, std::stop_token cancellation = {});
+void validateAudioSource(const DecodedAudio& audio);
 }
