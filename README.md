@@ -303,9 +303,9 @@ track in ignored `build/demo`; it downloads no media and changes no system setti
 Launch with `--artwork build/demo/musdesk-demo.png --audio build/demo/musdesk-demo.wav`.
 The demonstration is generated from project code, not a supplied private track.
 
-![MusDesk 0.1.0 with original demonstration media](screenshots/workspace.jpg)
+![MusDesk 0.1.0 composition workspace](screenshots/workspace.png)
 
-![MP4 export controls](screenshots/export.jpg)
+![MusDesk 0.1.0 MP4 export controls](screenshots/export.png)
 
 After packaging, check the ZIP file list and checksum with:
 `pwsh -NoProfile -File scripts/TestPackage.ps1 -Archive build/packages/MusDesk-0.1.0-local-win64.zip`.

@@ -19,7 +19,7 @@ try {
         'presets/soft-glow.json','presets/beat-pulse.json','licenses/SDL.txt','licenses/Dear-ImGui.txt',
         'licenses/stb.txt','licenses/libwebp.txt','licenses/libwebp-PATENTS.txt','licenses/nlohmann-json.txt',
         'licenses/Roboto-Apache-2.0.txt','licenses/Roboto-NOTICE.txt',
-        'screenshots/workspace.jpg','screenshots/export.jpg','screenshots/README.md')
+        'screenshots/workspace.png','screenshots/export.png','screenshots/README.md')
     foreach ($name in $required) {
         if ($relative -notcontains $name) { throw "Missing package file: $name" }
     }
