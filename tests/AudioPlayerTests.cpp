@@ -56,6 +56,12 @@ int main(int, char*[]) {
             try { player.load({}); } catch (const std::exception&) { rejected = true; }
             require(rejected && player.loaded() && player.state().ended, "Invalid replacement must preserve the current clip");
             player.setVolume(0);
+            player.unload();
+            require(!player.loaded() && !player.state().playing, "Unloading must release playback and its previous clip");
+            player.load(clip);
+            player.seek(0.25);
+            require(player.loaded() && !player.state().playing && std::abs(player.state().timeSeconds - 0.25) < 1.0 / 48000,
+                "Reopening playback must support restoring the paused visual position");
         }
         SDL_Quit();
         std::cout << "Audio playback, pause, seeks, end, restart, gain and replacement checks passed.\n";

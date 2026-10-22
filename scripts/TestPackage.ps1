@@ -15,7 +15,7 @@ try {
     $prefix = $roots[0] + '/'
     $relative = @($files | ForEach-Object { $_.Substring($prefix.Length) })
     $required = @('MusDesk.exe','SDL3.dll','msvcp140.dll','vcruntime140.dll',
-        'assets/Roboto-Medium.ttf','README.md','CHANGELOG.md','THIRD_PARTY_NOTICES.md','LICENSE-STATUS.txt',
+        'assets/Roboto-Medium.ttf','assets/MusDesk.png','README.md','CHANGELOG.md','THIRD_PARTY_NOTICES.md','LICENSE-STATUS.txt',
         'presets/soft-glow.json','presets/beat-pulse.json','licenses/SDL.txt','licenses/Dear-ImGui.txt',
         'licenses/stb.txt','licenses/libwebp.txt','licenses/libwebp-PATENTS.txt','licenses/nlohmann-json.txt',
         'licenses/Roboto-Apache-2.0.txt','licenses/Roboto-NOTICE.txt',

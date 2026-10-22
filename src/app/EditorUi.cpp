@@ -104,11 +104,17 @@ void drawControls(EditorUiState& state) {
         ImGui::TextWrapped("%s", state.audioError.c_str());
         ImGui::PopStyleColor();
     }
-    if (state.audioReady) {
+    if (!state.audioPath.empty()) {
         ImGui::SeparatorText("Preview audio");
+        if (!state.previewError.empty()) {
+            ImGui::TextWrapped("%s", state.previewError.c_str());
+            if (ImGui::Button("Retry audio output")) state.requestRetryPreview = true;
+        }
+        ImGui::BeginDisabled(!state.audioReady);
         if (ImGui::Button(state.audioPlaying ? "Pause" : "Play")) state.requestPlayPause = true;
         ImGui::SameLine();
         if (ImGui::Button("Restart")) state.requestRestart = true;
+        ImGui::EndDisabled();
         const auto position = formatTime(static_cast<std::uint64_t>(state.timeSeconds));
         const auto duration = formatTime(static_cast<std::uint64_t>(state.durationSeconds));
         ImGui::Text("%s / %s", position.c_str(), duration.c_str());
@@ -124,11 +130,13 @@ void drawControls(EditorUiState& state) {
             state.endAudioSeek = true;
             state.audioSeeking = false;
         }
+        ImGui::BeginDisabled(!state.audioReady);
         ImGui::SetNextItemWidth(-1);
         ImGui::SliderFloat("##Volume", &state.previewVolume, 0, 100, "Volume: %.0f%%", ImGuiSliderFlags_AlwaysClamp);
         ImGui::Checkbox("Mute", &state.muteAudio);
         ImGui::SameLine();
         ImGui::Checkbox("Loop", &state.loopAudio);
+        ImGui::EndDisabled();
         ImGui::ProgressBar(state.audioEnergy, ImVec2(-1, 0), "Audio energy");
         ImGui::TextDisabled("Volume affects monitoring only.");
     }

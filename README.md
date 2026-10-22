@@ -34,6 +34,10 @@ redistribution workflow; see [third-party notices](THIRD_PARTY_NOTICES.md).
 packaging: installation deliberately rejects Debug builds. This machine's
 working package does not establish compatibility with a clean Windows machine.
 
+The supplied MusDesk icon is embedded in the Windows EXE, together with version
+metadata, and loaded from `assets/MusDesk.png` for the SDL window. Keep that PNG
+inside the packaged assets directory.
+
 ## Features
 
 1. Import a music track (MP3, WAV, or OGG) and cover artwork (PNG, JPEG, or WebP).
@@ -196,6 +200,7 @@ uses decoded sample count, which can differ slightly from container duration
 because of codec padding. Failed or cancelled imports preserve the previous clip.
 Detection, decoding and analysis run outside the render loop. Use **Cancel import**
 to stop preparation; closing the editor also requests cancellation.
+Tool detection is also cancelled on exit, including any running version probe.
 
 Imported audio starts paused. In **Preview audio**, use **Play/Pause**, **Restart**,
 the seek slider, **Volume**, **Mute** and optional **Loop**. Dragging the timeline
@@ -221,7 +226,11 @@ to 20 minutes, with a corresponding PCM byte limit and a 120-second decode limit
 Metadata/version processes retain a 15-second limit and 64 KiB output limit.
 Arguments go directly through SDL's process API without a shell; Unicode paths
 and spaces are supported. Only local files are accepted. Playback requires a
-working audio output device; preparation errors are shown in the panel.
+working audio output device. If opening or using it fails, the imported PCM and
+RMS remain available: the timeline still seeks the visual composition and MP4
+export remains enabled. **Retry audio output** retries the device at the current
+timeline position, paused. Playback controls are disabled until that succeeds.
+Preparation errors preserve the previous clip; output errors are shown separately.
 
 ### MP4 export
 
@@ -383,3 +392,17 @@ A source-code license has not been selected. Before distributing compiled releas
 Full dependency notices are included in the ZIP under `licenses/`; see also
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [LICENSE-STATUS.txt](LICENSE-STATUS.txt)
 and [CHANGELOG.md](CHANGELOG.md). The local evaluation package is not published.
+
+## 0.1.0 acceptance checks
+
+Before treating the build as ready for wider use, verify a full-track export
+through the native save dialog and play the resulting MP4 in an external player,
+including seeks and its ending. Check the extracted ZIP on a clean Windows
+installation with a suitable graphics driver. NVIDIA NVENC and AMD AMF still
+need physical hardware coverage; Intel QSV has been exercised locally.
+
+Repeat performance comparisons under the same machine load with several runs
+per configuration. Existing single-run measurements do not establish that
+Release is faster than Debug. A hardware failure during encoding is reported;
+retry with CPU selected. Source-code licensing and public distribution remain
+separate pending decisions.

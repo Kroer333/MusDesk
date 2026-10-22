@@ -38,6 +38,8 @@ struct EditorUiState {
     std::string audioName;
     std::string audioError;
     bool audioReady = false;
+    std::string previewError;
+    bool requestRetryPreview = false;
     bool audioPlaying = false;
     bool audioSeeking = false;
     bool requestPlayPause = false;

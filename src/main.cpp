@@ -2,6 +2,7 @@
 #include "app/ArtworkDialog.hpp"
 #include "musdesk/render/VisualizerRenderer.hpp"
 #include "musdesk/media/AudioImporter.hpp"
+#include "musdesk/media/ImageLoader.hpp"
 #include "musdesk/audio/AudioPlayer.hpp"
 #include "musdesk/presets/PresetStore.hpp"
 #include "musdesk/export/ExportEngine.hpp"
@@ -119,6 +120,15 @@ int main(int argc, char* argv[]) {
     if (resources.window == nullptr) {
         return reportSdlFailure("Window creation failed");
     }
+    try {
+        auto icon = musdesk::loadArtwork(std::string(SDL_GetBasePath()) + "assets/MusDesk.png");
+        std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> surface(
+            SDL_CreateSurfaceFrom(icon.width, icon.height, SDL_PIXELFORMAT_RGBA32, icon.rgba.data(), icon.width * 4), SDL_DestroySurface);
+        if (!surface || !SDL_SetWindowIcon(resources.window, surface.get()))
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Window icon unavailable: %s", SDL_GetError());
+    } catch (const std::exception& error) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Window icon unavailable: %s", error.what());
+    }
     if (!SDL_SetWindowMinimumSize(resources.window, 900, 600)) {
         return reportSdlFailure("Setting minimum window size failed");
     }
@@ -190,7 +200,11 @@ int main(int argc, char* argv[]) {
         musdesk::AudioPlayer audioPlayer;
         audioPlayer.setVolume(editorState.previewVolume / 100);
         std::shared_ptr<const musdesk::DecodedAudio> audioClip;
-        auto toolsFuture = std::async(std::launch::async, musdesk::detectMediaTools);
+        std::stop_source toolsCancellation;
+        auto toolsFuture = std::async(std::launch::async, [token = toolsCancellation.get_token()] {
+            return musdesk::detectMediaTools(token);
+        });
+        StopImportOnExit stopTools{toolsCancellation};
         std::stop_source audioCancellation;
         std::future<std::shared_ptr<const musdesk::DecodedAudio>> audioFuture;
         StopImportOnExit stopImport{audioCancellation};
@@ -232,14 +246,27 @@ int main(int argc, char* argv[]) {
         double anchorTime = 0;
         Uint64 anchorTicks = SDL_GetTicksNS();
         auto playbackError = [&](const std::exception& error) {
-            editorState.audioError = error.what();
+            editorState.previewError = std::string(error.what()) + " Visual preview and MP4 export remain available.";
             editorState.audioPlaying = false;
             editorState.audioReady = false;
-            try { audioPlayer.pause(); } catch (const std::exception&) {}
+            audioPlayer.unload();
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "%s", error.what());
         };
+        auto preparePlayback = [&] {
+            audioPlayer.unload();
+            editorState.audioReady = false;
+            editorState.audioPlaying = false;
+            try {
+                audioPlayer.load(audioClip);
+                audioPlayer.seek(editorState.timeSeconds);
+                editorState.audioReady = true;
+                editorState.previewError.clear();
+            } catch (const std::exception& error) { playbackError(error); }
+        };
         auto refreshPlayback = [&] {
-            if (!editorState.audioReady || editorState.exportActive) return;
+            if (!audioClip || editorState.exportActive) return;
+            editorState.audioEnergy = audioClip->envelope.at(editorState.timeSeconds);
+            if (!editorState.audioReady) return;
             try {
                 auto playback = audioPlayer.state();
                 if (playback.ended && editorState.audioPlaying && editorState.loopAudio && !editorState.audioSeeking) {
@@ -300,7 +327,6 @@ int main(int argc, char* argv[]) {
                 try {
                     const auto audio = audioFuture.get();
                     if (audioCancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
-                    audioPlayer.load(audio);
                     audioClip = audio;
                     sourceError.clear();
                     lastSourceCheck = 0;
@@ -309,13 +335,13 @@ int main(int argc, char* argv[]) {
                     editorState.audioName = audio->path.substr(slash == std::string::npos ? 0 : slash + 1);
                     editorState.durationSeconds = audio->durationSeconds();
                     editorState.timeSeconds = 0;
-                    editorState.audioReady = true;
                     editorState.audioPlaying = false;
                     editorState.audioSeeking = false;
                     editorState.animatePreview = false;
                     resumeAfterSeek = false;
                     anchorTime = 0;
                     anchorTicks = SDL_GetTicksNS();
+                    preparePlayback();
                     SDL_Log("Audio ready: %.3f seconds, %zu RMS values", audio->durationSeconds(), audio->envelope.values.size());
                 } catch (const std::exception& error) {
                     if (!audioCancellation.stop_requested()) {
@@ -369,7 +395,10 @@ int main(int argc, char* argv[]) {
                         if (dot == std::string::npos || (slash != std::string::npos && dot < slash)) path += ".mp4";
                         if (!audioClip || editorState.artworkName.empty()) throw std::runtime_error("Import artwork and audio before exporting.");
                         musdesk::validateExportDestination(path, audioClip->path, editorState.artworkPath);
-                        audioPlayer.pause();
+                        if (editorState.audioReady) {
+                            try { audioPlayer.pause(); }
+                            catch (const std::exception& error) { playbackError(error); }
+                        }
                         editorState.audioPlaying = false;
                         editorState.audioSeeking = false;
                         resumeAfterSeek = false;
@@ -419,7 +448,7 @@ int main(int argc, char* argv[]) {
                 : !editorState.ffmpegReady || !editorState.ffprobeReady ? "Install FFmpeg and ffprobe, then restart MusDesk."
                 : editorState.audioImportPending ? "Wait for audio preparation to finish."
                 : editorState.artworkName.empty() ? "Import artwork before exporting."
-                : !editorState.audioReady ? "Import audio with a working preview before exporting."
+                : !audioClip ? "Import audio before exporting."
                 : sourceError;
             if (editorState.exportBlockedReason.empty()) {
                 try { musdesk::validatePreset(editorState.preset); }
@@ -469,8 +498,8 @@ int main(int argc, char* argv[]) {
             const float beforeVolume = editorState.previewVolume;
             const bool beforeMute = editorState.muteAudio;
             musdesk::drawEditorUi(editorState, composition.textureId());
-            if (editorState.audioReady && !editorState.exportBusy && !io.WantCaptureKeyboard) {
-                if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) editorState.requestPlayPause = true;
+            if (audioClip && !editorState.exportBusy && !io.WantCaptureKeyboard) {
+                if (editorState.audioReady && ImGui::IsKeyPressed(ImGuiKey_Space, false)) editorState.requestPlayPause = true;
                 const double shift = (ImGui::IsKeyPressed(ImGuiKey_RightArrow) ? 5.0 : 0)
                     - (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) ? 5.0 : 0);
                 if (shift != 0) {
@@ -483,6 +512,8 @@ int main(int argc, char* argv[]) {
                 audioCancellation.request_stop();
             }
             try {
+                if (editorState.requestRetryPreview && audioClip) preparePlayback();
+                editorState.requestRetryPreview = false;
                 if (beforeVolume != editorState.previewVolume || beforeMute != editorState.muteAudio)
                     audioPlayer.setVolume(editorState.muteAudio ? 0 : editorState.previewVolume / 100);
                 if (editorState.audioReady) {

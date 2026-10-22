@@ -8,6 +8,8 @@
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
+#include <thread>
+#include <atomic>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -16,7 +18,49 @@ void require(bool condition, const char* message) {
 }
 
 int main(int argc, char* argv[]) {
+    if (argc == 2 && std::string(argv[1]) == "-version") {
+        std::ofstream(std::filesystem::u8path(SDL_GetBasePath()) / "started") << "ready";
+        SDL_Delay(30000);
+        return 0;
+    }
     try {
+        std::stop_source cancelled;
+        cancelled.request_stop();
+        bool detectionCancelled = false;
+        try { (void)musdesk::detectMediaTools(cancelled.get_token()); }
+        catch (const std::exception&) { detectionCancelled = true; }
+        require(detectionCancelled, "Pre-cancelled tool detection must stop");
+#ifdef _WIN32
+        const auto base = std::filesystem::u8path(SDL_GetBasePath());
+        const auto folder = base / "test-fixtures" / ("detection-" + std::to_string(SDL_GetTicksNS()));
+        std::filesystem::create_directories(folder);
+        std::filesystem::copy_file(base / "MusDeskAudioTests.exe", folder / "ffmpeg.exe");
+        std::filesystem::copy_file(base / "SDL3.dll", folder / "SDL3.dll");
+        const auto directoryBytes = folder.u8string();
+        const std::string directory(directoryBytes.begin(), directoryBytes.end());
+        const char* oldDirectory = SDL_getenv("MUSDESK_FFMPEG_DIR");
+        const std::optional<std::string> previous = oldDirectory ? std::optional<std::string>(oldDirectory) : std::nullopt;
+        require(SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "MUSDESK_FFMPEG_DIR", directory.c_str(), true), "Cannot configure detection fixture");
+        std::stop_source stop;
+        std::atomic<bool> childStarted = false;
+        const auto started = SDL_GetTicks();
+        {
+            std::jthread canceller([&](std::stop_token token) {
+                while (!token.stop_requested() && SDL_GetTicks() - started < 5000) {
+                    if (std::filesystem::exists(folder / "started")) { childStarted = true; break; }
+                    SDL_Delay(5);
+                }
+                stop.request_stop();
+            });
+            detectionCancelled = false;
+            try { (void)musdesk::detectMediaTools(stop.get_token()); }
+            catch (const std::exception&) { detectionCancelled = true; }
+        }
+        if (previous) SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "MUSDESK_FFMPEG_DIR", previous->c_str(), true);
+        else SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "MUSDESK_FFMPEG_DIR");
+        require(childStarted && detectionCancelled && SDL_GetTicks() - started < 5000,
+            "Cancellation must terminate a running tool without waiting for its timeout");
+#endif
         require(musdesk::isAudioPath("track.MP3") && musdesk::isAudioPath("track.wav")
             && musdesk::isAudioPath("track.ogg") && !musdesk::isAudioPath("track.png"), "Audio extension checks failed");
         bool rejected = false;

@@ -80,16 +80,18 @@ std::string run(const std::vector<std::string>& arguments, std::stop_token cance
     return output;
 }
 
-std::string findTool(const std::string& name, const std::vector<std::filesystem::path>& directories) {
+std::string findTool(const std::string& name, const std::vector<std::filesystem::path>& directories, std::stop_token cancellation) {
     for (const auto& directory : directories) {
+        if (cancellation.stop_requested()) throw std::runtime_error("Media tool detection cancelled.");
         auto candidate = directory / name;
         std::error_code error;
         if (!std::filesystem::is_regular_file(candidate, error)) continue;
         try {
             candidate = std::filesystem::absolute(candidate);
             const auto path = utf8(candidate);
-            if (run({path, "-version"}).starts_with(name.substr(0, name.find('.')) + " version ")) return path;
+            if (run({path, "-version"}, cancellation).starts_with(name.substr(0, name.find('.')) + " version ")) return path;
         } catch (const std::exception&) {
+            if (cancellation.stop_requested()) throw;
             // An unusable candidate must not hide another valid installation.
         }
     }
@@ -97,7 +99,8 @@ std::string findTool(const std::string& name, const std::vector<std::filesystem:
 }
 }
 
-MediaTools detectMediaTools() {
+MediaTools detectMediaTools(std::stop_token cancellation) {
+    if (cancellation.stop_requested()) throw std::runtime_error("Media tool detection cancelled.");
     std::vector<std::filesystem::path> directories;
     if (const auto* configured = SDL_getenv("MUSDESK_FFMPEG_DIR"); configured && *configured)
         directories.push_back(std::filesystem::u8path(configured));
@@ -124,8 +127,8 @@ MediaTools detectMediaTools() {
     const std::string suffix;
 #endif
     MediaTools result;
-    result.ffmpegPath = findTool("ffmpeg" + suffix, directories);
-    result.ffprobePath = findTool("ffprobe" + suffix, directories);
+    result.ffmpegPath = findTool("ffmpeg" + suffix, directories, cancellation);
+    result.ffprobePath = findTool("ffprobe" + suffix, directories, cancellation);
     result.status = "FFmpeg: " + std::string(result.ffmpegPath.empty() ? "missing or unusable" : "ready")
         + " | ffprobe: " + (result.ffprobePath.empty() ? "missing or unusable" : "ready");
     return result;

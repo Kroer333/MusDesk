@@ -112,6 +112,17 @@ add_executable(MusDesk
 )
 target_link_libraries(MusDesk PRIVATE musdesk_export musdesk_audio musdesk_presets musdesk_imgui SDL3::SDL3 OpenGL::GL)
 target_compile_definitions(MusDesk PRIVATE MUSDESK_VERSION="${PROJECT_VERSION}")
+if(WIN32)
+    enable_language(RC)
+    configure_file(assets/MusDesk.rc.in "${CMAKE_CURRENT_BINARY_DIR}/MusDesk.rc" @ONLY)
+    target_sources(MusDesk PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/MusDesk.rc")
+endif()
+add_custom_command(TARGET MusDesk POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:MusDesk>/assets"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${PROJECT_SOURCE_DIR}/assets/MusDesk.png"
+        "$<TARGET_FILE_DIR:MusDesk>/assets/MusDesk.png"
+    VERBATIM
+)
 
 function(musdesk_copy_runtime_files target)
     add_custom_command(TARGET ${target} POST_BUILD
@@ -168,6 +179,7 @@ if(BUILD_TESTING)
     target_link_libraries(MusDeskAudioTests PRIVATE musdesk_media SDL3::SDL3)
     musdesk_copy_runtime_files(MusDeskAudioTests)
     add_test(NAME MusDeskAudioTests COMMAND MusDeskAudioTests)
+    set_tests_properties(MusDeskAudioTests PROPERTIES TIMEOUT 15)
     add_executable(MusDeskTimeTests tests/TimeFormatTests.cpp)
     target_link_libraries(MusDeskTimeTests PRIVATE musdesk_core)
     add_test(NAME MusDeskTimeTests COMMAND MusDeskTimeTests)

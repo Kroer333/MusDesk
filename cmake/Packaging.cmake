@@ -11,6 +11,7 @@ install(CODE [[
 install(TARGETS MusDesk RUNTIME DESTINATION . COMPONENT ${runtime_component})
 install(FILES "$<TARGET_FILE:SDL3::SDL3-shared>" DESTINATION . COMPONENT ${runtime_component})
 install(FILES "${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf" DESTINATION assets COMPONENT ${runtime_component})
+install(FILES "${PROJECT_SOURCE_DIR}/assets/MusDesk.png" DESTINATION assets COMPONENT ${runtime_component})
 install(FILES "${PROJECT_SOURCE_DIR}/presets/soft-glow.json" "${PROJECT_SOURCE_DIR}/presets/beat-pulse.json"
     DESTINATION presets COMPONENT ${runtime_component})
 install(FILES "${PROJECT_SOURCE_DIR}/README.md" "${PROJECT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"

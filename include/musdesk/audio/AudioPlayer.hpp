@@ -19,6 +19,7 @@ public:
     AudioPlayer& operator=(const AudioPlayer&) = delete;
 
     void load(std::shared_ptr<const DecodedAudio> audio);
+    void unload();
     void play();
     void pause();
     void seek(double seconds);

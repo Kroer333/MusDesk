@@ -10,6 +10,10 @@
   cancellation, ffprobe verification and preservation of existing output on failure.
 - Source-audio change detection, export readiness messages and destination checks.
 - Version reporting, dependency notices and a Release-only local evaluation ZIP.
+- Application icon and Windows executable version metadata.
+- Visual seeking and MP4 export remain available when audio output fails;
+  the editor can retry the output device without reimporting the clip.
+- Cancellable FFmpeg/ffprobe detection, including a running version probe.
 
 Known limits: no project saving, no animated WebP or JPEG EXIF orientation,
 20-minute in-memory audio limit, possible hardware output latency, and varying

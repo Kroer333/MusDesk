@@ -76,6 +76,7 @@ void AudioPlayer::load(std::shared_ptr<const DecodedAudio> audio) {
 }
 
 bool AudioPlayer::loaded() const { return impl_ != nullptr; }
+void AudioPlayer::unload() { impl_.reset(); }
 
 void AudioPlayer::play() {
     if (!impl_) return;

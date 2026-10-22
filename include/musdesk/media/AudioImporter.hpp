@@ -36,7 +36,7 @@ struct DecodedAudio {
 };
 
 // Searches the configured directory, executable directory, then PATH.
-MediaTools detectMediaTools();
+MediaTools detectMediaTools(std::stop_token cancellation = {});
 bool isAudioPath(const std::string& path);
 AudioMetadata importAudio(const std::string& path, const MediaTools& tools, std::stop_token cancellation = {});
 DecodedAudio prepareAudio(const std::string& path, const MediaTools& tools, std::stop_token cancellation = {});
