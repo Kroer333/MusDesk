@@ -1,7 +1,8 @@
 # Third-party components
 
-MusDesk's own code currently has no selected license. This document records
-dependency notices; it does not license MusDesk or private media files.
+MusDesk's own source code is licensed under MIT; see `LICENSE`.
+This document records dependency notices. Their licenses remain separate,
+and MusDesk's license does not grant rights to imported private media files.
 
 | Component | Pinned source | License / packaged notice |
 | --- | --- | --- |
@@ -20,11 +21,18 @@ sources rather than reconstructing their copyright statements.
 FFmpeg and ffprobe are invoked as separate processes. MusDesk does not link
 against FFmpeg libraries. The normal package omits both executables.
 `MUSDESK_PACKAGE_MEDIA_TOOLS=ON` includes the developer's existing executables
-and their selected build's license in a local evaluation ZIP.
+and their selected build's license, upstream build/source notes and binary
+hashes in a personal private ZIP. The selected build is gyan.dev FFmpeg 9.0.2
+essentials (GPLv3), with the FFmpeg source reference recorded by its provider
+as commit `946fcce07b`.
 
 FFmpeg's license depends on its enabled components; builds containing libx264
 commonly enable GPL components. See [FFmpeg's license information](https://ffmpeg.org/legal.html).
-The local evaluation option is not a public redistribution workflow. Preparing
+The personal private option is not a completed tool-redistribution workflow.
+Its upstream source reference is not a complete Corresponding Source archive
+for the executables and all statically linked libraries. A private repository
+can restrict access, but sharing with other people still requires meeting the
+applicable licenses. Preparing
 public distribution of tool binaries also requires the corresponding source
 and build information and checking the actual build's terms.
 

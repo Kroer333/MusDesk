@@ -2,14 +2,47 @@
 
 **MusDesk** is a desktop tool for turning a music track and cover artwork into a vertical, animated music visualizer video for short-form platforms.
 
-> **Version 0.1.0 — local evaluation (M6).** Artwork/audio import, editable presets and 1080 × 1920 / 30 FPS H.264/AAC export are implemented. This is a local evaluation build; no public release or license for MusDesk's own code has been selected.
+> **Version 0.1.0.** A Windows music visualizer with artwork/audio import, editable presets and 1080 × 1920 / 30 FPS H.264/AAC export. MusDesk's own source code is licensed under MIT. **The application interface currently supports English only.**
 
-## Local evaluation ZIP
+## Download and first run
+
+1. For the owner's personal private release, download
+   `MusDesk-0.1.0-private-windows-x64.zip` from the repository's
+   [Releases](https://github.com/Kroer333/MusDesk/releases) page. Extract the entire folder;
+   FFmpeg and ffprobe are already included beside `MusDesk.exe`.
+2. Start `MusDesk.exe`. The Media panel should report
+   **FFmpeg: ready | ffprobe: ready**. Import artwork and audio, adjust the labels,
+   then use **Export MP4**. Keep the assets and DLLs from the ZIP together.
+
+The private release is intended for personal use in a private repository;
+see `PRIVATE_PACKAGE.txt` inside that archive. GitHub releases inherit repository
+access: the repository must actually be private to restrict access to its releases.
+No repository visibility or release is changed by building a ZIP.
+
+The alternative `MusDesk-0.1.0-windows-x64.zip` omits the external tools. For that
+variant, obtain a Windows x64 FFmpeg build using the Windows links on the official
+   [FFmpeg download page](https://ffmpeg.org/download.html). Use a build containing
+   `ffmpeg.exe`, `ffprobe.exe`, `libx264` and AAC support. Extract its archive too.
+Copy **both** `ffmpeg.exe` and `ffprobe.exe` from its `bin` folder into the
+   extracted MusDesk folder, alongside `MusDesk.exe`. Existing installations can
+   also be supplied through `MUSDESK_FFMPEG_DIR` or `PATH`.
+Restart MusDesk after adding the tools.
+
+FFmpeg tools are not included in the public MusDesk ZIP. Without them you can
+edit artwork and visual effects, but audio import and MP4 export are unavailable.
+Keep the assets and DLLs from the ZIP together. Visual Studio is not required
+to run the extracted application.
+
+See [release notes](RELEASE_NOTES.md) for limitations and
+[publishing instructions](https://github.com/Kroer333/MusDesk/blob/main/RELEASING.md)
+for the maintainer's publishing steps.
+
+## Build a release ZIP
 
 Build and package from a Visual Studio Developer PowerShell:
 
 ```powershell
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DMUSDESK_PACKAGE_MEDIA_TOOLS=ON
 cmake --build build --config Release --parallel 1 -- /nr:false
 ctest --test-dir build -C Release --output-on-failure
 cpack --config build/CPackConfig.cmake -C Release -D CPACK_PACKAGE_CHECKSUM=SHA256
@@ -21,13 +54,16 @@ runtime DLLs and `assets/Roboto-Medium.ttf` alongside it. Windows 10/11 x64 with
 an OpenGL 3.3 driver is required. Source archives are not configured; the binary
 ZIP uses an explicit file list and includes no imported media or exports.
 
-The default package omits FFmpeg. For a **local evaluation package with the
-already installed tools**, configure with `-DMUSDESK_PACKAGE_MEDIA_TOOLS=ON`.
+The CMake option defaults to OFF. The command above explicitly includes the
+already installed tools for the **personal private package**.
 This requires both tools and `tools/ffmpeg/LICENSE` (or
-`-DMUSDESK_FFMPEG_LICENSE_FILE="path/to/the/build/LICENSE"`). Without packaged
+`-DMUSDESK_FFMPEG_LICENSE_FILE="path/to/the/build/LICENSE"`) and matching build/source
+information in `tools/ffmpeg/README.txt` (or `MUSDESK_FFMPEG_BUILD_INFO_FILE`). Without packaged
 tools, place independently obtained FFmpeg/ffprobe beside the EXE or use the
 runtime search described below. Do not treat the local-tools option as a public
 redistribution workflow; see [third-party notices](THIRD_PARTY_NOTICES.md).
+The tools-free archive ends in `-windows-x64.zip`; the personal private archive
+ends in `-private-windows-x64.zip`. The old `-local-win64.zip` is a legacy artifact.
 
 `MusDesk.exe --version` prints the version without opening a window;
 `MusDesk.exe --help` lists supported startup options. Build Release before
@@ -308,7 +344,8 @@ The demonstration is generated from project code, not a supplied private track.
 ![MusDesk 0.1.0 MP4 export controls](screenshots/export.png)
 
 After packaging, check the ZIP file list and checksum with:
-`pwsh -NoProfile -File scripts/TestPackage.ps1 -Archive build/packages/MusDesk-0.1.0-local-win64.zip`.
+`pwsh -NoProfile -File scripts/TestPackage.ps1 -Archive build/packages/MusDesk-0.1.0-private-windows-x64.zip -AllowPrivateTools`.
+The tools-free variant is validated without that switch.
 
 ### Tests
 
@@ -388,21 +425,27 @@ The bundled Roboto font uses the [Apache 2.0 license](https://github.com/ocornut
 FFmpeg and ffprobe are external tools with licensing determined by their build;
 see the [FFmpeg license information](https://ffmpeg.org/legal.html).
 
-A source-code license has not been selected. Before distributing compiled releases, review the licenses and distribution conditions of the chosen dependencies and codecs. Only use media you have permission to distribute.
+MusDesk's own source code is available under the [MIT License](LICENSE).
+Third-party dependencies retain their respective licenses. Only use media you
+have permission to use and distribute.
 Full dependency notices are included in the ZIP under `licenses/`; see also
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [LICENSE-STATUS.txt](LICENSE-STATUS.txt)
-and [CHANGELOG.md](CHANGELOG.md). The local evaluation package is not published.
+and [CHANGELOG.md](CHANGELOG.md). The tools-free ZIP contains no FFmpeg/ffprobe.
+The personal private ZIP includes the GPLv3 tools and their build notices;
+private repository visibility does not remove license obligations when sharing
+copies with other people. See `PRIVATE_PACKAGE.txt` in that archive.
 
 ## 0.1.0 acceptance checks
 
-Before treating the build as ready for wider use, verify a full-track export
-through the native save dialog and play the resulting MP4 in an external player,
-including seeks and its ending. Check the extracted ZIP on a clean Windows
+A full-track export through the native save dialog and complete FFmpeg decoding
+have been checked locally. Listening to the resulting MP4 in an external player,
+including seeks and its ending, remains a manual acceptance check.
+Check the extracted ZIP on a clean Windows
 installation with a suitable graphics driver. NVIDIA NVENC and AMD AMF still
 need physical hardware coverage; Intel QSV has been exercised locally.
 
 Repeat performance comparisons under the same machine load with several runs
 per configuration. Existing single-run measurements do not establish that
 Release is faster than Debug. A hardware failure during encoding is reported;
-retry with CPU selected. Source-code licensing and public distribution remain
-separate pending decisions.
+retry with CPU selected. Do not equate successful local checks with verification
+of every Windows installation or graphics driver.

@@ -1,0 +1,17 @@
+MusDesk 0.1.0 - personal private package
+
+This archive includes FFmpeg and ffprobe for the owner's personal use and
+backup in a private repository. Extract the entire folder before running it.
+The application interface currently supports English only.
+
+MusDesk's own source code is licensed under MIT; see LICENSE.
+The included FFmpeg 9.0.2 essentials executables from gyan.dev are GPLv3.
+Their license, upstream source reference, build configuration, dependency
+versions and binary hashes are recorded in licenses/FFmpeg-*.
+
+Keeping a repository private does not cancel the tools' license obligations
+when conveying copies to other people. This package's build notes and source
+reference are not a complete Corresponding Source archive for FFmpeg and all
+its statically linked libraries. Before sharing the bundled tools with others
+or publishing them, arrange the required Corresponding Source and notices.
+The tools-free MusDesk ZIP can be built with MUSDESK_PACKAGE_MEDIA_TOOLS=OFF.
