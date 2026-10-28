@@ -28,4 +28,19 @@ struct AudioWaveform {
 
 AudioWaveform analyzeWaveform(std::span<const std::int16_t> samples, int channels,
     std::stop_token cancellation = {});
+
+struct BeatEvent {
+    double timeSeconds = 0;
+    float strength = 0;
+    bool operator==(const BeatEvent&) const = default;
+};
+
+struct AudioRhythm {
+    AudioEnvelope bass;
+    std::vector<BeatEvent> beats;
+    float pulseAt(double timeSeconds) const;
+};
+
+AudioRhythm analyzeRhythm(std::span<const std::int16_t> samples, int sampleRate, int channels,
+    std::stop_token cancellation = {});
 }

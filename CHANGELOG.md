@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Bass-band energy and onset analysis during import, with deterministic beat-pulse
+  preview meters and onset markers on the waveform.
+
 - Peak-preserving audio waveform in the preview controls, with playhead,
   click/drag seeking and bounded background analysis of decoded stereo audio.
 

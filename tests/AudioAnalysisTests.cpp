@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iostream>
 #include <limits>
+#include <numbers>
 #include <stdexcept>
 
 namespace {
@@ -12,7 +13,7 @@ void require(bool condition, const char* message) {
 }
 template<class Action> void rejected(Action action) {
     try { action(); } catch (const std::exception&) { return; }
-    throw std::runtime_error("Invalid waveform input was accepted");
+    throw std::runtime_error("Invalid audio analysis input was accepted");
 }
 void waveformTests() {
     std::vector<std::int16_t> silence(40000, 0);
@@ -46,11 +47,74 @@ void waveformTests() {
     rejected([&] { musdesk::analyzeWaveform(stereo, 9); });
     rejected([&] { musdesk::analyzeWaveform(std::span(stereo).first(5), 2); });
 }
+void rhythmTests() {
+    constexpr int rate = 48000;
+    const auto signal = [&](double frequency, bool sustained) {
+        std::vector<std::int16_t> pcm(rate * 2 * 2, 0);
+        for (int frame = 0; frame < rate * 2; ++frame) {
+            const double time = static_cast<double>(frame) / rate;
+            double amplitude = 0;
+            for (double start : {0.3, 0.8, 1.3}) {
+                const double age = time - start;
+                if (age >= 0 && (sustained || age < 0.15))
+                    amplitude = std::max(amplitude, sustained ? std::min(1.0, age / 0.01)
+                        : std::min(1.0, age / 0.005) * std::exp(-age / 0.045));
+            }
+            const auto sample = static_cast<std::int16_t>(0.7 * 32767 * amplitude
+                * std::sin(2 * std::numbers::pi * frequency * time));
+            pcm[frame * 2] = sample;
+            pcm[frame * 2 + 1] = -sample;
+        }
+        return pcm;
+    };
+    const auto pcm = signal(70, false);
+    const auto rhythm = musdesk::analyzeRhythm(pcm, rate, 2);
+    require(rhythm.beats.size() == 3, "Three separated bass bursts must produce three onsets");
+    for (std::size_t i = 0; i < rhythm.beats.size(); ++i) {
+        const auto& beat = rhythm.beats[i];
+        require(std::abs(beat.timeSeconds - (0.3 + i * 0.5)) < 0.08, "Bass onset timing is outside tolerance");
+        require(beat.strength > 0 && beat.strength <= 1, "Beat strengths must be normalized");
+        require(rhythm.pulseAt(beat.timeSeconds) == beat.strength
+            && rhythm.pulseAt(beat.timeSeconds + 0.1) < beat.strength, "Beat pulse must decay from the onset");
+    }
+    const auto high = musdesk::analyzeRhythm(signal(2000, false), rate, 2);
+    require(high.beats.empty(), "High-frequency bursts must not trigger bass onsets");
+    for (double frequency : {40.0, 70.0, 120.0, 180.0}) {
+        require(musdesk::analyzeRhythm(signal(frequency, true), rate, 2).beats.size() == 1,
+            "A sustained bass tone must not repeatedly trigger beats");
+    }
+    auto quietPcm = pcm;
+    for (auto& sample : quietPcm) sample /= 100;
+    require(musdesk::analyzeRhythm(quietPcm, rate, 2).beats.empty(), "Near-silence must not be amplified into beats");
+    const auto silent = musdesk::analyzeRhythm(std::vector<std::int16_t>(rate * 2, 0), rate, 2);
+    require(silent.beats.empty() && silent.bass.at(0.5) == 0 && silent.pulseAt(0.5) == 0,
+        "Silence must not generate bass energy or beats");
+    require(rhythm.pulseAt(0.1) == 0 && rhythm.pulseAt(-1) == 0 && rhythm.pulseAt(2) == 0
+        && rhythm.pulseAt(std::numeric_limits<double>::quiet_NaN()) == 0, "Invalid or pre-onset times must have no pulse");
+    const auto repeated = musdesk::analyzeRhythm(pcm, rate, 2);
+    require(repeated.bass.values == rhythm.bass.values && repeated.beats == rhythm.beats,
+        "Bass analysis must be deterministic");
+    const auto pulse = rhythm.pulseAt(0.36);
+    (void)rhythm.pulseAt(1.8);
+    require(rhythm.pulseAt(0.36) == pulse, "Seeking must not depend on previous pulse queries");
+    require(std::all_of(rhythm.bass.values.begin(), rhythm.bass.values.end(), [](float value) {
+        return std::isfinite(value) && value >= 0 && value <= 1;
+    }), "Bass envelope must be finite and normalized");
+    std::stop_source stop;
+    stop.request_stop();
+    rejected([&] { musdesk::analyzeRhythm(pcm, rate, 2, stop.get_token()); });
+    rejected([&] { musdesk::analyzeRhythm({}, rate, 2); });
+    rejected([&] { musdesk::analyzeRhythm(pcm, 0, 2); });
+    rejected([&] { musdesk::analyzeRhythm(pcm, rate, 0); });
+    rejected([&] { musdesk::analyzeRhythm(std::span(pcm).first(5), rate, 2); });
+    std::cout << "Bass band, onset timing, pulse decay, sustained tone, silence and deterministic seeks passed.\n";
+}
 }
 
 int main() {
     try {
         waveformTests();
+        rhythmTests();
         constexpr int rate = 48000;
         std::vector<std::int16_t> samples(rate * 2 * 2, 0);
         require(musdesk::analyzeRms(samples, rate, 2).at(0.5) == 0, "Silence must have zero energy");

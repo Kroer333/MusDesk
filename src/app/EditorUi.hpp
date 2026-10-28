@@ -10,6 +10,7 @@
 namespace musdesk {
 struct EditorUiState {
     const AudioWaveform* waveform = nullptr;
+    const AudioRhythm* rhythm = nullptr;
     std::vector<RecoveryCopy> recoveryCopies;
     std::string recoveryStatus;
     int selectedRecovery = 0;

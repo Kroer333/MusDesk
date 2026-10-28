@@ -158,6 +158,27 @@ contain personal media references.
 
 These changes belong to the next update; the published 0.1.0 ZIP is unchanged.
 
+### Bass energy and beat candidates (development)
+
+The **Preview audio** panel includes **Bass energy**, **Beat pulse** and a count
+of detected bass onsets. Short marks along the top of the waveform locate those
+onsets. Seeking evaluates the same precomputed timeline, including when paused.
+Volume and mute affect monitoring only.
+
+Background import filters each audio channel to approximately 35–180 Hz, measures
+energy in 10 ms windows and detects sharp rises above an adaptive local baseline.
+Short smoothing and a 180 ms minimum interval suppress repeated triggers from
+sustained notes. Bass level and onset strengths are normalized with a noise floor;
+the beat pulse decays over time and is evaluated directly from the playhead.
+Filter coefficients follow the [W3C Audio EQ Cookbook](https://www.w3.org/TR/audio-eq-cookbook/).
+
+These are bass-onset candidates, not a BPM estimate or a musical beat grid.
+Bass melodies can trigger them, quiet hits may be missed and higher-frequency
+percussion is intentionally less prominent. This stage supplies preview feedback
+and analysis data for upcoming effects; composition rendering and MP4 visuals
+continue to use the existing RMS response. Analysis is regenerated from media
+when opening projects and is not stored in project or preset JSON.
+
 ### Audio waveform (development)
 
 The **Preview audio** panel displays the imported track's waveform and current

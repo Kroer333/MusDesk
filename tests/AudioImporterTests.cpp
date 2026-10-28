@@ -85,6 +85,10 @@ int main(int argc, char* argv[]) {
                 require(!decoded.envelope.values.empty(), "Decoded audio must include the RMS envelope");
                 require(!decoded.waveform.peaks.empty() && decoded.waveform.peaks.size() <= 8192,
                     "Decoded audio must include a bounded waveform");
+                require(!decoded.rhythm.bass.values.empty()
+                    && decoded.rhythm.bass.durationSeconds == decoded.durationSeconds(),
+                    "Decoded bass analysis must cover the audio timeline");
+                std::cout << "Bass onsets: " << decoded.rhythm.beats.size() << '\n';
                 const auto energy = decoded.envelope.at(decoded.durationSeconds() / 2);
                 require(std::isfinite(energy) && energy >= 0 && energy <= 1, "Invalid decoded envelope");
                 std::cout << "Decoded duration: " << decoded.durationSeconds() << " seconds; RMS windows: " << decoded.envelope.values.size() << '\n';

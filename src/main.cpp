@@ -341,6 +341,7 @@ int main(int argc, char* argv[]) {
             audioPlayer.unload();
             audioClip.reset();
             editorState.waveform = nullptr;
+            editorState.rhythm = nullptr;
             composition.clearArtwork();
             sourceError.clear();
             lastSourceCheck = 0;
@@ -507,6 +508,7 @@ int main(int argc, char* argv[]) {
                     if (audioCancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
                     audioClip = audio;
                     editorState.waveform = &audio->waveform;
+                    editorState.rhythm = &audio->rhythm;
                     sourceError.clear();
                     lastSourceCheck = 0;
                     editorState.audioPath = audio->path;
@@ -523,7 +525,8 @@ int main(int argc, char* argv[]) {
                     anchorTime = editorState.timeSeconds;
                     anchorTicks = SDL_GetTicksNS();
                     preparePlayback();
-                    SDL_Log("Audio ready: %.3f seconds, %zu RMS values", audio->durationSeconds(), audio->envelope.values.size());
+                    SDL_Log("Audio ready: %.3f seconds, %zu RMS values, %zu bass onsets",
+                        audio->durationSeconds(), audio->envelope.values.size(), audio->rhythm.beats.size());
                 } catch (const std::exception& error) {
                     if (!audioCancellation.stop_requested()) {
                         editorState.audioError = error.what();

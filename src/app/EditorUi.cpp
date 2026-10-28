@@ -107,6 +107,16 @@ void drawWaveform(EditorUiState& state) {
         draw->AddLine(ImVec2(x, center - peak.maximum * amplitude), ImVec2(x, center - peak.minimum * amplitude),
             ImGui::GetColorU32(x <= playhead ? ImGuiCol_PlotHistogram : ImGuiCol_TextDisabled));
     }
+    if (state.rhythm) {
+        int previousPixel = -1;
+        for (const auto& beat : state.rhythm->beats) {
+            const int pixel = static_cast<int>(beat.timeSeconds / state.durationSeconds * size.x);
+            if (pixel == previousPixel) continue;
+            previousPixel = pixel;
+            const float x = origin.x + pixel;
+            draw->AddLine(ImVec2(x, origin.y + 1), ImVec2(x, origin.y + 7), ImGui::GetColorU32(ImGuiCol_SliderGrabActive), 2);
+        }
+    }
     draw->AddLine(ImVec2(playhead, origin.y), ImVec2(playhead, bottom.y), ImGui::GetColorU32(ImGuiCol_Text), 2);
     draw->AddRect(origin, bottom, ImGui::GetColorU32(hovered ? ImGuiCol_SliderGrabActive : ImGuiCol_Border), 4);
     if (hovered || ImGui::IsItemActive())
@@ -219,6 +229,11 @@ void drawControls(EditorUiState& state) {
         ImGui::Checkbox("Loop", &state.loopAudio);
         ImGui::EndDisabled();
         ImGui::ProgressBar(state.audioEnergy, ImVec2(-1, 0), "Audio energy");
+        if (state.rhythm) {
+            ImGui::ProgressBar(state.rhythm->bass.at(state.timeSeconds), ImVec2(-1, 0), "Bass energy");
+            ImGui::ProgressBar(state.rhythm->pulseAt(state.timeSeconds), ImVec2(-1, 0), "Beat pulse");
+            ImGui::Text("Bass onsets: %zu", state.rhythm->beats.size());
+        }
         ImGui::TextDisabled("Volume affects monitoring only.");
     }
     ImGui::SeparatorText("Track labels");
