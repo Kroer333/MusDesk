@@ -7,6 +7,7 @@
 #include "musdesk/presets/PresetStore.hpp"
 #include "musdesk/export/ExportEngine.hpp"
 #include "musdesk/projects/ProjectStore.hpp"
+#include "musdesk/projects/RecoveryStore.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_opengl3.h>
@@ -296,6 +297,25 @@ int main(int argc, char* argv[]) {
         Uint64 lastSourceCheck = 0;
         std::string sourceError;
         musdesk::ProjectDocument savedProject;
+        bool recoveredProject = false;
+        std::unique_ptr<musdesk::RecoveryStore> recovery;
+        std::optional<musdesk::ProjectDocument> lastRecoveryDocument;
+        Uint64 lastRecoveryAttempt = SDL_GetTicks();
+        try {
+            recovery = std::make_unique<musdesk::RecoveryStore>(musdesk::defaultRecoveryDirectory());
+            editorState.recoveryCopies = recovery->available();
+            editorState.showRecoveryPrompt = argc == 1 && !editorState.recoveryCopies.empty();
+            editorState.recoveryStatus = "Recovery copies: every 30 seconds while unsaved.";
+        } catch (const std::exception& error) {
+            editorState.recoveryStatus = std::string("Autosave unavailable: ") + error.what();
+        }
+        auto clearOwnRecovery = [&] {
+            lastRecoveryDocument.reset();
+            lastRecoveryAttempt = SDL_GetTicks();
+            if (!recovery) return;
+            try { recovery->clear(); editorState.recoveryStatus = "Recovery copies: every 30 seconds while unsaved."; }
+            catch (const std::exception& error) { editorState.recoveryStatus = std::string("Recovery cleanup failed: ") + error.what(); }
+        };
         auto currentProject = [&] {
             musdesk::ProjectDocument project;
             project.composition = {editorState.title.data(), editorState.artist.data(), editorState.durationSeconds, editorState.preset};
@@ -307,9 +327,11 @@ int main(int argc, char* argv[]) {
         auto projectDirty = [&] {
             auto current = currentProject();
             current.previewTimeSeconds = 0;
-            return current != savedProject;
+            return recoveredProject || current != savedProject;
         };
         auto applyProject = [&](const musdesk::ProjectDocument& project, const std::string& path) {
+            clearOwnRecovery();
+            recoveredProject = false;
             startupAudio.clear();
             audioPlayer.unload();
             audioClip.reset();
@@ -352,20 +374,35 @@ int main(int argc, char* argv[]) {
             editorState.projectStatus = path.empty() ? "New project." : "Project opened; playback is paused.";
             SDL_Log("%s", editorState.projectStatus.c_str());
         };
-        enum class ProjectAction { None, New, Open, OpenPath, Close };
+        enum class ProjectAction { None, New, Open, OpenPath, Close, Recover };
         ProjectAction pendingProjectAction = ProjectAction::None;
         std::string pendingProjectPath;
         auto continueProjectAction = [&] {
             const auto action = pendingProjectAction;
             pendingProjectAction = ProjectAction::None;
             try {
-                if (action == ProjectAction::Close) running = false;
+                if (action == ProjectAction::Close) { clearOwnRecovery(); running = false; }
                 else if (action == ProjectAction::New) applyProject({}, {});
                 else if (action == ProjectAction::Open) projectOpenDialog.open(resources.window, musdesk::FileDialogKind::ProjectOpen);
                 else if (action == ProjectAction::OpenPath) {
                     const auto document = musdesk::loadProject(pendingProjectPath);
                     const auto absolute = std::filesystem::absolute(std::filesystem::u8path(pendingProjectPath)).lexically_normal().u8string();
                     applyProject(document, {absolute.begin(), absolute.end()});
+                }
+                else if (action == ProjectAction::Recover && recovery) {
+                    const auto document = recovery->restore(pendingProjectPath);
+                    applyProject(document, {});
+                    recoveredProject = true;
+                    editorState.projectStatus = "Session recovered. Use Save As to save the project.";
+                    try {
+                        recovery->save(currentProject());
+                        lastRecoveryDocument = currentProject();
+                        recovery->discard(pendingProjectPath);
+                        editorState.recoveryCopies = recovery->available();
+                        editorState.selectedRecovery = 0;
+                    } catch (const std::exception& error) {
+                        editorState.recoveryStatus = std::string("Recovery storage update failed: ") + error.what();
+                    }
                 }
             } catch (const std::exception& error) { editorState.projectError = error.what(); }
         };
@@ -376,6 +413,7 @@ int main(int argc, char* argv[]) {
                 return;
             }
             pendingProjectAction = action;
+            if (action == ProjectAction::Close) editorState.showRecoveryPrompt = false;
             pendingProjectPath = path;
             if (projectDirty()) {
                 editorState.showUnsavedPrompt = true;
@@ -392,6 +430,8 @@ int main(int argc, char* argv[]) {
                 editorState.projectPath.assign(absolute.begin(), absolute.end());
                 savedProject = document;
                 savedProject.previewTimeSeconds = 0;
+                recoveredProject = false;
+                clearOwnRecovery();
                 editorState.projectError.clear();
                 editorState.projectStatus = "Project saved.";
                 SDL_Log("Project saved: %s", editorState.projectPath.c_str());
@@ -410,7 +450,7 @@ int main(int argc, char* argv[]) {
                 ImGui_ImplSDL3_ProcessEvent(&event);
                 if (event.type == SDL_EVENT_DROP_FILE && event.drop.data != nullptr
                     && event.drop.windowID == SDL_GetWindowID(resources.window)) {
-                    if (editorState.projectDialogPending || pendingProjectAction != ProjectAction::None)
+                    if (editorState.projectDialogPending || pendingProjectAction != ProjectAction::None || editorState.showRecoveryPrompt)
                         editorState.projectError = "Finish the current project action before importing files.";
                     else if (editorState.exportBusy) editorState.exportStatus = "Finish or cancel export before importing files.";
                     else if (musdesk::isProjectPath(event.drop.data)) requestProjectAction(ProjectAction::OpenPath, event.drop.data);
@@ -614,6 +654,23 @@ int main(int argc, char* argv[]) {
                 exportVsyncDisabled = false;
             }
             refreshPlayback();
+            if (!editorState.projectDirty && lastRecoveryDocument) clearOwnRecovery();
+            if (recovery && editorState.projectDirty && !editorState.exportBusy && !editorState.audioImportPending
+                && !editorState.projectDialogPending && !editorState.artworkDialogPending && !editorState.audioDialogPending
+                && !editorState.presetDialogPending && !editorState.showUnsavedPrompt && !editorState.showRecoveryPrompt
+                && SDL_GetTicks() - lastRecoveryAttempt >= 30000) {
+                lastRecoveryAttempt = SDL_GetTicks();
+                try {
+                    const auto document = currentProject();
+                    if (!lastRecoveryDocument || document != *lastRecoveryDocument) {
+                        recovery->save(document);
+                        lastRecoveryDocument = document;
+                        editorState.recoveryStatus = "Recovery copy saved. The project file was not overwritten.";
+                    }
+                } catch (const std::exception& error) {
+                    editorState.recoveryStatus = std::string("Autosave failed; previous copy retained: ") + error.what();
+                }
+            }
             if ((SDL_GetWindowFlags(resources.window) & SDL_WINDOW_MINIMIZED) != 0) {
                 SDL_Delay(editorState.exportActive ? 1 : 50);
                 continue;
@@ -653,7 +710,7 @@ int main(int argc, char* argv[]) {
             musdesk::drawEditorUi(editorState, composition.textureId());
             if (!editorState.exportBusy && !editorState.audioImportPending && !editorState.projectDialogPending
                 && !editorState.artworkDialogPending && !editorState.audioDialogPending && !editorState.presetDialogPending
-                && !editorState.showUnsavedPrompt && editorState.toolsChecked && io.KeyCtrl) {
+                && !editorState.showUnsavedPrompt && !editorState.showRecoveryPrompt && editorState.toolsChecked && io.KeyCtrl) {
                 if (ImGui::IsKeyPressed(ImGuiKey_S, false)) {
                     if (io.KeyShift) editorState.requestSaveProjectAs = true;
                     else editorState.requestSaveProject = true;
@@ -668,6 +725,32 @@ int main(int argc, char* argv[]) {
             if (editorState.discardProjectChanges) {
                 editorState.discardProjectChanges = false;
                 continueProjectAction();
+            }
+            if (editorState.requestRecoveryList) {
+                editorState.requestRecoveryList = false;
+                try {
+                    if (!recovery) throw std::runtime_error("Recovery storage is unavailable.");
+                    editorState.recoveryCopies = recovery->available();
+                    editorState.selectedRecovery = 0;
+                    editorState.showRecoveryPrompt = !editorState.recoveryCopies.empty();
+                    if (!editorState.showRecoveryPrompt) editorState.recoveryStatus = "No inactive recovery copies found.";
+                } catch (const std::exception& error) { editorState.recoveryStatus = error.what(); }
+            }
+            if (editorState.requestRecover || editorState.requestDeleteRecovery) {
+                const auto selected = editorState.selectedRecovery;
+                if (recovery && selected >= 0 && selected < static_cast<int>(editorState.recoveryCopies.size())) {
+                    const auto path = editorState.recoveryCopies[selected].path;
+                    if (editorState.requestRecover) requestProjectAction(ProjectAction::Recover, path);
+                    else {
+                        try {
+                            recovery->discard(path);
+                            editorState.recoveryCopies = recovery->available();
+                            editorState.selectedRecovery = 0;
+                            editorState.showRecoveryPrompt = !editorState.recoveryCopies.empty();
+                        } catch (const std::exception& error) { editorState.recoveryStatus = error.what(); }
+                    }
+                }
+                editorState.requestRecover = editorState.requestDeleteRecovery = false;
             }
             if (editorState.requestNewProject) {
                 editorState.requestNewProject = false;

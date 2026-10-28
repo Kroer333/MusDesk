@@ -158,6 +158,35 @@ contain personal media references.
 
 These changes belong to the next update; the published 0.1.0 ZIP is unchanged.
 
+### Autosave and session recovery (development)
+
+Unsaved compositions get a recovery copy every **30 seconds** when no media
+import, export or file dialog is active. The Project panel reports the result.
+These copies are separate from manually saved `.musdesk` files; automatic saves
+never replace the user's project. Only settings, media references and the
+preview position are copied, not the media themselves. Changes since the last
+successful interval are not included in that copy.
+
+On Windows the default location is `%APPDATA%/MusDesk/recovery`. Each running
+instance reserves a separate session folder and holds a file lock, so live
+sessions are excluded from recovery and cannot overwrite each other's copies.
+The optional `MUSDESK_RECOVERY_DIR` environment variable selects another storage
+folder, for example for isolated tests. Storage errors are shown in the panel;
+manual project saving remains available.
+
+When starting without explicit media/project arguments, MusDesk offers the latest
+20 inactive recovery copies. **Review recovery copies** opens the same list later.
+Choose **Recover** or **Keep for later**. Corrupt copies are reported individually
+and can be removed with **Delete copy...**, followed by confirmation. No old copy
+is deleted merely because recovery was cancelled or deferred.
+
+A recovered session opens paused as an **unsaved, untitled project**. Use Save As
+to choose where to keep it. After creating a new recovery copy for the current
+session, the consumed old copy is removed. Normal Save, confirmed Discard/Close,
+and successful New/Open clear only the current session's rolling copy. An error
+opening a project preserves the existing session and its recovery data. Recovery
+files are not part of an MP4 export or a release package.
+
 - Use **Import artwork**, drop an image onto the window, or launch with
   `MusDesk.exe --artwork "path/to/artwork.png"`. Unicode paths are supported.
   Failed imports display an error and preserve the previous image.

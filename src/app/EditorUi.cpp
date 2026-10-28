@@ -67,7 +67,7 @@ void drawControls(EditorUiState& state) {
     ImGui::SeparatorText("Project");
     ImGui::TextWrapped("%s%s", state.projectPath.empty() ? "Untitled project" : state.projectPath.c_str(), state.projectDirty ? " *" : "");
     ImGui::BeginDisabled(state.audioImportPending || !state.toolsChecked || state.artworkDialogPending
-        || state.audioDialogPending || state.presetDialogPending || state.showUnsavedPrompt);
+        || state.audioDialogPending || state.presetDialogPending || state.showUnsavedPrompt || state.showRecoveryPrompt);
     if (ImGui::Button("New")) state.requestNewProject = true;
     ImGui::SameLine();
     if (ImGui::Button("Open")) state.requestOpenProject = true;
@@ -75,7 +75,9 @@ void drawControls(EditorUiState& state) {
     if (ImGui::Button("Save")) state.requestSaveProject = true;
     ImGui::SameLine();
     if (ImGui::Button("Save As")) state.requestSaveProjectAs = true;
+    if (ImGui::Button("Review recovery copies")) state.requestRecoveryList = true;
     ImGui::EndDisabled();
+    if (!state.recoveryStatus.empty()) ImGui::TextWrapped("%s", state.recoveryStatus.c_str());
     if (!state.projectStatus.empty()) ImGui::TextWrapped("%s", state.projectStatus.c_str());
     if (!state.projectError.empty()) ImGui::TextWrapped("%s", state.projectError.c_str());
     if (!state.missingArtworkPath.empty()) {
@@ -318,6 +320,49 @@ void drawEditorUi(EditorUiState& state, std::uint32_t compositionTexture) {
         ImGui::TextDisabled("Composition preview  |  MP4: 1080 x 1920 / 30 FPS");
     }
     ImGui::End();
+    if (state.showRecoveryPrompt) ImGui::OpenPopup("Recover session");
+    if (ImGui::BeginPopupModal("Recover session", &state.showRecoveryPrompt, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Recovery copies from inactive sessions were found.");
+        for (int i = 0; i < static_cast<int>(state.recoveryCopies.size()); ++i) {
+            const auto& copy = state.recoveryCopies[i];
+            if (ImGui::Selectable((copy.title + "##recovery" + std::to_string(i)).c_str(), state.selectedRecovery == i))
+                state.selectedRecovery = i;
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", copy.savedAt.c_str());
+        }
+        const bool selected = state.selectedRecovery >= 0 && state.selectedRecovery < static_cast<int>(state.recoveryCopies.size());
+        if (selected && !state.recoveryCopies[state.selectedRecovery].error.empty())
+            ImGui::TextWrapped("%s", state.recoveryCopies[state.selectedRecovery].error.c_str());
+        if (!state.recoveryStatus.empty()) ImGui::TextWrapped("%s", state.recoveryStatus.c_str());
+        ImGui::BeginDisabled(!selected || (selected && !state.recoveryCopies[state.selectedRecovery].error.empty())
+            || !state.toolsChecked || state.audioImportPending || state.exportBusy || state.projectDialogPending);
+        if (ImGui::Button("Recover")) {
+            state.requestRecover = true;
+            state.showRecoveryPrompt = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("Keep for later")) {
+            state.showRecoveryPrompt = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!selected);
+        if (ImGui::Button("Delete copy...")) ImGui::OpenPopup("Delete recovery copy?");
+        ImGui::EndDisabled();
+        if (ImGui::BeginPopupModal("Delete recovery copy?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Delete the selected recovery copy? This cannot be undone.");
+            if (ImGui::Button("Delete recovery copy")) {
+                state.requestDeleteRecovery = true;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel deletion")) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+        ImGui::EndPopup();
+    }
     if (state.showUnsavedPrompt) ImGui::OpenPopup("Unsaved project");
     if (ImGui::BeginPopupModal("Unsaved project", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextUnformatted("Save the project before continuing?");

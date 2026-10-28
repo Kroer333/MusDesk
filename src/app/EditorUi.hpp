@@ -4,9 +4,17 @@
 #include <cstdint>
 #include <string>
 #include "musdesk/core/VisualPreset.hpp"
+#include "musdesk/projects/RecoveryStore.hpp"
 
 namespace musdesk {
 struct EditorUiState {
+    std::vector<RecoveryCopy> recoveryCopies;
+    std::string recoveryStatus;
+    int selectedRecovery = 0;
+    bool showRecoveryPrompt = false;
+    bool requestRecoveryList = false;
+    bool requestRecover = false;
+    bool requestDeleteRecovery = false;
     std::string projectPath;
     std::string projectStatus;
     std::string projectError;

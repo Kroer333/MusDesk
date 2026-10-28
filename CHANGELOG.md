@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Recovery copies every 30 seconds for unsaved compositions, stored separately
+  from manually saved projects and isolated between running instances.
+- Inactive-session recovery, deferred restore and confirmed removal of old copies;
+  restored sessions require an explicit Save As.
+
 - New/Open/Save/Save As for `.musdesk` JSON projects, including labels, visual
   settings, relative media paths and paused restoration of the preview position.
 - Missing-media relinking, project shortcuts and unsaved-change confirmation.
