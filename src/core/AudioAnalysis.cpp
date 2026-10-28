@@ -8,6 +8,18 @@
 #include <stdexcept>
 
 namespace musdesk {
+SpectrumFrame spectrumForDisplay(const SpectrumFrame& spectrum, float gainDb, float balance) {
+    gainDb = std::isfinite(gainDb) ? std::clamp(gainDb, -24.0f, 24.0f) : 0;
+    balance = std::isfinite(balance) ? std::clamp(balance, -1.0f, 1.0f) : 0;
+    SpectrumFrame result{};
+    for (std::size_t band = 0; band < result.size(); ++band) {
+        if (!std::isfinite(spectrum[band]) || spectrum[band] <= 0) continue;
+        const float position = 2.0f * band / (result.size() - 1) - 1;
+        result[band] = std::clamp(std::min(spectrum[band], 1.0f) + (gainDb + 12 * balance * position) / 60, 0.0f, 1.0f);
+    }
+    return result;
+}
+
 SpectrumFrame AudioSpectrum::at(double seconds) const {
     SpectrumFrame result{};
     if (frames.empty() || !std::isfinite(seconds) || seconds < 0 || seconds >= durationSeconds

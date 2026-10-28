@@ -18,6 +18,8 @@ struct VisualPreset {
     float backgroundReactivity = 0.65f;
     float ringReactivity = 0.55f;
     float spectrumStrength = 0.65f;
+    float spectrumGainDb = 0;
+    float spectrumBalance = 0;
 
     bool operator==(const VisualPreset&) const = default;
 };

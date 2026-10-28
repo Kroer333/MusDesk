@@ -12,6 +12,10 @@ namespace musdesk {
 struct EditorUiState {
     CompositionFormat format = CompositionFormat::Portrait;
     int shortEdge = 1080;
+    ImageFraming backgroundFraming;
+    ImageFraming labelFraming;
+    float backgroundSoftness = 1;
+    int framingTarget = 0;
     const AudioWaveform* waveform = nullptr;
     const AudioRhythm* rhythm = nullptr;
     std::vector<RecoveryCopy> recoveryCopies;

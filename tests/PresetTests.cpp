@@ -54,6 +54,12 @@ int main(int argc, char* argv[]) {
             "reactivity":{"beat_threshold":0.55,"subject_pulse":0.05,"background":0.65,"ring":0.55}})");
         require(version2.spectrumStrength == 0 && version2.subjectPulse == soft.subjectPulse,
             "Version 2 presets must keep reactions while leaving FFT disabled");
+        const auto version3 = musdesk::parsePreset(R"({"version":3,"name":"Old FFT","disc_rpm":8,
+            "glow":{"color":[0.24,0.6,1],"intensity":0.8,"pulse_strength":0.6},
+            "background":{"speed":0.6,"zoom":1.16,"brightness":0.88},
+            "reactivity":{"beat_threshold":0.55,"subject_pulse":0.05,"background":0.65,"ring":0.55,"spectrum":0.65}})");
+        require(version3.spectrumGainDb == 0 && version3.spectrumBalance == 0
+            && version3.spectrumStrength == soft.spectrumStrength, "Version 3 spectra must retain neutral gain/balance");
         require(musdesk::parsePreset(json) == soft && musdesk::parsePreset(musdesk::serializePreset(beat)) == beat,
             "Built-in preset round trip must preserve every value");
         if (argc == 2) {
@@ -72,6 +78,8 @@ int main(int argc, char* argv[]) {
         custom.backgroundReactivity = 0.35f;
         custom.ringReactivity = 0.42f;
         custom.spectrumStrength = 0.37f;
+        custom.spectrumGainDb = -6.5f;
+        custom.spectrumBalance = 0.35f;
         const auto folder = std::filesystem::u8path(SDL_GetBasePath()) / "test-fixtures";
         std::filesystem::create_directories(folder);
         const auto path = utf8(folder / std::filesystem::path(u8"własny preset.json"));
@@ -88,13 +96,14 @@ int main(int argc, char* argv[]) {
         }
         rejected([&] { (void)musdesk::loadPreset(utf8(folder / "missing-preset.json")); });
         rejected([&] { (void)musdesk::parsePreset("{"); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 3", "\"version\": 4")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 3", "\"version\": 3.0")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 4", "\"version\": 5")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 4", "\"version\": 4.0")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"disc_rpm\": 8.0", "\"disc_rpm\": true")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"disc_rpm\": 8.0", "\"disc_rpm\": 46")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"name\": \"Soft Glow\"", "\"name\": \"\"")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 3", "\"unknown\": 0")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 3", "\"version\": 3, \"version\": 3")); }, "duplicate");
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 4", "\"unknown\": 0")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 4", "\"version\": 4, \"version\": 4")); }, "duplicate");
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"spectrum_gain_db\": 0.0", "\"spectrum_gain_db\": 25")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"beat_threshold\": 0.55", "\"beat_threshold\": 2.55")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"subject_pulse\": 0.05", "\"subject_pulse\": -0.05")); });
         rejected([&] { (void)musdesk::parsePreset(std::string(65537, ' ')); });

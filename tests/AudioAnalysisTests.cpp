@@ -16,6 +16,19 @@ template<class Action> void rejected(Action action) {
     throw std::runtime_error("Invalid audio analysis input was accepted");
 }
 void spectrumTests() {
+    musdesk::SpectrumFrame levels;
+    levels.fill(0.5f);
+    require(musdesk::spectrumForDisplay(levels,0,0) == levels, "Neutral spectrum tuning must preserve cached levels");
+    const auto raised = musdesk::spectrumForDisplay(levels,12,0);
+    require(std::abs(raised[0]-0.7f) < 1e-6f, "A 12 dB display gain must add 0.2 on the cached 60 dB range");
+    const auto treble = musdesk::spectrumForDisplay(levels,0,1);
+    const auto bass = musdesk::spectrumForDisplay(levels,0,-1);
+    require(treble.front() < treble.back() && bass.front() > bass.back(),
+        "Balance must emphasize the selected end of the frequency range");
+    require(musdesk::spectrumForDisplay({},24,1) == musdesk::SpectrumFrame{},
+        "Positive gain must not turn silent cache entries into noise");
+    require(musdesk::spectrumForDisplay(levels,std::numeric_limits<float>::quiet_NaN(),0) == levels,
+        "Invalid display gain must fall back to neutral");
     constexpr int rate = 48000;
     const auto tone = [](double frequency) {
         std::vector<std::int16_t> pcm(rate * 2);

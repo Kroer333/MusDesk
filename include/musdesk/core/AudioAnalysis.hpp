@@ -43,6 +43,7 @@ struct AudioRhythm {
 };
 
 using SpectrumFrame = std::array<float, 32>;
+SpectrumFrame spectrumForDisplay(const SpectrumFrame& spectrum, float gainDb, float balance);
 
 struct AudioSpectrum {
     double stepSeconds = 0.04;

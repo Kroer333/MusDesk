@@ -58,6 +58,21 @@ void drawPresetControls(EditorUiState& state) {
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderFloat("##Spectrum", &preset.spectrumStrength, 0, 1,
         "Spectrum ring: %.2f", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetNextItemWidth(-1);
+    changed |= ImGui::SliderFloat("##SpectrumGain", &preset.spectrumGainDb, -24, 24,
+        "Spectrum gain: %+.0f dB", ImGuiSliderFlags_AlwaysClamp);
+    float balancePercent = preset.spectrumBalance * 100;
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##SpectrumBalance", &balancePercent, -100, 100,
+        "Spectrum balance: %+.0f%%", ImGuiSliderFlags_AlwaysClamp)) {
+        preset.spectrumBalance = balancePercent / 100;
+        changed = true;
+    }
+    if (ImGui::Button("Reset spectrum tuning")) {
+        preset.spectrumGainDb = preset.spectrumBalance = 0;
+        changed = true;
+    }
+    ImGui::TextWrapped("Balance: bass (-), treble (+). Spectrum tuning does not change audio volume.");
     ImGui::TextWrapped("Beat gate selects strong bass hits. Audio response amplifies all reactions; zero disables them.");
     ImGui::SetNextItemWidth(-1);
     const double minRpm = -45, maxRpm = 45, minSpeed = 0, maxSpeed = 3;
@@ -82,6 +97,30 @@ void drawPresetControls(EditorUiState& state) {
         ImGui::PopStyleColor();
     }
     ImGui::Spacing();
+}
+
+void drawFramingControls(EditorUiState& state) {
+    if (!ImGui::CollapsingHeader("Artwork framing")) return;
+    ImGui::BeginDisabled(state.artworkPath.empty());
+    ImGui::SetNextItemWidth(-1);
+    ImGui::Combo("##FramingTarget", &state.framingTarget, "Background\0" "Vinyl label\0");
+    auto& framing = state.framingTarget == 0 ? state.backgroundFraming : state.labelFraming;
+    ImGui::SetNextItemWidth(-1);
+    ImGui::SliderFloat("##ArtworkZoom", &framing.zoom, 1, 3, "Crop zoom: %.2fx", ImGuiSliderFlags_AlwaysClamp);
+    float focusX = framing.focusX * 100, focusY = framing.focusY * 100;
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##FocusX", &focusX, 0, 100, "Horizontal focus: %.0f%%", ImGuiSliderFlags_AlwaysClamp))
+        framing.focusX = focusX / 100;
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##FocusY", &focusY, 0, 100, "Vertical focus: %.0f%%", ImGuiSliderFlags_AlwaysClamp))
+        framing.focusY = focusY / 100;
+    if (state.framingTarget == 0) {
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderFloat("##BackgroundSoftness", &state.backgroundSoftness, 0, 1, "Background softness: %.2f", ImGuiSliderFlags_AlwaysClamp);
+    }
+    if (ImGui::Button("Reset this crop")) framing = {};
+    ImGui::TextWrapped("Focus: 0 is left/top, 100 is right/bottom. Zoom in for more movement. Crops are saved with the project.");
+    ImGui::EndDisabled();
 }
 
 void trackSeekInteraction(EditorUiState& state) {
@@ -208,6 +247,7 @@ void drawControls(EditorUiState& state) {
         ImGui::TextWrapped("%s", state.importError.c_str());
         ImGui::PopStyleColor();
     }
+    drawFramingControls(state);
     ImGui::TextWrapped("%s", state.mediaToolsStatus.c_str());
     if (state.toolsChecked && (!state.ffmpegReady || !state.ffprobeReady)) {
         ImGui::TextWrapped("Tools: MUSDESK_FFMPEG_DIR, executable directory, or PATH. Restart after installing.");

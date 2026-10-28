@@ -14,6 +14,21 @@ void require(bool condition, const char* message) {
 
 int main() {
     try {
+        const auto right = musdesk::imageCrop(2, 1, {1,1,0.5f});
+        require(right.scaleX == 0.5 && right.centerX == 0.75 && right.scaleY == 1,
+            "Right focus must select the right half of a wide image without exposing empty pixels");
+        for (double aspect : {0.5,1.0,2.0}) for (double target : {0.5625,0.75,1.0,4.0/3,16.0/9}) {
+            for (float zoom : {1.0f,3.0f}) for (float focus : {0.0f,1.0f}) {
+                const auto crop = musdesk::imageCrop(aspect, target, {zoom,focus,focus});
+                require(crop.centerX - crop.scaleX / 2 >= 0 && crop.centerX + crop.scaleX / 2 <= 1
+                    && crop.centerY - crop.scaleY / 2 >= 0 && crop.centerY + crop.scaleY / 2 <= 1,
+                    "Every aspect/zoom/focus combination must remain inside the artwork");
+            }
+        }
+        const auto invalidCrop = musdesk::imageCrop(0, std::numeric_limits<double>::infinity(),
+            {std::numeric_limits<float>::quiet_NaN(),-1,2});
+        require(std::isfinite(invalidCrop.centerX) && std::isfinite(invalidCrop.scaleY),
+            "Unsafe render inputs must not produce invalid UV coordinates");
         for (auto format : {musdesk::CompositionFormat::Portrait, musdesk::CompositionFormat::Landscape,
             musdesk::CompositionFormat::Square, musdesk::CompositionFormat::PortraitThreeFour, musdesk::CompositionFormat::LandscapeFourThree}) {
             require(musdesk::parseCompositionFormat(musdesk::formatName(format)) == format, "Format identifiers must round trip");

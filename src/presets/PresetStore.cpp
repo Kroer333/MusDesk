@@ -50,8 +50,8 @@ VisualPreset parsePreset(std::string_view text) {
             if (event == Json::parse_event_t::object_end) keys.pop_back();
             return true;
         });
-        if (!json.at("version").is_number_integer() || json.at("version") < 1 || json.at("version") > 3)
-            throw std::runtime_error("Unsupported preset version; expected integer 1, 2 or 3.");
+        if (!json.at("version").is_number_integer() || json.at("version") < 1 || json.at("version") > 4)
+            throw std::runtime_error("Unsupported preset version; expected integer 1..4.");
         const bool legacy = json.at("version") == 1;
         if (legacy) fields(json, {"version", "name", "disc_rpm", "glow", "background"});
         else fields(json, {"version", "name", "disc_rpm", "glow", "background", "reactivity"});
@@ -77,13 +77,18 @@ VisualPreset parsePreset(std::string_view text) {
         } else {
             const auto& reactivity = json.at("reactivity");
             if (json.at("version") == 2) fields(reactivity, {"beat_threshold", "subject_pulse", "background", "ring"});
-            else fields(reactivity, {"beat_threshold", "subject_pulse", "background", "ring", "spectrum"});
+            else if (json.at("version") == 3) fields(reactivity, {"beat_threshold", "subject_pulse", "background", "ring", "spectrum"});
+            else fields(reactivity, {"beat_threshold", "subject_pulse", "background", "ring", "spectrum", "spectrum_gain_db", "spectrum_balance"});
             preset.beatThreshold = static_cast<float>(number(reactivity.at("beat_threshold"), 0, 1, "reactivity.beat_threshold"));
             preset.subjectPulse = static_cast<float>(number(reactivity.at("subject_pulse"), 0, 0.12, "reactivity.subject_pulse"));
             preset.backgroundReactivity = static_cast<float>(number(reactivity.at("background"), 0, 1, "reactivity.background"));
             preset.ringReactivity = static_cast<float>(number(reactivity.at("ring"), 0, 1, "reactivity.ring"));
-            if (json.at("version") == 3)
+            if (json.at("version") >= 3)
                 preset.spectrumStrength = static_cast<float>(number(reactivity.at("spectrum"), 0, 1, "reactivity.spectrum"));
+            if (json.at("version") == 4) {
+                preset.spectrumGainDb = static_cast<float>(number(reactivity.at("spectrum_gain_db"), -24, 24, "reactivity.spectrum_gain_db"));
+                preset.spectrumBalance = static_cast<float>(number(reactivity.at("spectrum_balance"), -1, 1, "reactivity.spectrum_balance"));
+            }
         }
         validatePreset(preset);
         return preset;
@@ -95,11 +100,12 @@ VisualPreset parsePreset(std::string_view text) {
 std::string serializePreset(const VisualPreset& preset) {
     validatePreset(preset);
     try {
-        const Json json{{"version", 3}, {"name", preset.name}, {"disc_rpm", preset.discRpm},
+        const Json json{{"version", 4}, {"name", preset.name}, {"disc_rpm", preset.discRpm},
             {"glow", {{"color", preset.glowColor}, {"intensity", preset.glowIntensity}, {"pulse_strength", preset.pulseStrength}}},
             {"background", {{"speed", preset.backgroundSpeed}, {"zoom", preset.backgroundZoom}, {"brightness", preset.backgroundBrightness}}},
             {"reactivity", {{"beat_threshold", preset.beatThreshold}, {"subject_pulse", preset.subjectPulse},
-                {"background", preset.backgroundReactivity}, {"ring", preset.ringReactivity}, {"spectrum", preset.spectrumStrength}}}};
+                {"background", preset.backgroundReactivity}, {"ring", preset.ringReactivity}, {"spectrum", preset.spectrumStrength},
+                {"spectrum_gain_db", preset.spectrumGainDb}, {"spectrum_balance", preset.spectrumBalance}}}};
         return json.dump(2) + '\n';
     } catch (const Json::exception& error) {
         throw std::runtime_error(std::string("Cannot serialize preset: ") + error.what());

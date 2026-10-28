@@ -92,7 +92,6 @@ out vec4 fragColor;
 uniform sampler2D artwork;
 uniform sampler2D backgroundImage;
 uniform bool hasArtwork;
-uniform float imageAspect;
 uniform float discAngle;
 uniform float backgroundAngle;
 uniform float backgroundZoom;
@@ -107,6 +106,9 @@ uniform float spectrumStrength;
 uniform vec2 canvasSize;
 uniform vec4 discGeometry;
 uniform vec4 timelineGeometry;
+uniform vec4 backgroundCrop;
+uniform vec4 labelCrop;
+uniform float backgroundSoftness;
 uniform vec4 glowSettings;
 uniform float pulseStrength;
 uniform float backgroundBrightness;
@@ -115,10 +117,8 @@ vec2 rotatePoint(vec2 p, float angle) {
     float c = cos(angle), s = sin(angle);
     return vec2(c*p.x-s*p.y, s*p.x+c*p.y);
 }
-vec2 coverCrop(vec2 p, float targetAspect) {
-    if (imageAspect > targetAspect) p.x = (p.x-0.5)*targetAspect/imageAspect + 0.5;
-    else p.y = (p.y-0.5)*imageAspect/targetAspect + 0.5;
-    return p;
+vec2 cropPoint(vec2 p, vec4 crop) {
+    return (p-0.5)*crop.xy+crop.zw;
 }
 float segmentDistance(vec2 p, vec2 a, vec2 b) {
     vec2 ab = b-a;
@@ -133,7 +133,11 @@ void main() {
         vec2 bg = (topUv-0.5)*vec2(aspect,1.0);
         bg = rotatePoint(bg,backgroundAngle)/backgroundZoom;
         bg = bg/vec2(aspect,1.0) + 0.5 + backgroundOffset;
-        vec4 sampleColor = texture(backgroundImage, coverCrop(bg,aspect));
+        vec2 imageUv = cropPoint(bg,backgroundCrop);
+        vec4 sampleColor;
+        if (backgroundSoftness <= 0.0) sampleColor = texture(artwork,imageUv);
+        else if (backgroundSoftness >= 1.0) sampleColor = texture(backgroundImage,imageUv);
+        else sampleColor = mix(texture(artwork,imageUv),texture(backgroundImage,imageUv),backgroundSoftness);
         vec3 lifted = pow(max(sampleColor.rgb,vec3(0.0)),vec3(0.72));
         color = mix(color,lifted,sampleColor.a);
     }
@@ -166,7 +170,7 @@ void main() {
         vinyl += 0.018*pow(abs(sin(phi+0.6)),10.0);
         if (r < 0.60) {
             vec2 labelUv = material/1.20+0.5;
-            vec4 label = hasArtwork ? texture(artwork,coverCrop(labelUv,1.0)) : vec4(0.10,0.17,0.25,1.0);
+            vec4 label = hasArtwork ? texture(artwork,cropPoint(labelUv,labelCrop)) : vec4(0.10,0.17,0.25,1.0);
             vinyl = mix(vec3(0.06,0.08,0.12),label.rgb,label.a);
         }
         if (r < 0.040) {
@@ -454,7 +458,14 @@ void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettin
     glBindTexture(GL_TEXTURE_2D, impl_->background);
     gl.Uniform1i(gl.GetUniformLocation(impl_->sceneProgram, "backgroundImage"), 1);
     gl.Uniform1i(gl.GetUniformLocation(impl_->sceneProgram, "hasArtwork"), impl_->artwork != 0);
-    scalar("imageAspect", impl_->imageAspect);
+    const auto setCrop = [&](const char* name, const ImageCrop& crop) {
+        gl.Uniform4f(gl.GetUniformLocation(impl_->sceneProgram, name),
+            static_cast<float>(crop.scaleX), static_cast<float>(crop.scaleY),
+            static_cast<float>(crop.centerX), static_cast<float>(crop.centerY));
+    };
+    setCrop("backgroundCrop", imageCrop(impl_->imageAspect,
+        static_cast<double>(layout.canvas.width) / layout.canvas.height, settings.backgroundFraming));
+    setCrop("labelCrop", imageCrop(impl_->imageAspect, 1, settings.labelFraming));
     scalar("discAngle", frame.discAngleRadians);
     scalar("backgroundAngle", frame.backgroundAngleRadians);
     scalar("backgroundZoom", frame.backgroundZoom);
@@ -472,10 +483,10 @@ void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettin
         safe(preset.glowColor[2], 0, 1, 1), safe(preset.glowIntensity, 0, 3, 0.8f));
     scalar("pulseStrength", safe(preset.pulseStrength, 0, 2, 0.6f));
     scalar("spectrumStrength", safe(preset.spectrumStrength, 0, 1, 0) * safe(preset.pulseStrength, 0, 2, 0));
-    SpectrumFrame spectrum = audio.spectrum;
-    for (auto& value : spectrum) value = safe(value, 0, 1, 0);
+    const auto spectrum = spectrumForDisplay(audio.spectrum, preset.spectrumGainDb, preset.spectrumBalance);
     gl.Uniform1fv(gl.GetUniformLocation(impl_->sceneProgram, "spectrum[0]"), static_cast<GLsizei>(spectrum.size()), spectrum.data());
     scalar("backgroundBrightness", safe(preset.backgroundBrightness, 0, 1.5f, 0.88f));
+    scalar("backgroundSoftness", safe(settings.backgroundSoftness, 0, 1, 1));
     gl.Uniform2f(gl.GetUniformLocation(impl_->sceneProgram, "backgroundOffset"),
         static_cast<float>(frame.backgroundOffsetX), static_cast<float>(frame.backgroundOffsetY));
     gl.BindVertexArray(impl_->sceneVao);

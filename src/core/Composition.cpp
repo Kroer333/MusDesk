@@ -6,6 +6,26 @@
 #include <stdexcept>
 
 namespace musdesk {
+void validateImageFraming(const ImageFraming& framing) {
+    if (!std::isfinite(framing.zoom) || framing.zoom < 1 || framing.zoom > 3
+        || !std::isfinite(framing.focusX) || framing.focusX < 0 || framing.focusX > 1
+        || !std::isfinite(framing.focusY) || framing.focusY < 0 || framing.focusY > 1)
+        throw std::runtime_error("Image framing requires zoom 1..3 and focus coordinates 0..1.");
+}
+ImageCrop imageCrop(double imageAspect, double targetAspect, const ImageFraming& framing) {
+    if (!std::isfinite(imageAspect) || imageAspect <= 0) imageAspect = 1;
+    if (!std::isfinite(targetAspect) || targetAspect <= 0) targetAspect = 1;
+    const auto safe = [](double value, double low, double high, double fallback) {
+        return std::isfinite(value) ? std::clamp(value, low, high) : fallback;
+    };
+    const double zoom = safe(framing.zoom, 1, 3, 1);
+    const double scaleX = std::min(1.0, targetAspect / imageAspect) / zoom;
+    const double scaleY = std::min(1.0, imageAspect / targetAspect) / zoom;
+    return {scaleX, scaleY,
+        std::clamp(safe(framing.focusX, 0, 1, 0.5), scaleX / 2, 1 - scaleX / 2),
+        std::clamp(safe(framing.focusY, 0, 1, 0.5), scaleY / 2, 1 - scaleY / 2)};
+}
+
 const char* formatName(CompositionFormat format) {
     switch (format) {
     case CompositionFormat::Portrait: return "9:16";

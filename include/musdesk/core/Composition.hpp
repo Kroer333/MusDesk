@@ -17,6 +17,17 @@ struct CompositionLayout {
     float textX, textWidth, titleY, artistY;
     float timelineLeft, timelineRight, timelineY;
 };
+struct ImageFraming {
+    float zoom = 1;
+    float focusX = 0.5f;
+    float focusY = 0.5f;
+    bool operator==(const ImageFraming&) const = default;
+};
+struct ImageCrop {
+    double scaleX, scaleY, centerX, centerY;
+};
+void validateImageFraming(const ImageFraming& framing);
+ImageCrop imageCrop(double imageAspect, double targetAspect, const ImageFraming& framing);
 const char* formatName(CompositionFormat format);
 CompositionFormat parseCompositionFormat(const std::string& name);
 OutputSize outputSize(CompositionFormat format, int shortEdge = 1080);
@@ -29,6 +40,9 @@ struct CompositionSettings {
     VisualPreset preset;
     CompositionFormat format = CompositionFormat::Portrait;
     int shortEdge = 1080;
+    ImageFraming backgroundFraming;
+    ImageFraming labelFraming;
+    float backgroundSoftness = 1;
     bool operator==(const CompositionSettings&) const = default;
 };
 

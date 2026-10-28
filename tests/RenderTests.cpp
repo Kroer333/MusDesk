@@ -47,18 +47,26 @@ int main(int argc, char* argv[]) {
         require(context.gl != nullptr, "GL context creation failed");
         require(SDL_GL_MakeCurrent(context.window, context.gl), "GL context activation failed");
         musdesk::VisualizerRenderer renderer(std::string(SDL_GetBasePath()) + "assets/Roboto-Medium.ttf");
-        if (argc == 4 && std::string(argv[1]) == "--layouts") {
+        if (argc == 4 && (std::string(argv[1]) == "--layouts" || std::string(argv[1]) == "--framing")) {
+            const bool framingGallery = std::string(argv[1]) == "--framing";
             renderer.setArtwork(musdesk::loadArtwork(argv[2]));
             const auto audio = musdesk::prepareAudio(argv[3], musdesk::detectMediaTools());
-            const auto folder = std::filesystem::u8path(SDL_GetBasePath()) / "test-fixtures" / "layout-gallery";
+            const auto folder = std::filesystem::u8path(SDL_GetBasePath()) / "test-fixtures"
+                / (framingGallery ? "framing-gallery" : "layout-gallery");
             std::filesystem::create_directories(folder);
-            for (int index = 0; index < 5; ++index) {
+            for (int index = 0; index < (framingGallery ? 3 : 5); ++index) {
                 musdesk::CompositionSettings composition;
                 composition.title = "MusDesk";
                 composition.artist = "FFT visualizer";
                 composition.durationSeconds = audio.durationSeconds();
                 composition.preset = musdesk::beatPulsePreset();
-                composition.format = static_cast<musdesk::CompositionFormat>(index);
+                composition.format = framingGallery ? musdesk::CompositionFormat::Landscape
+                    : static_cast<musdesk::CompositionFormat>(index);
+                if (framingGallery && index > 0) {
+                    composition.backgroundFraming = {1.4f,0.5f,0.12f};
+                    composition.backgroundSoftness = 0;
+                }
+                if (framingGallery && index == 2) composition.labelFraming = {2,0.75f,0.18f};
                 renderer.renderFrame(4.04, composition, audio.reactionAt(4.04, composition.preset.beatThreshold));
                 auto pixels = renderer.readPixels();
                 std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> surface(SDL_CreateSurfaceFrom(
@@ -68,7 +76,7 @@ int main(int argc, char* argv[]) {
                 const auto path = (folder / ("layout-" + std::to_string(index) + ".bmp")).u8string();
                 require(SDL_SaveBMP(surface.get(), std::string(path.begin(),path.end()).c_str()), "Cannot save layout gallery image");
             }
-            std::cout << "Five layout gallery frames saved.\n";
+            std::cout << "Artwork gallery frames saved.\n";
             return 0;
         }
         if (argc == 2) {
@@ -91,9 +99,30 @@ int main(int argc, char* argv[]) {
         renderer.renderFrame(9, fftSettings, spectrumB);
         renderer.renderFrame(2, fftSettings, spectrumA);
         require(lowFrequency == renderer.readPixels(), "FFT ring must reproduce identical pixels after seek");
+        fftSettings.preset.spectrumGainDb = -12;
+        renderer.renderFrame(2, fftSettings, spectrumA);
+        require(lowFrequency != renderer.readPixels(), "Spectrum display gain must affect ring pixels without reimporting audio");
         settings.title = "Deterministic frame";
         renderer.renderFrame(0, settings);
         const auto first = renderer.readPixels();
+        auto framed = settings;
+        framed.backgroundFraming = {2,0,0};
+        renderer.renderFrame(0, framed);
+        const auto movedBackground = renderer.readPixels();
+        require(differsIn(first,movedBackground,0,0,1080,300), "Background framing must change only the chosen artwork crop");
+        framed = settings;
+        framed.labelFraming = {2,1,1};
+        renderer.renderFrame(0, framed);
+        const auto movedLabel = renderer.readPixels();
+        require(differsIn(first,movedLabel,350,600,730,900), "Label framing must move the rotating artwork label");
+        require(!differsIn(first,movedLabel,0,0,1080,300), "Label cropping must not move the background");
+        framed = settings;
+        framed.backgroundSoftness = 0;
+        renderer.renderFrame(0, framed);
+        require(differsIn(first,renderer.readPixels(),0,0,1080,300), "Zero softness must use the original sharp artwork");
+        renderer.renderFrame(8, settings);
+        renderer.renderFrame(0, settings);
+        require(first == renderer.readPixels(), "Reset crops must restore identical pixels");
         renderer.renderFrame(10, settings);
         const auto different = renderer.readPixels();
         require(first != different, "Different timestamps must change the composition");

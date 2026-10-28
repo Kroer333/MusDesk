@@ -44,5 +44,7 @@ void validatePreset(const VisualPreset& preset) {
     range(preset.backgroundReactivity, 0, 1, "reactivity.background (0..1)");
     range(preset.ringReactivity, 0, 1, "reactivity.ring (0..1)");
     range(preset.spectrumStrength, 0, 1, "reactivity.spectrum (0..1)");
+    range(preset.spectrumGainDb, -24, 24, "reactivity.spectrum_gain_db (-24..24)");
+    range(preset.spectrumBalance, -1, 1, "reactivity.spectrum_balance (-1..1)");
 }
 }

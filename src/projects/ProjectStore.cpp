@@ -27,6 +27,10 @@ void text(const std::string& value, std::size_t limit, const char* name) {
 void validate(const ProjectDocument& project) {
     outputSize(project.composition.format, project.composition.shortEdge);
     validatePreset(project.composition.preset);
+    validateImageFraming(project.composition.backgroundFraming);
+    validateImageFraming(project.composition.labelFraming);
+    if (!std::isfinite(project.composition.backgroundSoftness) || project.composition.backgroundSoftness < 0
+        || project.composition.backgroundSoftness > 1) throw std::runtime_error("Background softness must be 0..1.");
     text(project.composition.title, 127, "title");
     text(project.composition.artist, 95, "artist");
     for (const auto& path : {project.audioPath, project.artworkPath}) {
@@ -52,6 +56,13 @@ std::string relativeMedia(const std::string& path, const std::filesystem::path& 
     const auto absolute = std::filesystem::absolute(std::filesystem::u8path(path)).lexically_normal();
     const auto relative = absolute.lexically_relative(base);
     return utf8(relative.empty() ? absolute : relative);
+}
+float framingNumber(const Json& object, const char* key, double minimum, double maximum) {
+    if (!object.at(key).is_number()) throw std::runtime_error(std::string("Framing field must be numeric: ") + key);
+    const double value = object.at(key).get<double>();
+    if (!std::isfinite(value) || value < minimum || value > maximum)
+        throw std::runtime_error(std::string("Framing field out of range: ") + key);
+    return static_cast<float>(value);
 }
 std::string resolveMedia(const std::string& path, const std::filesystem::path& base) {
     if (path.empty()) return {};
@@ -82,11 +93,12 @@ ProjectDocument parseProject(std::string_view source) {
             if (event == Json::parse_event_t::object_end) keys.pop_back();
             return true;
         });
-        if (!json.at("version").is_number_integer() || (json.at("version") != 1 && json.at("version") != 2))
-            throw std::runtime_error("Unsupported project version; expected integer 1 or 2.");
+        if (!json.at("version").is_number_integer() || json.at("version") < 1 || json.at("version") > 3)
+            throw std::runtime_error("Unsupported project version; expected integer 1, 2 or 3.");
         const bool legacy = json.at("version") == 1;
         if (legacy) fields(json, {"version", "format", "title", "artist", "duration_seconds", "preview_time_seconds", "audio", "artwork", "preset"});
-        else fields(json, {"version", "format", "short_edge", "title", "artist", "duration_seconds", "preview_time_seconds", "audio", "artwork", "preset"});
+        else if (json.at("version") == 2) fields(json, {"version", "format", "short_edge", "title", "artist", "duration_seconds", "preview_time_seconds", "audio", "artwork", "preset"});
+        else fields(json, {"version", "format", "short_edge", "title", "artist", "duration_seconds", "preview_time_seconds", "audio", "artwork", "preset", "framing"});
         if (legacy && json.at("format") != "9:16") throw std::runtime_error("Version 1 projects require 9:16 format.");
         if (!json.at("duration_seconds").is_number() || !json.at("preview_time_seconds").is_number())
             throw std::runtime_error("Project duration and preview position must be numbers.");
@@ -104,6 +116,20 @@ ProjectDocument parseProject(std::string_view source) {
         project.audioPath = json.at("audio").get<std::string>();
         project.artworkPath = json.at("artwork").get<std::string>();
         project.composition.preset = parsePreset(json.at("preset").dump());
+        if (json.at("version") == 3) {
+            const auto& framing = json.at("framing");
+            fields(framing, {"background", "label", "softness"});
+            const auto readFraming = [&](const Json& value) {
+                fields(value, {"zoom", "focus_x", "focus_y"});
+                ImageFraming result{framingNumber(value, "zoom", 1, 3),
+                    framingNumber(value, "focus_x", 0, 1), framingNumber(value, "focus_y", 0, 1)};
+                validateImageFraming(result);
+                return result;
+            };
+            project.composition.backgroundFraming = readFraming(framing.at("background"));
+            project.composition.labelFraming = readFraming(framing.at("label"));
+            project.composition.backgroundSoftness = framingNumber(framing, "softness", 0, 1);
+        }
         validate(project);
         return project;
     } catch (const Json::exception& error) { throw std::runtime_error(std::string("Invalid project JSON: ") + error.what()); }
@@ -112,11 +138,16 @@ ProjectDocument parseProject(std::string_view source) {
 std::string serializeProject(const ProjectDocument& project) {
     validate(project);
     try {
-        const Json json{{"version", 2}, {"format", formatName(project.composition.format)},
+        const auto cropJson = [](const ImageFraming& crop) {
+            return Json{{"zoom", crop.zoom}, {"focus_x", crop.focusX}, {"focus_y", crop.focusY}};
+        };
+        const Json json{{"version", 3}, {"format", formatName(project.composition.format)},
             {"short_edge", project.composition.shortEdge}, {"title", project.composition.title},
             {"artist", project.composition.artist}, {"duration_seconds", project.composition.durationSeconds},
             {"preview_time_seconds", project.previewTimeSeconds}, {"audio", project.audioPath},
-            {"artwork", project.artworkPath}, {"preset", Json::parse(serializePreset(project.composition.preset))}};
+            {"artwork", project.artworkPath}, {"preset", Json::parse(serializePreset(project.composition.preset))},
+            {"framing", {{"background", cropJson(project.composition.backgroundFraming)},
+                {"label", cropJson(project.composition.labelFraming)}, {"softness", project.composition.backgroundSoftness}}}};
         return json.dump(2) + '\n';
     } catch (const Json::exception& error) { throw std::runtime_error(std::string("Cannot serialize project: ") + error.what()); }
 }

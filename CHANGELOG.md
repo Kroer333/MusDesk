@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Independent artwork zoom/focus for background and rotating vinyl label, plus
+  background softness from sharp original to softened image, stored in project v3.
+- Immediate spectrum display gain and bass/treble balance, neutral reset and
+  preset v4 persistence, with backwards-compatible defaults for older files.
+
 - FFT spectrum ring with 32 logarithmic stereo power bands, cached during import;
   preset v3 preserves older v1/v2 appearances while adding spectrum intensity.
 - Five aspect ratios (9:16, 16:9, 1:1, 3:4, 4:3), each at a 720 or 1080 pixel

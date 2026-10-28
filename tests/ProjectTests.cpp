@@ -115,6 +115,9 @@ int main(int, char*[]) {
         project.composition.preset.discRpm = -12;
         project.composition.preset.beatThreshold = 0.68f;
         project.composition.preset.subjectPulse = 0.10f;
+        project.composition.backgroundFraming = {1.8f,0.25f,0.7f};
+        project.composition.labelFraming = {2,0.8f,0.2f};
+        project.composition.backgroundSoftness = 0.35f;
         const auto legacy = musdesk::parseProject(R"({"version":1,"format":"9:16","title":"Legacy",
             "artist":"Artist","duration_seconds":252,"preview_time_seconds":4,"audio":"","artwork":"",
             "preset":{"version":1,"name":"Old","disc_rpm":8,
@@ -124,6 +127,14 @@ int main(int, char*[]) {
             && legacy.composition.preset.ringReactivity == 0 && legacy.previewTimeSeconds == 4,
             "Old projects must preserve their visual settings when upgrading the embedded preset");
         require(musdesk::parseProject(musdesk::serializeProject(legacy)) == legacy, "Migrated project must round trip");
+        const auto version2 = musdesk::parseProject(R"({"version":2,"format":"16:9","short_edge":720,
+            "title":"Old landscape","artist":"Artist","duration_seconds":12,"preview_time_seconds":4,
+            "audio":"","artwork":"","preset":{"version":1,"name":"Old","disc_rpm":8,
+            "glow":{"color":[0.24,0.6,1],"intensity":0.8,"pulse_strength":0.6},
+            "background":{"speed":0.6,"zoom":1.16,"brightness":0.88}}})");
+        require(version2.composition.backgroundFraming == musdesk::ImageFraming{}
+            && version2.composition.labelFraming == musdesk::ImageFraming{} && version2.composition.backgroundSoftness == 1,
+            "Version 2 projects must preserve centered crops and previous softness");
         project.previewTimeSeconds = 42.25;
         const auto json = musdesk::serializeProject(project);
         require(musdesk::parseProject(json) == project, "Complete settings/Unicode/preset round trip failed");
@@ -168,9 +179,11 @@ int main(int, char*[]) {
         rejected([&] { musdesk::saveProject(utf8(path), self); });
         require(musdesk::loadProject(utf8(path)) == project, "Media-overwrite protection destroyed the project");
         rejected([&] { (void)musdesk::parseProject("{"); });
-        rejected([&] { (void)musdesk::parseProject(replace(json, "\"version\": 2", "\"version\": 3")); });
-        rejected([&] { (void)musdesk::parseProject(replace(json, "\"version\": 2", "\"version\": 2.0")); });
-        rejected([&] { (void)musdesk::parseProject(replace(json, "\"version\": 2", "\"version\": 2, \"version\": 2")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json, "\n  \"version\": 3", "\n  \"version\": 4")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json, "\n  \"version\": 3", "\n  \"version\": 3.0")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json, "\n  \"version\": 3", "\n  \"version\": 3, \"version\": 3")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json, "\"focus_x\": 0.25", "\"focus_x\": 1.00000001")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json, "\"focus_x\": 0.25", "\"focus_x\": true")); });
         rejected([&] { (void)musdesk::parseProject(replace(json, "\"format\": \"9:16\"", "\"format\": \"5:4\"")); });
         rejected([&] { (void)musdesk::parseProject(replace(json, "\"short_edge\": 1080", "\"short_edge\": 721")); });
         rejected([&] { (void)musdesk::parseProject(replace(json, "\"short_edge\": 1080", "\"short_edge\": 4294968376")); });

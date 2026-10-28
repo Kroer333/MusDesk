@@ -145,7 +145,8 @@ Preview uses the chosen aspect ratio; MP4 uses the chosen pixel dimensions at
 Output size is independent of window size and preview scale. Format/resolution
 changes mark the project unsaved and survive Save, recovery and Collect project.
 New projects default to 1080 × 1920. Version 1 projects reopen at that size;
-new project saves use version 2 with explicit format and short-edge resolution.
+new project saves use version 3 with format, short-edge resolution and artwork
+framing. Versions 1 and 2 retain their previous centered crops and softness.
 
 The editor's **Project** section provides **New**, **Open**, **Save** and
 **Save As**. Shortcuts are Ctrl+N, Ctrl+O, Ctrl+S and Ctrl+Shift+S. You can also
@@ -177,6 +178,24 @@ contain personal media references.
 
 These changes belong to the next update; the published 0.1.0 ZIP is unchanged.
 
+### Artwork framing (development)
+
+Under **Media > Artwork framing**, choose **Background** or **Vinyl label**.
+Each has independent **Crop zoom** (1–3×), **Horizontal focus** and **Vertical
+focus**. Focus percentages identify a point in the source image: 0 is left/top,
+100 is right/bottom. The crop is clamped to keep the image filled; zooming in
+allows more movement on axes that were already fully visible. **Reset this
+crop** restores only the selected crop to centered 1× framing.
+
+**Background softness** blends from the original sharp artwork at 0 to the
+previous softened background at 1. It does not blur the label. Framing is
+applied before background motion and label rotation, so both remain animated.
+The same settings work in every output format and in MP4 export.
+
+These settings belong to the project, not the effect preset: applying Soft Glow,
+Beat Pulse or another preset leaves the crop alone. Save, recovery and Collect
+project preserve both crops and softness. No source image is modified.
+
 ### Beat-reactive visuals (development)
 
 The vinyl, artwork label and track text pulse together on strong bass hits.
@@ -207,10 +226,17 @@ separate channel powers so opposite-phase stereo retains its spectrum. A fixed
 −60 to 0 dB scale and attack/release smoothing keep the response stable. The
 cache costs about 3.8 MB per 20-minute track and is regenerated from media.
 
-New presets are written as version 3. Version 1 retains its original RMS look;
-version 2 retains its beat reactions with FFT disabled. Choose a built-in preset
+**Spectrum gain** changes the visible level from −24 to +24 dB. **Spectrum balance**
+emphasizes bass at negative values and treble at positive values. Both operate
+on the existing spectrum cache, so changes are immediate and do not reimport or
+alter audio. Silent bands remain zero; gain cannot recover data below the cache's
+noise floor. **Reset spectrum tuning** restores neutral gain and balance.
+
+New presets are written as version 4. Version 1 retains its original RMS look;
+version 2 retains its beat reactions with FFT disabled. Version 3 keeps neutral
+spectrum gain and balance. Choose a built-in preset
 or increase **Spectrum ring** to enable FFT on an older preset.
-Saving writes version 3 settings, including inside projects and recovery
+Saving writes version 4 settings, including inside projects and recovery
 copies; the released 0.1.0 application cannot read those newer presets.
 
 ### Bass energy and beat candidates (development)
@@ -362,12 +388,13 @@ track labels, preview volume, playback position, guides or window settings.
 Loading a preset does not reset audio or its timeline. Preset files store effects;
 use a `.musdesk` project to preserve media references and labels as well.
 
-JSON format version **3** requires exactly these root fields: `version`, `name`,
+JSON format version **4** requires exactly these root fields: `version`, `name`,
 `disc_rpm`, `glow`, `background` and `reactivity`. `glow` contains `color`, `intensity`
 and `pulse_strength`; `background` contains `speed`, `zoom` and `brightness`.
 `reactivity` contains `beat_threshold`, `subject_pulse`, `background`, `ring`
-and `spectrum`. Version 2 omits `spectrum`; version 1 has no `reactivity` object.
-Both older versions are migrated without enabling the added effects.
+and `spectrum`, `spectrum_gain_db`, `spectrum_balance`. Version 3 omits the last
+two tuning fields. Version 2 also omits `spectrum`; version 1 has no `reactivity` object.
+Older versions are migrated without enabling effects added after their version.
 
 | Setting | Accepted range |
 | --- | --- |
@@ -383,6 +410,8 @@ Both older versions are migrated without enabling the added effects.
 | Subject pulse | 0–0.12; multiplied by audio response, final scale capped at 1.18 |
 | Background / ring reactivity | 0–1 each |
 | Spectrum ring | 0–1 |
+| Spectrum gain | −24–24 dB |
+| Spectrum balance | −1–1; bass emphasis to treble emphasis |
 
 The parser rejects wrong types, missing/unknown/duplicate fields, nonfinite or
 out-of-range values, unsupported versions, excessive nesting and files above

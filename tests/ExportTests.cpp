@@ -170,6 +170,11 @@ int main(int argc, char* argv[]) {
         require(rejects([&] { musdesk::validateAudioSource(missingClip); }), "Missing source audio was accepted");
         musdesk::CompositionSettings settings;
         settings.preset = musdesk::beatPulsePreset();
+        settings.backgroundFraming = {1.4f,0.8f,0.2f};
+        settings.labelFraming = {1.6f,0.2f,0.7f};
+        settings.backgroundSoftness = 0.25f;
+        settings.preset.spectrumGainDb = -3;
+        settings.preset.spectrumBalance = 0.3f;
         settings.durationSeconds = clip->durationSeconds();
         const auto output = folder / std::filesystem::path(L"gotowy film.mp4");
         { std::ofstream file(output); file << "previous export"; }
