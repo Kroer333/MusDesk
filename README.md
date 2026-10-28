@@ -158,6 +158,25 @@ contain personal media references.
 
 These changes belong to the next update; the published 0.1.0 ZIP is unchanged.
 
+### Audio waveform (development)
+
+The **Preview audio** panel displays the imported track's waveform and current
+playhead. Click or drag across it to seek; dragging outside the left/right edge
+clamps to the start/end. Playback pauses while scrubbing and resumes on release
+if it was playing beforehand. A paused track remains paused. The existing time
+slider is available for precise positioning and keyboard navigation.
+
+The waveform is calculated once during background import from the decoded PCM.
+It retains minimum/maximum amplitudes across both channels, including short
+peaks and opposite-phase stereo. At most 8192 peak pairs are kept (64 KiB per
+track); drawing aggregates them to the panel width without scanning PCM each
+frame. Height reflects the original amplitude on a fixed full-scale axis.
+Volume and mute do not alter it. New/Open clears the old waveform, and a failed
+replacement import preserves the previous track's waveform.
+
+It is an editor-only overview: it is regenerated from media when opening a
+project, is not stored in `.musdesk` files and does not appear in exported MP4s.
+
 ### Collect project (development)
 
 Use **Project > Collect project...** and choose a parent folder. MusDesk creates

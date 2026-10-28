@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Peak-preserving audio waveform in the preview controls, with playhead,
+  click/drag seeking and bounded background analysis of decoded stereo audio.
+
 - Collect project into a new portable folder with copied audio/artwork and relative
   paths, background copying, cancellation and protection of existing files.
 

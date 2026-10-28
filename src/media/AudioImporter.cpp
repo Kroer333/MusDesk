@@ -197,6 +197,7 @@ DecodedAudio prepareAudio(const std::string& path, const MediaTools& tools, std:
         }
     }
     audio.envelope = analyzeRms(audio.samples, DecodedAudio::sampleRate, DecodedAudio::channels, cancellation);
+    audio.waveform = analyzeWaveform(audio.samples, DecodedAudio::channels, cancellation);
     validateAudioSource(audio);
     return audio;
 }

@@ -4,10 +4,12 @@
 #include <cstdint>
 #include <string>
 #include "musdesk/core/VisualPreset.hpp"
+#include "musdesk/core/AudioAnalysis.hpp"
 #include "musdesk/projects/RecoveryStore.hpp"
 
 namespace musdesk {
 struct EditorUiState {
+    const AudioWaveform* waveform = nullptr;
     std::vector<RecoveryCopy> recoveryCopies;
     std::string recoveryStatus;
     int selectedRecovery = 0;

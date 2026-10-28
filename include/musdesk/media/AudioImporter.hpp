@@ -23,6 +23,7 @@ struct DecodedAudio {
     std::string path;
     std::vector<std::int16_t> samples;
     AudioEnvelope envelope;
+    AudioWaveform waveform;
     struct SourceStamp {
         std::uintmax_t size;
         std::filesystem::file_time_type modified;

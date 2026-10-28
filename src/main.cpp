@@ -340,6 +340,7 @@ int main(int argc, char* argv[]) {
             startupAudio.clear();
             audioPlayer.unload();
             audioClip.reset();
+            editorState.waveform = nullptr;
             composition.clearArtwork();
             sourceError.clear();
             lastSourceCheck = 0;
@@ -505,6 +506,7 @@ int main(int argc, char* argv[]) {
                     const auto audio = audioFuture.get();
                     if (audioCancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
                     audioClip = audio;
+                    editorState.waveform = &audio->waveform;
                     sourceError.clear();
                     lastSourceCheck = 0;
                     editorState.audioPath = audio->path;

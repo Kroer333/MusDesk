@@ -83,6 +83,8 @@ int main(int argc, char* argv[]) {
                 require(!decoded.samples.empty() && std::abs(decoded.durationSeconds() - audio.durationSeconds) < 1,
                     "Decoded PCM duration must agree with container metadata within codec padding");
                 require(!decoded.envelope.values.empty(), "Decoded audio must include the RMS envelope");
+                require(!decoded.waveform.peaks.empty() && decoded.waveform.peaks.size() <= 8192,
+                    "Decoded audio must include a bounded waveform");
                 const auto energy = decoded.envelope.at(decoded.durationSeconds() / 2);
                 require(std::isfinite(energy) && energy >= 0 && energy <= 1, "Invalid decoded envelope");
                 std::cout << "Decoded duration: " << decoded.durationSeconds() << " seconds; RMS windows: " << decoded.envelope.values.size() << '\n';

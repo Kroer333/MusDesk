@@ -62,6 +62,57 @@ void drawPresetControls(EditorUiState& state) {
     ImGui::Spacing();
 }
 
+void trackSeekInteraction(EditorUiState& state) {
+    if (ImGui::IsItemActivated()) {
+        state.beginAudioSeek = true;
+        state.audioSeeking = true;
+    }
+    if (ImGui::IsItemDeactivated()) {
+        state.endAudioSeek = true;
+        state.audioSeeking = false;
+    }
+}
+
+void drawWaveform(EditorUiState& state) {
+    if (!state.waveform || state.waveform->peaks.empty() || state.durationSeconds <= 0) return;
+    const auto origin = ImGui::GetCursorScreenPos();
+    const ImVec2 size(std::max(1.0f, ImGui::GetContentRegionAvail().x), ImGui::GetTextLineHeight() * 3.5f);
+    ImGui::InvisibleButton("##WaveformSeek", size);
+    trackSeekInteraction(state);
+    const bool hovered = ImGui::IsItemHovered();
+    const double mouseFraction = std::clamp(static_cast<double>((ImGui::GetIO().MousePos.x - origin.x) / size.x), 0.0, 1.0);
+    if (ImGui::IsItemActive() || ImGui::IsItemDeactivated()) {
+        state.timeSeconds = mouseFraction * state.durationSeconds;
+        state.seekAudio = true;
+    }
+    if (!ImGui::IsItemVisible()) return;
+    auto* draw = ImGui::GetWindowDrawList();
+    const ImVec2 bottom(origin.x + size.x, origin.y + size.y);
+    draw->AddRectFilled(origin, bottom, ImGui::GetColorU32(ImGuiCol_FrameBg), 4);
+    const float center = origin.y + size.y / 2;
+    const float amplitude = size.y * 0.44f;
+    const float playhead = origin.x + static_cast<float>(std::clamp(state.timeSeconds / state.durationSeconds, 0.0, 1.0)) * size.x;
+    draw->AddLine(ImVec2(origin.x, center), ImVec2(bottom.x, center), ImGui::GetColorU32(ImGuiCol_Border));
+    const auto& peaks = state.waveform->peaks;
+    const auto columns = static_cast<std::size_t>(std::clamp(size.x, 1.0f, 4096.0f));
+    for (std::size_t column = 0; column < columns; ++column) {
+        const auto first = column * peaks.size() / columns;
+        const auto end = std::min(peaks.size(), ((column + 1) * peaks.size() + columns - 1) / columns);
+        auto peak = peaks[first];
+        for (auto i = first + 1; i < end; ++i) {
+            peak.minimum = std::min(peak.minimum, peaks[i].minimum);
+            peak.maximum = std::max(peak.maximum, peaks[i].maximum);
+        }
+        const float x = origin.x + (column + 0.5f) * size.x / columns;
+        draw->AddLine(ImVec2(x, center - peak.maximum * amplitude), ImVec2(x, center - peak.minimum * amplitude),
+            ImGui::GetColorU32(x <= playhead ? ImGuiCol_PlotHistogram : ImGuiCol_TextDisabled));
+    }
+    draw->AddLine(ImVec2(playhead, origin.y), ImVec2(playhead, bottom.y), ImGui::GetColorU32(ImGuiCol_Text), 2);
+    draw->AddRect(origin, bottom, ImGui::GetColorU32(hovered ? ImGuiCol_SliderGrabActive : ImGuiCol_Border), 4);
+    if (hovered || ImGui::IsItemActive())
+        ImGui::SetTooltip("Seek: %.2f s / %.2f s\nClick or drag to seek", mouseFraction * state.durationSeconds, state.durationSeconds);
+}
+
 void drawControls(EditorUiState& state) {
     if (state.collectingProject) {
         ImGui::TextUnformatted("Collecting project and media...");
@@ -152,18 +203,14 @@ void drawControls(EditorUiState& state) {
         const auto position = formatTime(static_cast<std::uint64_t>(state.timeSeconds));
         const auto duration = formatTime(static_cast<std::uint64_t>(state.durationSeconds));
         ImGui::Text("%s / %s", position.c_str(), duration.c_str());
+        ImGui::BeginDisabled(state.audioImportPending);
+        drawWaveform(state);
         const double start = 0;
         ImGui::SetNextItemWidth(-1);
         if (ImGui::SliderScalar("##AudioTime", ImGuiDataType_Double, &state.timeSeconds,
                 &start, &state.durationSeconds, "%.2f s", ImGuiSliderFlags_AlwaysClamp)) state.seekAudio = true;
-        if (ImGui::IsItemActivated()) {
-            state.beginAudioSeek = true;
-            state.audioSeeking = true;
-        }
-        if (ImGui::IsItemDeactivated()) {
-            state.endAudioSeek = true;
-            state.audioSeeking = false;
-        }
+        trackSeekInteraction(state);
+        ImGui::EndDisabled();
         ImGui::BeginDisabled(!state.audioReady);
         ImGui::SetNextItemWidth(-1);
         ImGui::SliderFloat("##Volume", &state.previewVolume, 0, 100, "Volume: %.0f%%", ImGuiSliderFlags_AlwaysClamp);

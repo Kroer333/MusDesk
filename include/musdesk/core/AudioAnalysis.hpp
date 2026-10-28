@@ -16,4 +16,16 @@ struct AudioEnvelope {
 
 AudioEnvelope analyzeRms(std::span<const std::int16_t> samples, int sampleRate, int channels,
     std::stop_token cancellation = {});
+
+struct WaveformPeak {
+    float minimum = 0;
+    float maximum = 0;
+};
+
+struct AudioWaveform {
+    std::vector<WaveformPeak> peaks;
+};
+
+AudioWaveform analyzeWaveform(std::span<const std::int16_t> samples, int channels,
+    std::stop_token cancellation = {});
 }

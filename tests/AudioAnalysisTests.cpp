@@ -10,10 +10,47 @@ namespace {
 void require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
+template<class Action> void rejected(Action action) {
+    try { action(); } catch (const std::exception&) { return; }
+    throw std::runtime_error("Invalid waveform input was accepted");
+}
+void waveformTests() {
+    std::vector<std::int16_t> silence(40000, 0);
+    const auto quiet = musdesk::analyzeWaveform(silence, 2);
+    require(quiet.peaks.size() == 8192, "Long waveforms must have bounded storage");
+    require(std::all_of(quiet.peaks.begin(), quiet.peaks.end(), [](auto p) { return p.minimum == 0 && p.maximum == 0; }),
+        "Silence must produce a flat waveform");
+    const std::vector<std::int16_t> stereo{16384, -16384, 0, 32767, -32768, 0};
+    const auto shortWave = musdesk::analyzeWaveform(stereo, 2);
+    require(shortWave.peaks.size() == 3 && shortWave.peaks[0].minimum == -0.5f && shortWave.peaks[0].maximum == 0.5f,
+        "Opposite-phase channels must not cancel in the waveform");
+    require(shortWave.peaks.back().minimum == -1 && shortWave.peaks[1].maximum > 0.999f,
+        "Signed PCM extrema must be preserved without overflow");
+    silence.front() = 32767;
+    silence[19999] = -32768;
+    silence.back() = 16384;
+    const auto peaks = musdesk::analyzeWaveform(silence, 1);
+    require(peaks.peaks.front().maximum > 0.999f && peaks.peaks.back().maximum == 0.5f,
+        "First and last samples must be retained");
+    require(std::any_of(peaks.peaks.begin(), peaks.peaks.end(), [](auto p) { return p.minimum == -1; }),
+        "Downsampling must retain a single-sample transient");
+    require(std::all_of(peaks.peaks.begin(), peaks.peaks.end(), [](auto p) {
+        return std::isfinite(p.minimum) && std::isfinite(p.maximum)
+            && p.minimum >= -1 && p.maximum <= 1 && p.minimum <= p.maximum;
+    }), "Waveform peaks must be ordered and finite");
+    std::stop_source cancellation;
+    cancellation.request_stop();
+    rejected([&] { musdesk::analyzeWaveform(silence, 1, cancellation.get_token()); });
+    rejected([&] { musdesk::analyzeWaveform({}, 2); });
+    rejected([&] { musdesk::analyzeWaveform(stereo, 0); });
+    rejected([&] { musdesk::analyzeWaveform(stereo, 9); });
+    rejected([&] { musdesk::analyzeWaveform(std::span(stereo).first(5), 2); });
+}
 }
 
 int main() {
     try {
+        waveformTests();
         constexpr int rate = 48000;
         std::vector<std::int16_t> samples(rate * 2 * 2, 0);
         require(musdesk::analyzeRms(samples, rate, 2).at(0.5) == 0, "Silence must have zero energy");

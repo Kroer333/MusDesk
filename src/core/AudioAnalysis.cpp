@@ -5,6 +5,29 @@
 #include <stdexcept>
 
 namespace musdesk {
+AudioWaveform analyzeWaveform(std::span<const std::int16_t> samples, int channels,
+    std::stop_token cancellation) {
+    if (channels < 1 || channels > 8 || samples.empty() || samples.size() % channels != 0)
+        throw std::runtime_error("Invalid PCM audio for waveform analysis.");
+    const auto frames = samples.size() / channels;
+    const auto count = std::min<std::size_t>(8192, frames);
+    AudioWaveform result;
+    result.peaks.reserve(count);
+    for (std::size_t bucket = 0; bucket < count; ++bucket) {
+        if (cancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
+        const auto begin = bucket * frames / count;
+        const auto end = (bucket + 1) * frames / count;
+        auto minimum = samples[begin * channels];
+        auto maximum = minimum;
+        for (auto i = begin * channels; i < end * channels; ++i) {
+            minimum = std::min(minimum, samples[i]);
+            maximum = std::max(maximum, samples[i]);
+        }
+        result.peaks.push_back({minimum / 32768.0f, maximum / 32768.0f});
+    }
+    return result;
+}
+
 float AudioEnvelope::at(double timeSeconds) const {
     if (values.empty() || !std::isfinite(timeSeconds) || timeSeconds < 0
         || timeSeconds >= durationSeconds || !(stepSeconds > 0)) return 0;
