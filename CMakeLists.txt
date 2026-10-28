@@ -96,7 +96,7 @@ add_library(musdesk_presets STATIC src/presets/PresetStore.cpp)
 target_include_directories(musdesk_presets PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(musdesk_presets PUBLIC musdesk_core PRIVATE nlohmann_json::nlohmann_json SDL3::SDL3)
 
-add_library(musdesk_projects STATIC src/projects/ProjectStore.cpp src/projects/RecoveryStore.cpp)
+add_library(musdesk_projects STATIC src/projects/ProjectStore.cpp src/projects/RecoveryStore.cpp src/projects/ProjectCollector.cpp)
 target_include_directories(musdesk_projects PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(musdesk_projects PUBLIC musdesk_presets PRIVATE nlohmann_json::nlohmann_json SDL3::SDL3)
 

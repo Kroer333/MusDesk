@@ -158,6 +158,29 @@ contain personal media references.
 
 These changes belong to the next update; the published 0.1.0 ZIP is unchanged.
 
+### Collect project (development)
+
+Use **Project > Collect project...** and choose a parent folder. MusDesk creates
+a new `MusDesk-project` subfolder containing `project.musdesk` and `media/`.
+If that name is already occupied, a numbered folder is created instead.
+Audio and artwork are copied as `audio.<extension>` and `artwork.<extension>`,
+so identical source filenames cannot collide. The project uses relative media
+paths: move or archive the entire collected folder together.
+
+Collection captures the current settings and preview position, including unsaved
+edits. It creates an independent copy; the open project's path, dirty state,
+recovery copy and original media are unchanged. Open the collected `.musdesk`
+file when you want to work from that copy. No extra media, decoded audio cache,
+exported videos or application binaries are included.
+
+Missing referenced media must be located first. Copying runs in the background;
+**Cancel collection** is available at the top of the controls. Editing, importing,
+exporting and project switching are disabled until it finishes. Read/write errors,
+source size/modification-time changes during copying and cancellation are reported.
+On failure, files created by that collection are cleaned up without overwriting
+existing projects. A forced process termination can leave an incomplete folder;
+only a folder with a successfully written `project.musdesk` is ready to open.
+
 ### Autosave and session recovery (development)
 
 Unsaved compositions get a recovery copy every **30 seconds** when no media

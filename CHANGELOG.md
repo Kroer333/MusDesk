@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Collect project into a new portable folder with copied audio/artwork and relative
+  paths, background copying, cancellation and protection of existing files.
+
 - Recovery copies every 30 seconds for unsaved compositions, stored separately
   from manually saved projects and isolated between running instances.
 - Inactive-session recovery, deferred restore and confirmed removal of old copies;

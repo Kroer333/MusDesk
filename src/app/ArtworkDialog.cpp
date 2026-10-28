@@ -41,7 +41,9 @@ void ArtworkDialog::open(SDL_Window* window, FileDialogKind kind) {
         (*owner)->selection = std::move(result);
         (*owner)->pending = false;
     };
-    if (kind == FileDialogKind::ProjectSave) {
+    if (kind == FileDialogKind::ProjectCollect) {
+        SDL_ShowOpenFolderDialog(callback, callbackState, window, nullptr, false);
+    } else if (kind == FileDialogKind::ProjectSave) {
         SDL_ShowSaveFileDialog(callback, callbackState, window, projectFilters, 1, "project.musdesk");
     } else if (kind == FileDialogKind::ExportSave) {
         SDL_ShowSaveFileDialog(callback, callbackState, window, videoFilters, 1, "MusDesk.mp4");

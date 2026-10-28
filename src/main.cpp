@@ -8,6 +8,7 @@
 #include "musdesk/export/ExportEngine.hpp"
 #include "musdesk/projects/ProjectStore.hpp"
 #include "musdesk/projects/RecoveryStore.hpp"
+#include "musdesk/projects/ProjectCollector.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_opengl3.h>
@@ -191,6 +192,10 @@ int main(int argc, char* argv[]) {
         musdesk::ArtworkDialog exportDialog;
         musdesk::ArtworkDialog projectOpenDialog;
         musdesk::ArtworkDialog projectSaveDialog;
+        musdesk::ArtworkDialog projectCollectDialog;
+        std::stop_source collectionCancellation;
+        std::future<std::string> collectionFuture;
+        StopImportOnExit stopCollection{collectionCancellation};
         std::unique_ptr<musdesk::ExportEngine> exporter;
         bool exportVsyncDisabled = false;
         Uint64 lastExportUiFrame = 0;
@@ -407,6 +412,10 @@ int main(int argc, char* argv[]) {
             } catch (const std::exception& error) { editorState.projectError = error.what(); }
         };
         auto requestProjectAction = [&](ProjectAction action, const std::string& path = std::string{}) {
+            if (editorState.collectingProject || projectCollectDialog.pending()) {
+                editorState.projectError = "Finish or cancel project collection before switching or closing the project.";
+                return;
+            }
             if (pendingProjectAction != ProjectAction::None || editorState.projectDialogPending) return;
             if (action != ProjectAction::Close && (editorState.exportBusy || editorState.audioImportPending)) {
                 editorState.projectError = "Finish or cancel the current import/export before opening a project.";
@@ -538,7 +547,28 @@ int main(int argc, char* argv[]) {
                     if (saveCurrentProject(path)) continueProjectAction();
                 }
             }
-            editorState.projectDialogPending = projectOpenDialog.pending() || projectSaveDialog.pending();
+            if (auto selection = projectCollectDialog.takeSelection()) {
+                if (!selection->error.empty()) editorState.collectionStatus = selection->error;
+                else if (!selection->path.empty()) {
+                    try {
+                        const auto document = currentProject();
+                        collectionCancellation = std::stop_source{};
+                        collectionFuture = std::async(std::launch::async,
+                            [directory = selection->path, document, token = collectionCancellation.get_token()] {
+                                return musdesk::collectProject(directory, document, token);
+                            });
+                        editorState.collectingProject = true;
+                        editorState.collectionStatus = "Collecting project and media...";
+                    } catch (const std::exception& error) { editorState.collectionStatus = error.what(); }
+                } else editorState.collectionStatus = "Project collection cancelled.";
+            }
+            if (collectionFuture.valid() && collectionFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                try { editorState.collectionStatus = "Project copy created: " + collectionFuture.get(); }
+                catch (const std::exception& error) { editorState.collectionStatus = error.what(); }
+                editorState.collectingProject = false;
+            }
+            editorState.projectDialogPending = projectOpenDialog.pending() || projectSaveDialog.pending()
+                || projectCollectDialog.pending() || editorState.collectingProject;
             if (auto selection = artworkDialog.takeSelection()) {
                 if (!selection->error.empty()) editorState.importError = selection->error;
                 else if (!selection->path.empty()) importArtwork(selection->path);
@@ -766,7 +796,17 @@ int main(int argc, char* argv[]) {
                 if (saveAs) projectSaveDialog.open(resources.window, musdesk::FileDialogKind::ProjectSave);
                 else if (saveCurrentProject(editorState.projectPath)) continueProjectAction();
             }
-            editorState.projectDialogPending = projectOpenDialog.pending() || projectSaveDialog.pending();
+            if (editorState.requestCollectProject) {
+                editorState.requestCollectProject = false;
+                editorState.collectionStatus = "Choose the parent folder for a new collected project folder.";
+                projectCollectDialog.open(resources.window, musdesk::FileDialogKind::ProjectCollect);
+            }
+            if (editorState.requestCancelCollection) {
+                editorState.requestCancelCollection = false;
+                collectionCancellation.request_stop();
+            }
+            editorState.projectDialogPending = projectOpenDialog.pending() || projectSaveDialog.pending()
+                || projectCollectDialog.pending() || editorState.collectingProject;
             if (audioClip && !editorState.exportBusy && !io.WantCaptureKeyboard) {
                 if (editorState.audioReady && ImGui::IsKeyPressed(ImGuiKey_Space, false)) editorState.requestPlayPause = true;
                 const double shift = (ImGui::IsKeyPressed(ImGuiKey_RightArrow) ? 5.0 : 0)

@@ -1,4 +1,5 @@
 #include "musdesk/projects/ProjectStore.hpp"
+#include "musdesk/projects/ProjectCollector.hpp"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <filesystem>
@@ -6,6 +7,10 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 namespace {
 void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
@@ -22,6 +27,83 @@ std::string replace(std::string text, const std::string& old, const std::string&
     require(position != std::string::npos, "Test JSON fragment not found");
     text.replace(position, old.size(), value);
     return text;
+}
+std::string read(const std::filesystem::path& path) {
+    std::ifstream file(path, std::ios::binary);
+    return {(std::istreambuf_iterator<char>(file)), {}};
+}
+void collectionTests() {
+    namespace fs = std::filesystem;
+    const auto base = fs::u8path(SDL_GetBasePath()) / "test-fixtures"
+        / ("collection-" + std::to_string(SDL_GetTicksNS()));
+    const auto source = base / fs::path(u8"źródła");
+    const auto destination = base / fs::path(u8"projekty z mediami");
+    fs::create_directories(source / "one");
+    fs::create_directories(source / "two");
+    fs::create_directories(destination / "MusDesk-project");
+    { std::ofstream(destination / "MusDesk-project" / "keep.txt") << "Existing project"; }
+    const std::string audioBytes("audio\0fixture", 13);
+    const std::string artworkBytes("artwork\0fixture", 15);
+    { std::ofstream(source / "one" / "same.bin", std::ios::binary) << audioBytes; }
+    { std::ofstream(source / "two" / "same.bin", std::ios::binary) << artworkBytes; }
+    musdesk::ProjectDocument project;
+    project.composition.title = "Collected composition";
+    project.composition.preset = musdesk::beatPulsePreset();
+    project.previewTimeSeconds = 12.25;
+    project.audioPath = utf8(source / "one" / "same.bin");
+    project.artworkPath = utf8(source / "two" / "same.bin");
+    musdesk::saveProject(utf8(source / "original.musdesk"), project);
+    const auto originalDocument = read(source / "original.musdesk");
+    const auto original = project;
+    const auto collectedPath = fs::u8path(musdesk::collectProject(utf8(destination), project));
+    require(project == original, "Collection modified the caller's document");
+    require(read(source / "original.musdesk") == originalDocument, "Collection changed the original project");
+    require(read(source / "one" / "same.bin") == audioBytes
+        && read(source / "two" / "same.bin") == artworkBytes, "Collection changed source media");
+    require(read(destination / "MusDesk-project" / "keep.txt") == "Existing project", "Collection overwrote an existing folder");
+    const auto stored = musdesk::parseProject(read(collectedPath));
+    require(fs::u8path(stored.audioPath).is_relative() && fs::u8path(stored.artworkPath).is_relative(),
+        "Collected paths must be relative");
+    require(stored.audioPath != stored.artworkPath, "Same-name media collided");
+#ifdef _WIN32
+    const auto countBeforeFailure = std::distance(fs::directory_iterator(destination), fs::directory_iterator{});
+    struct FileLock {
+        HANDLE handle;
+        ~FileLock() { if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle); }
+    };
+    {
+        FileLock locked{CreateFileW(fs::u8path(project.artworkPath).c_str(), GENERIC_READ, 0,
+            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr)};
+        require(locked.handle != INVALID_HANDLE_VALUE, "Cannot lock collection fixture");
+        rejected([&] { musdesk::collectProject(utf8(destination), project); });
+        require(std::distance(fs::directory_iterator(destination), fs::directory_iterator{}) == countBeforeFailure,
+            "Copy failure left partially collected media or damaged another collection");
+    }
+#endif
+    const auto moved = base / "moved";
+    fs::rename(collectedPath.parent_path(), moved);
+    fs::rename(source, base / "unavailable-originals");
+    const auto loaded = musdesk::loadProject(utf8(moved / "project.musdesk"));
+    require(read(fs::u8path(loaded.audioPath)) == audioBytes
+        && read(fs::u8path(loaded.artworkPath)) == artworkBytes, "Moved collection still depends on original media");
+    auto expected = original;
+    expected.audioPath = loaded.audioPath;
+    expected.artworkPath = loaded.artworkPath;
+    require(loaded == expected, "Collected project lost settings or preview position");
+    const auto before = std::distance(fs::directory_iterator(destination), fs::directory_iterator{});
+    rejected([&] { musdesk::collectProject(utf8(destination), original); });
+    require(std::distance(fs::directory_iterator(destination), fs::directory_iterator{}) == before,
+        "Missing media left a partial collection");
+    std::stop_source cancellation;
+    cancellation.request_stop();
+    rejected([&] { musdesk::collectProject(utf8(destination), {}, cancellation.get_token()); });
+    require(std::distance(fs::directory_iterator(destination), fs::directory_iterator{}) == before,
+        "Cancelled collection left files");
+    rejected([&] { musdesk::collectProject(utf8(destination / "absent"), {}); });
+    rejected([&] { musdesk::collectProject(utf8(moved / "project.musdesk"), {}); });
+    const auto empty = musdesk::collectProject(utf8(destination), {});
+    require(musdesk::loadProject(empty) == musdesk::ProjectDocument{}, "Collection without media failed");
+    std::cout << "Collection: portable relocation, binary copies, Unicode, collisions, missing media and cancellation passed.\n";
 }
 }
 int main(int, char*[]) {
@@ -93,6 +175,7 @@ int main(int, char*[]) {
         invalid = project;
         invalid.previewTimeSeconds = 2000;
         rejected([&] { (void)musdesk::serializeProject(invalid); });
+        collectionTests();
         std::cout << "Project settings, relative paths, relocation, missing media, safe overwrite and validation passed.\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

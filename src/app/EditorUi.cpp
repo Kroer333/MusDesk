@@ -63,6 +63,10 @@ void drawPresetControls(EditorUiState& state) {
 }
 
 void drawControls(EditorUiState& state) {
+    if (state.collectingProject) {
+        ImGui::TextUnformatted("Collecting project and media...");
+        if (ImGui::Button("Cancel collection")) state.requestCancelCollection = true;
+    }
     ImGui::BeginDisabled(state.exportBusy || state.projectDialogPending);
     ImGui::SeparatorText("Project");
     ImGui::TextWrapped("%s%s", state.projectPath.empty() ? "Untitled project" : state.projectPath.c_str(), state.projectDirty ? " *" : "");
@@ -75,8 +79,11 @@ void drawControls(EditorUiState& state) {
     if (ImGui::Button("Save")) state.requestSaveProject = true;
     ImGui::SameLine();
     if (ImGui::Button("Save As")) state.requestSaveProjectAs = true;
+    if (ImGui::Button("Collect project...")) state.requestCollectProject = true;
+    ImGui::TextWrapped("Copy this composition and its media into a new folder.");
     if (ImGui::Button("Review recovery copies")) state.requestRecoveryList = true;
     ImGui::EndDisabled();
+    if (!state.collectionStatus.empty()) ImGui::TextWrapped("%s", state.collectionStatus.c_str());
     if (!state.recoveryStatus.empty()) ImGui::TextWrapped("%s", state.recoveryStatus.c_str());
     if (!state.projectStatus.empty()) ImGui::TextWrapped("%s", state.projectStatus.c_str());
     if (!state.projectError.empty()) ImGui::TextWrapped("%s", state.projectError.c_str());
@@ -212,7 +219,7 @@ void drawControls(EditorUiState& state) {
     ImGui::EndDisabled();
     const bool ready = state.exportBlockedReason.empty();
     ImGui::BeginDisabled(!ready || state.exportBusy || state.audioImportPending || state.artworkDialogPending
-        || state.audioDialogPending || state.presetDialogPending);
+        || state.audioDialogPending || state.presetDialogPending || state.projectDialogPending);
     if (ImGui::Button("Export MP4", ImVec2(-1, 0))) state.requestExport = true;
     ImGui::EndDisabled();
     if (!ready) ImGui::TextWrapped("%s", state.exportBlockedReason.c_str());

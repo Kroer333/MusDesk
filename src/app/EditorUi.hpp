@@ -22,6 +22,10 @@ struct EditorUiState {
     std::string missingArtworkPath;
     bool projectDirty = false;
     bool projectDialogPending = false;
+    bool collectingProject = false;
+    bool requestCollectProject = false;
+    bool requestCancelCollection = false;
+    std::string collectionStatus;
     bool requestNewProject = false;
     bool requestOpenProject = false;
     bool requestSaveProject = false;

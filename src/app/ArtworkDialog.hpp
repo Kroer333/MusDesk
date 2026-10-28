@@ -12,7 +12,7 @@ struct ArtworkSelection {
     std::string error;
 };
 
-enum class FileDialogKind { Artwork, Audio, PresetOpen, PresetSave, ExportSave, ProjectOpen, ProjectSave };
+enum class FileDialogKind { Artwork, Audio, PresetOpen, PresetSave, ExportSave, ProjectOpen, ProjectSave, ProjectCollect };
 
 class ArtworkDialog {
 public:
