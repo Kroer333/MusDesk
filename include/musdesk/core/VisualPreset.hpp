@@ -13,6 +13,10 @@ struct VisualPreset {
     double backgroundSpeed = 0.6;
     float backgroundZoom = 1.16f;
     float backgroundBrightness = 0.88f;
+    float beatThreshold = 0.55f;
+    float subjectPulse = 0.05f;
+    float backgroundReactivity = 0.65f;
+    float ringReactivity = 0.55f;
 
     bool operator==(const VisualPreset&) const = default;
 };

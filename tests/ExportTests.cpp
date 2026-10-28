@@ -37,7 +37,7 @@ void wav(const std::filesystem::path& path) {
     integer(4, 2); integer(16, 2); file.write("data", 4); integer(samples * 4, 4);
     for (unsigned i = 0; i < samples; ++i) {
         const double amplitude = (i < 4800 || i >= 24000 && i < 28800) ? 0.6 : 0;
-        const auto sample = static_cast<std::int16_t>(amplitude * 32767 * std::sin(i * 440.0 * 6.283185307179586 / 48000));
+        const auto sample = static_cast<std::int16_t>(amplitude * 32767 * std::sin(i * 70.0 * 6.283185307179586 / 48000));
         integer(static_cast<std::uint16_t>(sample), 2); integer(static_cast<std::uint16_t>(sample), 2);
     }
     require(static_cast<bool>(file), "Cannot write export audio fixture");
@@ -125,6 +125,7 @@ int main(int argc, char* argv[]) {
             require(seconds >= 1 && seconds <= 60, "Benchmark duration must be 1-60 seconds");
             audio->samples.resize(std::min(audio->samples.size(), seconds * 48000ULL * 2));
             audio->envelope = musdesk::analyzeRms(audio->samples, 48000, 2);
+            audio->rhythm = musdesk::analyzeRhythm(audio->samples, 48000, 2);
             renderer.setArtwork(musdesk::loadArtwork(argv[3]));
             musdesk::CompositionSettings composition;
             composition.title = "Export benchmark";
@@ -167,6 +168,7 @@ int main(int argc, char* argv[]) {
         missingClip.path = utf8(folder / "missing.wav");
         require(rejects([&] { musdesk::validateAudioSource(missingClip); }), "Missing source audio was accepted");
         musdesk::CompositionSettings settings;
+        settings.preset = musdesk::beatPulsePreset();
         settings.durationSeconds = clip->durationSeconds();
         const auto output = folder / std::filesystem::path(L"gotowy film.mp4");
         { std::ofstream file(output); file << "previous export"; }
@@ -186,7 +188,7 @@ int main(int argc, char* argv[]) {
         require(rmsAt(decoded, 0.03) > 0.3 && rmsAt(decoded, 0.53) > 0.3,
             "Audio pulses shifted from their source timestamps");
         require(rmsAt(decoded, 0.3) < 0.005 && rmsAt(decoded, 0.9) < 0.005, "Audio silence intervals shifted");
-        renderer.renderFrame(0, settings, clip->envelope.at(0));
+        renderer.renderFrame(0, settings, clip->reactionAt(0, settings.preset.beatThreshold));
         const auto reference = renderer.readPixels();
         std::ifstream pixelFile(pixelsPath, std::ios::binary);
         const std::vector<unsigned char> pixels((std::istreambuf_iterator<char>(pixelFile)), {});
@@ -198,6 +200,33 @@ int main(int argc, char* argv[]) {
                 require(std::abs(int(pixels[encodedIndex + c]) - int(reference[referenceIndex + c])) < 18,
                     "Exported video is vertically inverted or differs from the renderer");
         }
+        const auto reactivePath = folder / "reactive-frame.rgba";
+        runTool({tools.ffmpegPath, "-v", "error", "-xerror", "-nostdin", "-y", "-i", utf8(output),
+            "-vf", "select=eq(n\\,3)", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", utf8(reactivePath)});
+        const auto reaction = clip->reactionAt(musdesk::exportFrameTime(3), settings.preset.beatThreshold);
+        require(reaction.beat > 0 && reaction.bass > 0, "Export fixture must exercise bass and beat effects");
+        renderer.renderFrame(musdesk::exportFrameTime(3), settings, reaction);
+        const auto reactiveReference = renderer.readPixels();
+        renderer.renderFrame(musdesk::exportFrameTime(3), settings, reaction.energy);
+        const auto rmsOnlyReference = renderer.readPixels();
+        std::ifstream reactiveFile(reactivePath, std::ios::binary);
+        const std::vector<unsigned char> reactivePixels((std::istreambuf_iterator<char>(reactiveFile)), {});
+        require(reactivePixels.size() == reactiveReference.size(), "Reactive export frame has wrong dimensions");
+        double reactiveError = 0, rmsOnlyError = 0;
+        std::size_t comparisons = 0;
+        for (int y = 0; y < 1920; y += 8) for (int x = 0; x < 1080; x += 8) {
+            const auto encoded = (y * 1080 + x) * 4;
+            const auto expected = ((1919 - y) * 1080 + x) * 4;
+            for (int c = 0; c < 3; ++c) {
+                reactiveError += std::abs(int(reactivePixels[encoded + c]) - int(reactiveReference[expected + c]));
+                rmsOnlyError += std::abs(int(reactivePixels[encoded + c]) - int(rmsOnlyReference[expected + c]));
+                ++comparisons;
+            }
+        }
+        require(reactiveError / comparisons < 12 && reactiveError < rmsOnlyError,
+            "Exported beat-reactive frame must match preview more closely than the RMS-only frame");
+        std::cout << "Reactive export frame mean error: " << reactiveError / comparisons
+            << "; RMS-only mismatch: " << rmsOnlyError / comparisons << '\n';
         runTool({tools.ffmpegPath, "-v", "error", "-xerror", "-nostdin", "-i", utf8(output), "-f", "null", "-"});
         {
             musdesk::ExportEngine job(renderer, settings, clip, tools, utf8(folder / "cpu.mp4"), musdesk::ExportEncoder::Cpu);

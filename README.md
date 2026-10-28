@@ -158,6 +158,37 @@ contain personal media references.
 
 These changes belong to the next update; the published 0.1.0 ZIP is unchanged.
 
+### Beat-reactive visuals (development)
+
+The vinyl, artwork label and track text pulse together on strong bass hits.
+The background adds bass-driven zoom and faster drift, while the luminous rim
+can form animated waves around the disc. **Soft Glow** applies a restrained
+response; **Beat Pulse** makes it stronger. The progress line and time labels
+stay stable. No audio playback buttons are added to the exported composition.
+
+Under **Effects and presets**:
+
+- **Beat gate** selects hits by their normalized onset strength (55% by default).
+  It is a strength threshold, not a frequency setting. Accepted hits decay smoothly;
+  the gate does not cut their tail when the displayed pulse falls below 55%.
+- **Vinyl + text pulse** controls subject scaling; zero disables it.
+- **Background reaction** controls the added music-driven zoom/drift. Setting
+  background speed to zero freezes background motion, including this response.
+- **Ring waves** controls rim deformation; zero retains the previous circular rim.
+- **Audio response** multiplies the reactions; zero disables audio modulation.
+  Existing glow intensity/color, rotation, zoom and brightness controls still apply.
+
+Preview and MP4 export evaluate the same audio reaction and frame at the same
+timestamp. Seeking, paused preview and offline export do not accumulate animation
+state. Volume, mute and loop remain monitoring-only settings. The rim wave shape
+is procedural and driven by bass/beat energy; it is not a frequency spectrum.
+
+New presets are written as version 2. Version 1 presets and projects containing
+them still open with the new reactions disabled, preserving their original RMS
+look. Choose a built-in preset or raise the reaction controls to enable the new
+effects. Saving writes version 2 settings, including inside projects and recovery
+copies; the released 0.1.0 application cannot read those newer presets.
+
 ### Bass energy and beat candidates (development)
 
 The **Preview audio** panel includes **Bass energy**, **Beat pulse** and a count
@@ -174,9 +205,8 @@ Filter coefficients follow the [W3C Audio EQ Cookbook](https://www.w3.org/TR/aud
 
 These are bass-onset candidates, not a BPM estimate or a musical beat grid.
 Bass melodies can trigger them, quiet hits may be missed and higher-frequency
-percussion is intentionally less prominent. This stage supplies preview feedback
-and analysis data for upcoming effects; composition rendering and MP4 visuals
-continue to use the existing RMS response. Analysis is regenerated from media
+percussion is intentionally less prominent. Bass and gated beat pulses drive
+the new reaction controls alongside the existing RMS rim response. Analysis is regenerated from media
 when opening projects and is not stored in project or preset JSON.
 
 ### Audio waveform (development)
@@ -308,9 +338,11 @@ track labels, preview volume, playback position, guides or window settings.
 Loading a preset does not reset audio or its timeline. Preset files store effects;
 use a `.musdesk` project to preserve media references and labels as well.
 
-JSON format version **1** requires exactly these root fields: `version`, `name`,
-`disc_rpm`, `glow` and `background`. `glow` contains `color`, `intensity` and
-`pulse_strength`; `background` contains `speed`, `zoom` and `brightness`.
+JSON format version **2** requires exactly these root fields: `version`, `name`,
+`disc_rpm`, `glow`, `background` and `reactivity`. `glow` contains `color`, `intensity`
+and `pulse_strength`; `background` contains `speed`, `zoom` and `brightness`.
+`reactivity` contains `beat_threshold`, `subject_pulse`, `background` and `ring`.
+Version 1 has no `reactivity` object and is migrated with new effects disabled.
 
 | Setting | Accepted range |
 | --- | --- |
@@ -322,6 +354,9 @@ JSON format version **1** requires exactly these root fields: `version`, `name`,
 | Background speed | 0–3 times normal speed |
 | Background zoom | 1.1–1.5 |
 | Background brightness | 0–1.5 |
+| Beat threshold | 0–1 |
+| Subject pulse | 0–0.12; multiplied by audio response, final scale capped at 1.18 |
+| Background / ring reactivity | 0–1 each |
 
 The parser rejects wrong types, missing/unknown/duplicate fields, nonfinite or
 out-of-range values, unsupported versions, excessive nesting and files above

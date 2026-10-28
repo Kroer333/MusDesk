@@ -16,6 +16,9 @@ VisualPreset beatPulsePreset() {
     preset.discRpm = 12;
     preset.backgroundSpeed = 1.1;
     preset.backgroundZoom = 1.18f;
+    preset.subjectPulse = 0.07f;
+    preset.backgroundReactivity = 0.9f;
+    preset.ringReactivity = 0.9f;
     return preset;
 }
 
@@ -35,5 +38,9 @@ void validatePreset(const VisualPreset& preset) {
     range(preset.backgroundSpeed, 0, 3, "background.speed (0..3)");
     range(preset.backgroundZoom, 1.1, 1.5, "background.zoom (1.1..1.5)");
     range(preset.backgroundBrightness, 0, 1.5, "background.brightness (0..1.5)");
+    range(preset.beatThreshold, 0, 1, "reactivity.beat_threshold (0..1)");
+    range(preset.subjectPulse, 0, 0.12f, "reactivity.subject_pulse (0..0.12)");
+    range(preset.backgroundReactivity, 0, 1, "reactivity.background (0..1)");
+    range(preset.ringReactivity, 0, 1, "reactivity.ring (0..1)");
 }
 }

@@ -113,6 +113,17 @@ int main(int, char*[]) {
         project.composition.artist = "Zażółć gęślą jaźń";
         project.composition.preset = musdesk::beatPulsePreset();
         project.composition.preset.discRpm = -12;
+        project.composition.preset.beatThreshold = 0.68f;
+        project.composition.preset.subjectPulse = 0.10f;
+        const auto legacy = musdesk::parseProject(R"({"version":1,"format":"9:16","title":"Legacy",
+            "artist":"Artist","duration_seconds":252,"preview_time_seconds":4,"audio":"","artwork":"",
+            "preset":{"version":1,"name":"Old","disc_rpm":8,
+                "glow":{"color":[0.24,0.6,1],"intensity":0.8,"pulse_strength":0.6},
+                "background":{"speed":0.6,"zoom":1.16,"brightness":0.88}}})");
+        require(legacy.composition.preset.subjectPulse == 0 && legacy.composition.preset.backgroundReactivity == 0
+            && legacy.composition.preset.ringReactivity == 0 && legacy.previewTimeSeconds == 4,
+            "Old projects must preserve their visual settings when upgrading the embedded preset");
+        require(musdesk::parseProject(musdesk::serializeProject(legacy)) == legacy, "Migrated project must round trip");
         project.previewTimeSeconds = 42.25;
         const auto json = musdesk::serializeProject(project);
         require(musdesk::parseProject(json) == project, "Complete settings/Unicode/preset round trip failed");

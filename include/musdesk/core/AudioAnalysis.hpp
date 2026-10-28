@@ -38,7 +38,13 @@ struct BeatEvent {
 struct AudioRhythm {
     AudioEnvelope bass;
     std::vector<BeatEvent> beats;
-    float pulseAt(double timeSeconds) const;
+    float pulseAt(double timeSeconds, float minimumStrength = 0) const;
+};
+
+struct AudioReaction {
+    float energy = 0;
+    float bass = 0;
+    float beat = 0;
 };
 
 AudioRhythm analyzeRhythm(std::span<const std::int16_t> samples, int sampleRate, int channels,

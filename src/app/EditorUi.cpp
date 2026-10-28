@@ -36,7 +36,26 @@ void drawPresetControls(EditorUiState& state) {
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderFloat("##Glow", &preset.glowIntensity, 0, 3, "Glow: %.2f", ImGuiSliderFlags_AlwaysClamp);
     ImGui::SetNextItemWidth(-1);
-    changed |= ImGui::SliderFloat("##Pulse", &preset.pulseStrength, 0, 2, "Pulse: %.2f", ImGuiSliderFlags_AlwaysClamp);
+    changed |= ImGui::SliderFloat("##Pulse", &preset.pulseStrength, 0, 2, "Audio response: %.2f", ImGuiSliderFlags_AlwaysClamp);
+    float thresholdPercent = preset.beatThreshold * 100;
+    float subjectPercent = preset.subjectPulse * 100;
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##BeatThreshold", &thresholdPercent, 0, 100, "Beat gate: %.0f%%", ImGuiSliderFlags_AlwaysClamp)) {
+        preset.beatThreshold = thresholdPercent / 100;
+        changed = true;
+    }
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##SubjectPulse", &subjectPercent, 0, 12, "Vinyl + text pulse: %.1f%%", ImGuiSliderFlags_AlwaysClamp)) {
+        preset.subjectPulse = subjectPercent / 100;
+        changed = true;
+    }
+    ImGui::SetNextItemWidth(-1);
+    changed |= ImGui::SliderFloat("##BackgroundReaction", &preset.backgroundReactivity, 0, 1,
+        "Background reaction: %.2f", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetNextItemWidth(-1);
+    changed |= ImGui::SliderFloat("##RingReaction", &preset.ringReactivity, 0, 1,
+        "Ring waves: %.2f", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::TextWrapped("Beat gate selects strong bass hits. Audio response amplifies all reactions; zero disables them.");
     ImGui::SetNextItemWidth(-1);
     const double minRpm = -45, maxRpm = 45, minSpeed = 0, maxSpeed = 3;
     changed |= ImGui::SliderScalar("##Rotation", ImGuiDataType_Double, &preset.discRpm,
@@ -114,7 +133,8 @@ void drawWaveform(EditorUiState& state) {
             if (pixel == previousPixel) continue;
             previousPixel = pixel;
             const float x = origin.x + pixel;
-            draw->AddLine(ImVec2(x, origin.y + 1), ImVec2(x, origin.y + 7), ImGui::GetColorU32(ImGuiCol_SliderGrabActive), 2);
+            draw->AddLine(ImVec2(x, origin.y + 1), ImVec2(x, origin.y + 7),
+                ImGui::GetColorU32(beat.strength >= state.preset.beatThreshold ? ImGuiCol_SliderGrabActive : ImGuiCol_Border), 2);
         }
     }
     draw->AddLine(ImVec2(playhead, origin.y), ImVec2(playhead, bottom.y), ImGui::GetColorU32(ImGuiCol_Text), 2);
@@ -231,7 +251,7 @@ void drawControls(EditorUiState& state) {
         ImGui::ProgressBar(state.audioEnergy, ImVec2(-1, 0), "Audio energy");
         if (state.rhythm) {
             ImGui::ProgressBar(state.rhythm->bass.at(state.timeSeconds), ImVec2(-1, 0), "Bass energy");
-            ImGui::ProgressBar(state.rhythm->pulseAt(state.timeSeconds), ImVec2(-1, 0), "Beat pulse");
+            ImGui::ProgressBar(state.rhythm->pulseAt(state.timeSeconds, state.preset.beatThreshold), ImVec2(-1, 0), "Beat pulse");
             ImGui::Text("Bass onsets: %zu", state.rhythm->beats.size());
         }
         ImGui::TextDisabled("Volume affects monitoring only.");

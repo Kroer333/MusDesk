@@ -35,6 +35,9 @@ struct DecodedAudio {
     double durationSeconds() const {
         return static_cast<double>(samples.size() / channels) / sampleRate;
     }
+    AudioReaction reactionAt(double seconds, float beatThreshold) const {
+        return {envelope.at(seconds), rhythm.bass.at(seconds), rhythm.pulseAt(seconds, beatThreshold)};
+    }
 };
 
 // Searches the configured directory, executable directory, then PATH.

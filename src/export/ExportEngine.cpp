@@ -419,7 +419,7 @@ void ExportEngine::update() {
         }
         try {
             const auto time = exportFrameTime(task.submitted);
-            task.renderer.renderFrame(time, task.settings, task.audio->envelope.at(time));
+            task.renderer.renderFrame(time, task.settings, task.audio->reactionAt(time, task.settings.preset.beatThreshold));
             auto pixels = task.renderer.readPixels();
             std::lock_guard lock(task.mutex);
             if (task.state.active() && !task.cancelled) {

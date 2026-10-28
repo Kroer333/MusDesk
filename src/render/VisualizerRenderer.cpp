@@ -98,6 +98,9 @@ uniform float backgroundZoom;
 uniform vec2 backgroundOffset;
 uniform float progress;
 uniform float audioEnergy;
+uniform float subjectScale;
+uniform float ringMotion;
+uniform float ringPhase;
 uniform vec4 glowSettings;
 uniform float pulseStrength;
 uniform float backgroundBrightness;
@@ -131,15 +134,17 @@ void main() {
     float vignette = 1.0 - 0.55*smoothstep(0.15,0.80,length(topUv-0.5));
     color *= vignette * (1.0-0.26*smoothstep(0.5,0.9,topUv.y));
 
-    vec2 discPoint = (p-vec2(540.0,760.0))/370.0;
+    vec2 discPoint = (p-vec2(540.0,760.0))/(370.0*subjectScale);
     float r = length(discPoint);
     vec2 material = rotatePoint(discPoint,-discAngle);
     float phi = atan(material.y,material.x);
     vec3 accent = glowSettings.rgb;
     float pulse = audioEnergy*pulseStrength;
-    float rimRadius = 1.0 + 0.025*pulse;
+    float wave = 0.0;
+    if (ringMotion > 0.0) wave = 0.5 + 0.3*sin(phi*18.0+ringPhase) + 0.2*sin(phi*31.0-ringPhase*1.3);
+    float rimRadius = 1.0 + 0.025*pulse + 0.04*ringMotion*wave;
     float rimDistance = abs(r-rimRadius);
-    color += accent * glowSettings.a * (1.0+2.0*pulse)
+    color += accent * glowSettings.a * (1.0+2.0*pulse+ringMotion)
         * (0.25*exp(-rimDistance*(24.0-6.0*pulse)) + 0.65*exp(-rimDistance*180.0));
     if (r < 1.0) {
         float grooves = 0.009*sin(r*950.0) + 0.006*sin(r*420.0);
@@ -388,8 +393,12 @@ void VisualizerRenderer::clearArtwork() {
 }
 
 void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettings& settings, float audioEnergy) {
+    renderFrame(timeSeconds, settings, AudioReaction{audioEnergy, 0, 0});
+}
+
+void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettings& settings, const AudioReaction& audio) {
     auto& gl = impl_->gl;
-    const auto frame = compositionAt(timeSeconds, settings);
+    const auto frame = compositionAt(timeSeconds, settings, audio);
     GLint oldFramebuffer = 0;
     std::array<GLint, 4> oldViewport{};
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &oldFramebuffer);
@@ -415,7 +424,10 @@ void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettin
     scalar("backgroundAngle", frame.backgroundAngleRadians);
     scalar("backgroundZoom", frame.backgroundZoom);
     scalar("progress", frame.progress);
-    scalar("audioEnergy", std::isfinite(audioEnergy) ? std::clamp(audioEnergy, 0.0f, 1.0f) : 0);
+    scalar("audioEnergy", std::isfinite(audio.energy) ? std::clamp(audio.energy, 0.0f, 1.0f) : 0);
+    scalar("subjectScale", frame.subjectScale);
+    scalar("ringMotion", frame.ringMotion);
+    scalar("ringPhase", frame.timeSeconds * 0.8);
     const auto& preset = settings.preset;
     auto safe = [](float value, float minimum, float maximum, float fallback) {
         return std::isfinite(value) ? std::clamp(value, minimum, maximum) : fallback;
@@ -438,8 +450,11 @@ void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettin
     glBindTexture(GL_TEXTURE_2D, impl_->fontAtlas);
     gl.BindVertexArray(impl_->textVao);
     gl.BindBuffer(GL_ARRAY_BUFFER, impl_->textBuffer);
-    impl_->centeredText(settings.title.empty() ? "Track title" : settings.title, 1250, 1.0f, {0.92f,0.95f,1,1});
-    impl_->centeredText(settings.artist.empty() ? "Artist name" : settings.artist, 1340, 0.64f, {0.60f,0.68f,0.80f,1});
+    const auto subjectScale = static_cast<float>(frame.subjectScale);
+    impl_->centeredText(settings.title.empty() ? "Track title" : settings.title,
+        760 + 490 * subjectScale, subjectScale, {0.92f,0.95f,1,1});
+    impl_->centeredText(settings.artist.empty() ? "Artist name" : settings.artist,
+        760 + 580 * subjectScale, 0.64f * subjectScale, {0.60f,0.68f,0.80f,1});
     const double duration = std::isfinite(settings.durationSeconds) && settings.durationSeconds > 0
         ? settings.durationSeconds : 252.0;
     const auto positionLabel = formatTime(static_cast<std::uint64_t>(std::min(frame.timeSeconds, 1.0e12)));

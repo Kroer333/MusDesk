@@ -33,13 +33,18 @@ struct Biquad {
 };
 }
 
-float AudioRhythm::pulseAt(double timeSeconds) const {
-    if (!std::isfinite(timeSeconds) || timeSeconds < 0 || timeSeconds >= bass.durationSeconds) return 0;
-    const auto next = std::upper_bound(beats.begin(), beats.end(), timeSeconds,
+float AudioRhythm::pulseAt(double timeSeconds, float minimumStrength) const {
+    if (!std::isfinite(timeSeconds) || timeSeconds < 0 || timeSeconds >= bass.durationSeconds
+        || !std::isfinite(minimumStrength)) return 0;
+    minimumStrength = std::clamp(minimumStrength, 0.0f, 1.0f);
+    auto next = std::upper_bound(beats.begin(), beats.end(), timeSeconds,
         [](double time, const BeatEvent& beat) { return time < beat.timeSeconds; });
-    if (next == beats.begin()) return 0;
-    const auto& beat = *std::prev(next);
-    return beat.strength * static_cast<float>(std::exp(-(timeSeconds - beat.timeSeconds) / 0.14));
+    while (next != beats.begin()) {
+        const auto& beat = *--next;
+        if (beat.strength >= minimumStrength)
+            return beat.strength * static_cast<float>(std::exp(-(timeSeconds - beat.timeSeconds) / 0.14));
+    }
+    return 0;
 }
 
 AudioRhythm analyzeRhythm(std::span<const std::int16_t> samples, int sampleRate, int channels,

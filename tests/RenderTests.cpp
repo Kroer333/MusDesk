@@ -22,6 +22,15 @@ struct Context {
 void require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
+bool differsIn(const std::vector<std::uint8_t>& a, const std::vector<std::uint8_t>& b,
+    int x0, int y0, int x1, int y1) {
+    for (int y = y0; y < y1; ++y)
+        for (int x = x0; x < x1; ++x) {
+            const auto index = ((1919 - y) * 1080 + x) * 4;
+            if (a[index] != b[index] || a[index + 1] != b[index + 1] || a[index + 2] != b[index + 2]) return true;
+        }
+    return false;
+}
 }
 
 int main(int argc, char* argv[]) {
@@ -59,6 +68,34 @@ int main(int argc, char* argv[]) {
         renderer.renderFrame(10, settings, 0.2f);
         renderer.renderFrame(0, settings, 1);
         require(reactive == renderer.readPixels(), "Audio-reactive rendering must be repeatable after seeking");
+        auto isolated = settings;
+        isolated.preset.backgroundReactivity = isolated.preset.ringReactivity = 0;
+        renderer.renderFrame(4, isolated);
+        const auto subjectIdle = renderer.readPixels();
+        renderer.renderFrame(4, isolated, musdesk::AudioReaction{0, 0, 1});
+        const auto subjectHit = renderer.readPixels();
+        require(differsIn(subjectIdle, subjectHit, 100, 380, 980, 1150), "Beat must scale the vinyl");
+        require(differsIn(subjectIdle, subjectHit, 100, 1160, 980, 1370), "Beat must scale track title/artist text");
+        renderer.renderFrame(9, isolated, musdesk::AudioReaction{1, 1, 1});
+        renderer.renderFrame(4, isolated, musdesk::AudioReaction{0, 0, 1});
+        require(subjectHit == renderer.readPixels(), "Subject scaling must reproduce the same pixels after seek");
+        isolated = settings;
+        isolated.preset.subjectPulse = isolated.preset.ringReactivity = 0;
+        renderer.renderFrame(4, isolated);
+        const auto backgroundIdle = renderer.readPixels();
+        renderer.renderFrame(4, isolated, musdesk::AudioReaction{0, 1, 0});
+        require(differsIn(backgroundIdle, renderer.readPixels(), 0, 0, 200, 300), "Bass must move/zoom the artwork background");
+        isolated.preset.backgroundReactivity = 0;
+        isolated.preset.ringReactivity = 1;
+        renderer.renderFrame(4, isolated);
+        const auto ringIdle = renderer.readPixels();
+        renderer.renderFrame(4, isolated, musdesk::AudioReaction{0, 1, 1});
+        require(differsIn(ringIdle, renderer.readPixels(), 130, 500, 220, 1000), "Bass/beat must deform the outer ring");
+        isolated.preset.ringReactivity = 0;
+        renderer.renderFrame(4, isolated, 0.7f);
+        const auto legacy = renderer.readPixels();
+        renderer.renderFrame(4, isolated, musdesk::AudioReaction{0.7f, 1, 1});
+        require(legacy == renderer.readPixels(), "Disabled new effects must preserve legacy RMS pixels");
         settings.preset = musdesk::beatPulsePreset();
         renderer.renderFrame(12.3, settings, 0.7f);
         const auto presetFrame = renderer.readPixels();

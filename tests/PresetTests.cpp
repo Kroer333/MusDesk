@@ -40,6 +40,13 @@ int main(int argc, char* argv[]) {
         musdesk::validatePreset(soft);
         musdesk::validatePreset(beat);
         const auto json = musdesk::serializePreset(soft);
+        const auto legacy = musdesk::parsePreset(R"({"version":1,"name":"Soft Glow","disc_rpm":8,
+            "glow":{"color":[0.24,0.6,1],"intensity":0.8,"pulse_strength":0.6},
+            "background":{"speed":0.6,"zoom":1.16,"brightness":0.88}})");
+        auto legacyExpected = soft;
+        legacyExpected.subjectPulse = legacyExpected.backgroundReactivity = legacyExpected.ringReactivity = 0;
+        require(legacy == legacyExpected && musdesk::parsePreset(musdesk::serializePreset(legacy)) == legacy,
+            "Version 1 presets must migrate without enabling new effects");
         require(musdesk::parsePreset(json) == soft && musdesk::parsePreset(musdesk::serializePreset(beat)) == beat,
             "Built-in preset round trip must preserve every value");
         if (argc == 2) {
@@ -53,6 +60,10 @@ int main(int argc, char* argv[]) {
         custom.backgroundSpeed = 0;
         custom.backgroundBrightness = 0.7f;
         custom.glowColor = {0, 1, 0.5f};
+        custom.beatThreshold = 0.73f;
+        custom.subjectPulse = 0.11f;
+        custom.backgroundReactivity = 0.35f;
+        custom.ringReactivity = 0.42f;
         const auto folder = std::filesystem::u8path(SDL_GetBasePath()) / "test-fixtures";
         std::filesystem::create_directories(folder);
         const auto path = utf8(folder / std::filesystem::path(u8"własny preset.json"));
@@ -69,13 +80,15 @@ int main(int argc, char* argv[]) {
         }
         rejected([&] { (void)musdesk::loadPreset(utf8(folder / "missing-preset.json")); });
         rejected([&] { (void)musdesk::parsePreset("{"); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 1", "\"version\": 2")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 1", "\"version\": 1.0")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 2", "\"version\": 3")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 2", "\"version\": 2.0")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"disc_rpm\": 8.0", "\"disc_rpm\": true")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"disc_rpm\": 8.0", "\"disc_rpm\": 46")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"name\": \"Soft Glow\"", "\"name\": \"\"")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 1", "\"unknown\": 0")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 1", "\"version\": 1, \"version\": 1")); }, "duplicate");
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 2", "\"unknown\": 0")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 2", "\"version\": 2, \"version\": 2")); }, "duplicate");
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"beat_threshold\": 0.55", "\"beat_threshold\": 2.55")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"subject_pulse\": 0.05", "\"subject_pulse\": -0.05")); });
         rejected([&] { (void)musdesk::parsePreset(std::string(65537, ' ')); });
         rejected([&] { (void)musdesk::parsePreset(std::string(20, '[') + "0" + std::string(20, ']')); }, "deeply");
         std::cout << "Preset examples, custom round trip, Unicode paths, overwrite, atomic failure and JSON validation checks passed.\n";

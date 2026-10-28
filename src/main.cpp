@@ -896,7 +896,8 @@ int main(int argc, char* argv[]) {
             }
             const musdesk::CompositionSettings settings{editorState.title.data(), editorState.artist.data(),
                 editorState.durationSeconds, editorState.preset};
-            if (!editorState.exportActive) composition.renderFrame(editorState.timeSeconds, settings, editorState.audioEnergy);
+            if (!editorState.exportActive) composition.renderFrame(editorState.timeSeconds, settings,
+                audioClip ? audioClip->reactionAt(editorState.timeSeconds, settings.preset.beatThreshold) : musdesk::AudioReaction{});
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             if (!SDL_GL_SwapWindow(resources.window)) {

@@ -20,6 +20,26 @@ int main() {
         const auto atFive = musdesk::compositionAt(5, settings);
         const auto atTen = musdesk::compositionAt(10, settings);
         require(atZero.discAngleRadians == 0, "Initial angle must be zero");
+        const musdesk::AudioReaction hit{0.7f, 0.8f, 1};
+        const auto reacting = musdesk::compositionAt(5, settings, hit);
+        require(reacting.subjectScale > 1 && reacting.ringMotion > 0
+            && reacting.backgroundZoom > atFive.backgroundZoom, "Bass and beats must drive subject, rim and background");
+        (void)musdesk::compositionAt(99, settings, {1, 1, 1});
+        require(musdesk::compositionAt(5, settings, hit) == reacting, "Reactive frame must be independent of playback history");
+        const auto bassOnly = musdesk::compositionAt(5, settings, {0, 1, 0});
+        require(bassOnly.subjectScale == 1 && bassOnly.ringMotion > 0,
+            "Sustained bass must move rim/background without triggering subject scaling");
+        auto disabled = settings;
+        disabled.preset.pulseStrength = 0;
+        require(musdesk::compositionAt(5, disabled, hit) == musdesk::compositionAt(5, disabled),
+            "Zero audio response must disable all new modulation");
+        auto legacy = settings;
+        legacy.preset.subjectPulse = legacy.preset.backgroundReactivity = legacy.preset.ringReactivity = 0;
+        require(musdesk::compositionAt(5, legacy, hit) == musdesk::compositionAt(5, legacy),
+            "Legacy preset values must preserve the old frame pose");
+        const auto invalidAudio = musdesk::compositionAt(5, settings,
+            {std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity(), -1});
+        require(invalidAudio == atFive, "Invalid audio values must not corrupt the composition");
         require(std::abs(atFive.discAngleRadians - std::numbers::pi) < 1e-10, "6 RPM: half turn at 5 seconds");
         require(std::abs(atTen.discAngleRadians) < 1e-10, "6 RPM: full turn at 10 seconds");
         (void)musdesk::compositionAt(100, settings);

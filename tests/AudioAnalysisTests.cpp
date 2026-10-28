@@ -95,6 +95,17 @@ void rhythmTests() {
     require(repeated.bass.values == rhythm.bass.values && repeated.beats == rhythm.beats,
         "Bass analysis must be deterministic");
     const auto pulse = rhythm.pulseAt(0.36);
+    const auto strength = rhythm.beats.front().strength;
+    require(rhythm.pulseAt(0.4, strength) > 0,
+        "Beat gate must select onset strength before applying pulse decay");
+    musdesk::AudioRhythm gated;
+    gated.bass.durationSeconds = 2;
+    gated.beats = {{0.2, 0.8f}, {0.4, 0.2f}};
+    require(gated.pulseAt(0.3, 0.9f) == 0 && gated.pulseAt(0.3, 0.6f) > 0,
+        "Gate must reject weak events without clipping the decay of accepted events");
+    require(gated.pulseAt(0.45, 0.6f) == 0.8f * static_cast<float>(std::exp(-0.25 / 0.14)),
+        "A weak onset must not interrupt the decay of a preceding strong beat");
+    require(gated.pulseAt(0.3, std::numeric_limits<float>::quiet_NaN()) == 0, "Invalid gate must produce no pulse");
     (void)rhythm.pulseAt(1.8);
     require(rhythm.pulseAt(0.36) == pulse, "Seeking must not depend on previous pulse queries");
     require(std::all_of(rhythm.bass.values.begin(), rhythm.bass.values.end(), [](float value) {

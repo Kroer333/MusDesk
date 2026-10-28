@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Beat-gated vinyl/text scaling, bass-reactive background motion and animated rim
+  waves, shared by preview and MP4 export with individual reaction controls.
+- Preset version 2 stores beat/reaction settings; version 1 presets and embedded
+  project presets migrate with new effects disabled to preserve their old appearance.
+
 - Bass-band energy and onset analysis during import, with deterministic beat-pulse
   preview meters and onset markers on the waveform.
 

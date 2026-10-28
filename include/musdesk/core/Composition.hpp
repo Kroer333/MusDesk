@@ -2,6 +2,7 @@
 
 #include <string>
 #include "musdesk/core/VisualPreset.hpp"
+#include "musdesk/core/AudioAnalysis.hpp"
 
 namespace musdesk {
 struct CompositionSettings {
@@ -20,8 +21,11 @@ struct CompositionFrame {
     double backgroundOffsetX;
     double backgroundOffsetY;
     double progress;
+    double subjectScale = 1;
+    double ringMotion = 0;
+    bool operator==(const CompositionFrame&) const = default;
 };
 
 // Pure frame evaluation: no playback clock or accumulated rotation state.
-CompositionFrame compositionAt(double timeSeconds, const CompositionSettings& settings);
+CompositionFrame compositionAt(double timeSeconds, const CompositionSettings& settings, const AudioReaction& audio = {});
 }
