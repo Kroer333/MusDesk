@@ -25,6 +25,7 @@ struct DecodedAudio {
     AudioEnvelope envelope;
     AudioWaveform waveform;
     AudioRhythm rhythm;
+    AudioSpectrum spectrum;
     struct SourceStamp {
         std::uintmax_t size;
         std::filesystem::file_time_type modified;
@@ -36,7 +37,7 @@ struct DecodedAudio {
         return static_cast<double>(samples.size() / channels) / sampleRate;
     }
     AudioReaction reactionAt(double seconds, float beatThreshold) const {
-        return {envelope.at(seconds), rhythm.bass.at(seconds), rhythm.pulseAt(seconds, beatThreshold)};
+        return {envelope.at(seconds), rhythm.bass.at(seconds), rhythm.pulseAt(seconds, beatThreshold), spectrum.at(seconds)};
     }
 };
 

@@ -19,6 +19,7 @@ VisualPreset beatPulsePreset() {
     preset.subjectPulse = 0.07f;
     preset.backgroundReactivity = 0.9f;
     preset.ringReactivity = 0.9f;
+    preset.spectrumStrength = 0.9f;
     return preset;
 }
 
@@ -42,5 +43,6 @@ void validatePreset(const VisualPreset& preset) {
     range(preset.subjectPulse, 0, 0.12f, "reactivity.subject_pulse (0..0.12)");
     range(preset.backgroundReactivity, 0, 1, "reactivity.background (0..1)");
     range(preset.ringReactivity, 0, 1, "reactivity.ring (0..1)");
+    range(preset.spectrumStrength, 0, 1, "reactivity.spectrum (0..1)");
 }
 }

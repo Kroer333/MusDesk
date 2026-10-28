@@ -17,6 +17,7 @@ struct VisualPreset {
     float subjectPulse = 0.05f;
     float backgroundReactivity = 0.65f;
     float ringReactivity = 0.55f;
+    float spectrumStrength = 0.65f;
 
     bool operator==(const VisualPreset&) const = default;
 };

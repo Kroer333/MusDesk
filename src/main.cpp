@@ -323,7 +323,8 @@ int main(int argc, char* argv[]) {
         };
         auto currentProject = [&] {
             musdesk::ProjectDocument project;
-            project.composition = {editorState.title.data(), editorState.artist.data(), editorState.durationSeconds, editorState.preset};
+            project.composition = {editorState.title.data(), editorState.artist.data(), editorState.durationSeconds,
+                editorState.preset, editorState.format, editorState.shortEdge};
             project.audioPath = editorState.missingAudioPath.empty() ? editorState.audioPath : editorState.missingAudioPath;
             project.artworkPath = editorState.missingArtworkPath.empty() ? editorState.artworkPath : editorState.missingArtworkPath;
             project.previewTimeSeconds = editorState.timeSeconds;
@@ -360,6 +361,8 @@ int main(int argc, char* argv[]) {
             std::copy(project.composition.artist.begin(), project.composition.artist.end(), editorState.artist.begin());
             musdesk::applyVisualPreset(editorState, project.composition.preset);
             editorState.durationSeconds = project.composition.durationSeconds;
+            editorState.format = project.composition.format;
+            editorState.shortEdge = project.composition.shortEdge;
             editorState.timeSeconds = project.previewTimeSeconds;
             editorState.animatePreview = false;
             resumeAfterSeek = false;
@@ -626,7 +629,7 @@ int main(int argc, char* argv[]) {
                         editorState.audioSeeking = false;
                         resumeAfterSeek = false;
                         const musdesk::CompositionSettings settings{editorState.title.data(), editorState.artist.data(),
-                            audioClip->durationSeconds(), editorState.preset};
+                            audioClip->durationSeconds(), editorState.preset, editorState.format, editorState.shortEdge};
                         exporter = std::make_unique<musdesk::ExportEngine>(composition, settings, audioClip, mediaTools, path,
                             editorState.exportEncoder == 0 ? musdesk::ExportEncoder::Automatic : musdesk::ExportEncoder::Cpu);
                     } catch (const std::exception& error) {
@@ -895,7 +898,7 @@ int main(int argc, char* argv[]) {
                 }
             }
             const musdesk::CompositionSettings settings{editorState.title.data(), editorState.artist.data(),
-                editorState.durationSeconds, editorState.preset};
+                editorState.durationSeconds, editorState.preset, editorState.format, editorState.shortEdge};
             if (!editorState.exportActive) composition.renderFrame(editorState.timeSeconds, settings,
                 audioClip ? audioClip->reactionAt(editorState.timeSeconds, settings.preset.beatThreshold) : musdesk::AudioReaction{});
             ImGui::Render();

@@ -78,10 +78,10 @@ inside the packaged assets directory.
 
 1. Import a music track (MP3, WAV, or OGG) and cover artwork (PNG, JPEG, or WebP).
 2. Display a spinning vinyl record with centered artwork, a blurred image background, track title, artist, and progress timer.
-3. Animate a glow/ring using the track's measured energy and allow choosing effect presets.
-4. Preview the composition and export a synchronized, vertical MP4 video.
+3. Animate a glow/ring using energy, bass hits and FFT bands, with editable presets.
+4. Preview and export synchronized MP4 video in portrait, landscape or square layouts.
 
-### First target (MVP)
+### Original 0.1.0 target (MVP)
 
 - One vertical format: **1080 × 1920**, **30 FPS**, **9:16**.
 - One layout, including a rotating vinyl record and audio-reactive glow.
@@ -127,6 +127,25 @@ the console; startup failures produce a nonzero exit code.
 ## Current workspace
 
 ### Projects (development)
+
+Choose format and resolution under **Composition**. Landscape layouts put the
+vinyl on the left and labels/timeline on the right; square and portrait layouts
+remain centered.
+
+| Format | 720 px short edge | 1080 px short edge |
+| --- | --- | --- |
+| 9:16 | 720 × 1280 | 1080 × 1920 |
+| 16:9 | 1280 × 720 | 1920 × 1080 |
+| 1:1 | 720 × 720 | 1080 × 1080 |
+| 3:4 | 720 × 960 | 1080 × 1440 |
+| 4:3 | 960 × 720 | 1440 × 1080 |
+
+Preview uses the chosen aspect ratio; MP4 uses the chosen pixel dimensions at
+30 FPS. The 720 px option renders fewer pixels and can reduce export cost.
+Output size is independent of window size and preview scale. Format/resolution
+changes mark the project unsaved and survive Save, recovery and Collect project.
+New projects default to 1080 × 1920. Version 1 projects reopen at that size;
+new project saves use version 2 with explicit format and short-edge resolution.
 
 The editor's **Project** section provides **New**, **Open**, **Save** and
 **Save As**. Shortcuts are Ctrl+N, Ctrl+O, Ctrl+S and Ctrl+Shift+S. You can also
@@ -180,13 +199,18 @@ Under **Effects and presets**:
 
 Preview and MP4 export evaluate the same audio reaction and frame at the same
 timestamp. Seeking, paused preview and offline export do not accumulate animation
-state. Volume, mute and loop remain monitoring-only settings. The rim wave shape
-is procedural and driven by bass/beat energy; it is not a frequency spectrum.
+state. Volume, mute and loop remain monitoring-only settings. **Ring waves**
+is a procedural bass/beat shape. **Spectrum ring** adds 32 logarithmic FFT bands
+(about 40 Hz–12 kHz), mirrored above/below the horizontal axis. Background import
+uses a 2048-sample [Hann window](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.windows.hann.html), 25 cached frames per second, DC removal and
+separate channel powers so opposite-phase stereo retains its spectrum. A fixed
+−60 to 0 dB scale and attack/release smoothing keep the response stable. The
+cache costs about 3.8 MB per 20-minute track and is regenerated from media.
 
-New presets are written as version 2. Version 1 presets and projects containing
-them still open with the new reactions disabled, preserving their original RMS
-look. Choose a built-in preset or raise the reaction controls to enable the new
-effects. Saving writes version 2 settings, including inside projects and recovery
+New presets are written as version 3. Version 1 retains its original RMS look;
+version 2 retains its beat reactions with FFT disabled. Choose a built-in preset
+or increase **Spectrum ring** to enable FFT on an older preset.
+Saving writes version 3 settings, including inside projects and recovery
 copies; the released 0.1.0 application cannot read those newer presets.
 
 ### Bass energy and beat candidates (development)
@@ -285,9 +309,9 @@ files are not part of an MP4 export or a release package.
   Failed imports display an error and preserve the previous image.
 - PNG, JPEG and still WebP are accepted up to 64 MiB, 8192 pixels per side and
   32 megapixels. Animated WebP is rejected; JPEG EXIF orientation is not applied.
-- The right panel fits the **9:16** composition into the available space when the
+- The right panel fits the selected composition aspect ratio into the available space when the
   window is resized. The preview scale changes its display size, not the target
-  1080 × 1920 format.
+  selected output dimensions.
 - Artwork fills the background and circular label through centered cropping,
   preserving its proportions. The record and label rotate together. The
   rim expands and brightens with the precomputed audio energy.
@@ -338,11 +362,12 @@ track labels, preview volume, playback position, guides or window settings.
 Loading a preset does not reset audio or its timeline. Preset files store effects;
 use a `.musdesk` project to preserve media references and labels as well.
 
-JSON format version **2** requires exactly these root fields: `version`, `name`,
+JSON format version **3** requires exactly these root fields: `version`, `name`,
 `disc_rpm`, `glow`, `background` and `reactivity`. `glow` contains `color`, `intensity`
 and `pulse_strength`; `background` contains `speed`, `zoom` and `brightness`.
-`reactivity` contains `beat_threshold`, `subject_pulse`, `background` and `ring`.
-Version 1 has no `reactivity` object and is migrated with new effects disabled.
+`reactivity` contains `beat_threshold`, `subject_pulse`, `background`, `ring`
+and `spectrum`. Version 2 omits `spectrum`; version 1 has no `reactivity` object.
+Both older versions are migrated without enabling the added effects.
 
 | Setting | Accepted range |
 | --- | --- |
@@ -357,6 +382,7 @@ Version 1 has no `reactivity` object and is migrated with new effects disabled.
 | Beat threshold | 0–1 |
 | Subject pulse | 0–0.12; multiplied by audio response, final scale capped at 1.18 |
 | Background / ring reactivity | 0–1 each |
+| Spectrum ring | 0–1 |
 
 The parser rejects wrong types, missing/unknown/duplicate fields, nonfinite or
 out-of-range values, unsupported versions, excessive nesting and files above
@@ -441,7 +467,7 @@ are locked until it finishes; the preview displays frames being exported.
 **Cancel export** stops processing; closing the app also cancels and waits for
 the encoder to stop. Export continues while the window is minimized.
 
-Frames are rendered offscreen at **1080 × 1920**, with timestamps `i / 30.0`.
+Frames are rendered offscreen at the selected output size, with timestamps `i / 30.0`.
 The frame count rounds decoded audio duration up to the next 1/30 second; the
 audio tail is padded with silence by less than one frame. FFmpeg reads bottom-up
 RGBA through a pipe, flips the image vertically, encodes H.264 (`yuv420p`)
@@ -458,7 +484,7 @@ nonblocking process pipe; a queue holds at most two waiting frames, avoiding
 storage of an entire uncompressed movie. The displayed progress counts frames
 delivered to FFmpeg; final encoding and ffprobe verification follow separately.
 Automatic mode tries NVIDIA NVENC, Intel Quick Sync and AMD AMF in that order.
-Each candidate must actually encode two 1080 × 1920 frames before it is selected;
+Each candidate must actually encode two frames at the selected size before it is selected;
 listing an encoder alone is insufficient. Each trial is cancellable with a
 five-second timeout. Unavailable hardware falls back to x264 `veryfast` / CRF 20.
 Hardware paths use their own quality controls (NVENC CQ 20, QSV global quality 20,

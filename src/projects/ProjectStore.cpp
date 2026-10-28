@@ -25,6 +25,7 @@ void text(const std::string& value, std::size_t limit, const char* name) {
         if (c < 32 || c == 127) throw std::runtime_error(std::string("Control characters in project field: ") + name);
 }
 void validate(const ProjectDocument& project) {
+    outputSize(project.composition.format, project.composition.shortEdge);
     validatePreset(project.composition.preset);
     text(project.composition.title, 127, "title");
     text(project.composition.artist, 95, "artist");
@@ -81,13 +82,21 @@ ProjectDocument parseProject(std::string_view source) {
             if (event == Json::parse_event_t::object_end) keys.pop_back();
             return true;
         });
-        fields(json, {"version", "format", "title", "artist", "duration_seconds", "preview_time_seconds", "audio", "artwork", "preset"});
-        if (!json.at("version").is_number_integer() || json.at("version") != 1)
-            throw std::runtime_error("Unsupported project version; expected integer 1.");
-        if (json.at("format") != "9:16") throw std::runtime_error("This version supports only 9:16 projects.");
+        if (!json.at("version").is_number_integer() || (json.at("version") != 1 && json.at("version") != 2))
+            throw std::runtime_error("Unsupported project version; expected integer 1 or 2.");
+        const bool legacy = json.at("version") == 1;
+        if (legacy) fields(json, {"version", "format", "title", "artist", "duration_seconds", "preview_time_seconds", "audio", "artwork", "preset"});
+        else fields(json, {"version", "format", "short_edge", "title", "artist", "duration_seconds", "preview_time_seconds", "audio", "artwork", "preset"});
+        if (legacy && json.at("format") != "9:16") throw std::runtime_error("Version 1 projects require 9:16 format.");
         if (!json.at("duration_seconds").is_number() || !json.at("preview_time_seconds").is_number())
             throw std::runtime_error("Project duration and preview position must be numbers.");
         ProjectDocument project;
+        project.composition.format = parseCompositionFormat(json.at("format").get<std::string>());
+        if (!legacy) {
+            if (!json.at("short_edge").is_number_integer() || (json.at("short_edge") != 720 && json.at("short_edge") != 1080))
+                throw std::runtime_error("Project short_edge must be integer 720 or 1080.");
+            project.composition.shortEdge = json.at("short_edge").get<int>();
+        }
         project.composition.title = json.at("title").get<std::string>();
         project.composition.artist = json.at("artist").get<std::string>();
         project.composition.durationSeconds = json.at("duration_seconds").get<double>();
@@ -103,7 +112,8 @@ ProjectDocument parseProject(std::string_view source) {
 std::string serializeProject(const ProjectDocument& project) {
     validate(project);
     try {
-        const Json json{{"version", 1}, {"format", "9:16"}, {"title", project.composition.title},
+        const Json json{{"version", 2}, {"format", formatName(project.composition.format)},
+            {"short_edge", project.composition.shortEdge}, {"title", project.composition.title},
             {"artist", project.composition.artist}, {"duration_seconds", project.composition.durationSeconds},
             {"preview_time_seconds", project.previewTimeSeconds}, {"audio", project.audioPath},
             {"artwork", project.artworkPath}, {"preset", Json::parse(serializePreset(project.composition.preset))}};

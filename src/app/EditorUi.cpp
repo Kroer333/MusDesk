@@ -55,6 +55,9 @@ void drawPresetControls(EditorUiState& state) {
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderFloat("##RingReaction", &preset.ringReactivity, 0, 1,
         "Ring waves: %.2f", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetNextItemWidth(-1);
+    changed |= ImGui::SliderFloat("##Spectrum", &preset.spectrumStrength, 0, 1,
+        "Spectrum ring: %.2f", ImGuiSliderFlags_AlwaysClamp);
     ImGui::TextWrapped("Beat gate selects strong bass hits. Audio response amplifies all reactions; zero disables them.");
     ImGui::SetNextItemWidth(-1);
     const double minRpm = -45, maxRpm = 45, minSpeed = 0, maxSpeed = 3;
@@ -180,8 +183,15 @@ void drawControls(EditorUiState& state) {
     }
     ImGui::Spacing();
     ImGui::SeparatorText("Composition");
-    ImGui::TextUnformatted("Vertical music visualizer");
-    ImGui::TextDisabled("1080 x 1920  /  9:16");
+    int selectedFormat = static_cast<int>(state.format);
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::Combo("##OutputFormat", &selectedFormat, "9:16 portrait\0" "16:9 landscape\0" "1:1 square\0" "3:4 portrait\0" "4:3 landscape\0"))
+        state.format = static_cast<CompositionFormat>(selectedFormat);
+    int resolution = state.shortEdge == 720 ? 0 : 1;
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::Combo("##OutputResolution", &resolution, "720 px short edge\0" "1080 px short edge\0")) state.shortEdge = resolution == 0 ? 720 : 1080;
+    const auto dimensions = outputSize(state.format, state.shortEdge);
+    ImGui::TextDisabled("%d x %d  /  %s", dimensions.width, dimensions.height, formatName(state.format));
     ImGui::TextDisabled("Target: 30 FPS");
     ImGui::Spacing();
     drawPresetControls(state);
@@ -313,13 +323,14 @@ void drawControls(EditorUiState& state) {
     if (state.exportError) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.55f, 0.45f, 1));
     if (!state.exportStatus.empty()) ImGui::TextWrapped("%s", state.exportStatus.c_str());
     if (state.exportError) ImGui::PopStyleColor();
-    ImGui::TextWrapped("H.264 / AAC, 1080 x 1920, 30 FPS. Exports the full track with original audio; preview volume and loop are ignored.");
+    const auto exportSize = outputSize(state.format, state.shortEdge);
+    ImGui::TextWrapped("H.264 / AAC, %d x %d, 30 FPS. Exports the full track with original audio; preview volume and loop are ignored.", exportSize.width, exportSize.height);
 }
 
 void drawPreview(const EditorUiState& state, std::uint32_t texture) {
     ImGui::TextUnformatted("Preview");
     ImGui::SameLine();
-    ImGui::TextDisabled("9:16");
+    ImGui::TextDisabled("%s", formatName(state.format));
     ImGui::Separator();
 
     const ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -331,7 +342,8 @@ void drawPreview(const EditorUiState& state, std::uint32_t texture) {
         return;
     }
 
-    constexpr float aspectRatio = 9.0f / 16.0f;
+    const auto previewSize = outputSize(state.format, state.shortEdge);
+    const float aspectRatio = static_cast<float>(previewSize.width) / previewSize.height;
     const float width = std::min(usableWidth, usableHeight * aspectRatio)
         * (state.previewScalePercent / 100.0f);
     const float height = width / aspectRatio;
@@ -406,7 +418,8 @@ void drawEditorUi(EditorUiState& state, std::uint32_t compositionTexture) {
             drawPreview(state, compositionTexture);
         }
         ImGui::EndChild();
-        ImGui::TextDisabled("Composition preview  |  MP4: 1080 x 1920 / 30 FPS");
+        const auto size = outputSize(state.format, state.shortEdge);
+        ImGui::TextDisabled("Composition preview  |  MP4: %d x %d / 30 FPS", size.width, size.height);
     }
     ImGui::End();
     if (state.showRecoveryPrompt) ImGui::OpenPopup("Recover session");

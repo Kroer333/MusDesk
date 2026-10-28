@@ -172,7 +172,7 @@ struct Encoder {
     std::string pixelFormat;
 };
 Encoder cpuEncoder() { return {"CPU (x264 veryfast)", {"-c:v", "libx264", "-preset", "veryfast", "-crf", "20"}, "yuv420p"}; }
-void validateMovie(const std::string& text, std::uint64_t frames) {
+void validateMovie(const std::string& text, std::uint64_t frames, OutputSize size) {
     const auto json = nlohmann::json::parse(text);
     const auto& streams = json.at("streams");
     if (streams.size() != 2) throw std::runtime_error("MP4 must contain exactly one video and one audio stream.");
@@ -188,7 +188,7 @@ void validateMovie(const std::string& text, std::uint64_t frames) {
         return std::isfinite(seconds) && std::abs(seconds - duration) <= 0.06;
     };
     if (!video || !audio || video->value("codec_name", "") != "h264"
-        || video->at("width") != 1080 || video->at("height") != 1920
+        || video->at("width") != size.width || video->at("height") != size.height
         || video->value("pix_fmt", "") != "yuv420p" || video->value("avg_frame_rate", "") != "30/1"
         || std::stoull(video->at("nb_frames").get<std::string>()) != frames
         || audio->value("codec_name", "") != "aac" || audio->value("sample_rate", "") != "48000"
@@ -227,6 +227,7 @@ struct ExportEngine::Impl {
         if (!audio || audio->samples.empty() || audio->samples.size() % DecodedAudio::channels)
             throw std::runtime_error("Import valid audio before exporting.");
         validatePreset(settings.preset);
+        outputSize(settings.format, settings.shortEdge);
         state.totalFrames = exportFrameCount(audio->samples.size() / DecodedAudio::channels);
         settings.durationSeconds = audio->durationSeconds();
         validateAudioSource(*audio);
@@ -242,6 +243,10 @@ struct ExportEngine::Impl {
     void checkCancel() {
         if (cancelled) throw std::runtime_error("Export cancelled.");
     }
+    std::string dimensions() const {
+        const auto size = outputSize(settings.format, settings.shortEdge);
+        return std::to_string(size.width) + "x" + std::to_string(size.height);
+    }
     Encoder selectEncoder() {
         if (requestedEncoder == ExportEncoder::Cpu) return cpuEncoder();
         const std::vector<Encoder> candidates{
@@ -256,7 +261,7 @@ struct ExportEngine::Impl {
                 state.message = "Checking " + candidate.name + "...";
             }
             std::vector<std::string> args{tools.ffmpegPath, "-v", "error", "-nostdin", "-f", "lavfi", "-i",
-                "color=size=1080x1920:rate=30", "-frames:v", "2", "-an", "-vf", "format=" + candidate.pixelFormat};
+                "color=size=" + dimensions() + ":rate=30", "-frames:v", "2", "-an", "-vf", "format=" + candidate.pixelFormat};
             args.insert(args.end(), candidate.arguments.begin(), candidate.arguments.end());
             args.insert(args.end(), {"-f", "null", "-"});
             Process probe(args, false);
@@ -287,7 +292,7 @@ struct ExportEngine::Impl {
             }
             const auto count = state.totalFrames;
             std::vector<std::string> arguments{tools.ffmpegPath, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-                "-f", "rawvideo", "-pixel_format", "rgba", "-video_size", "1080x1920", "-framerate", "30", "-i", "pipe:0",
+                "-f", "rawvideo", "-pixel_format", "rgba", "-video_size", dimensions(), "-framerate", "30", "-i", "pipe:0",
                 "-protocol_whitelist", "file", "-i", audio->path, "-map", "0:v:0", "-map", "1:a:0",
                 "-vf", "vflip,format=" + selected.pixelFormat};
             arguments.insert(arguments.end(), selected.arguments.begin(), selected.arguments.end());
@@ -368,7 +373,7 @@ struct ExportEngine::Impl {
             probe.drain(probe.output, metadata, 65536);
             probe.drainErrors();
             if (exitCode != 0) throw std::runtime_error("ffprobe failed: " + probe.diagnostic);
-            validateMovie(metadata, count);
+            validateMovie(metadata, count, outputSize(settings.format, settings.shortEdge));
             validateAudioSource(*audio);
             // Serialize cancellation with the final replacement: a completed export wins afterwards.
             std::lock_guard lock(mutex);

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- FFT spectrum ring with 32 logarithmic stereo power bands, cached during import;
+  preset v3 preserves older v1/v2 appearances while adding spectrum intensity.
+- Five aspect ratios (9:16, 16:9, 1:1, 3:4, 4:3), each at a 720 or 1080 pixel
+  short edge, with dedicated layouts and matching preview/MP4 dimensions.
+- Project v2 persists aspect ratio and resolution; v1 projects keep 1080 × 1920.
+
 - Beat-gated vinyl/text scaling, bass-reactive background motion and animated rim
   waves, shared by preview and MP4 export with individual reaction controls.
 - Preset version 2 stores beat/reaction settings; version 1 presets and embedded

@@ -126,6 +126,7 @@ int main(int argc, char* argv[]) {
             audio->samples.resize(std::min(audio->samples.size(), seconds * 48000ULL * 2));
             audio->envelope = musdesk::analyzeRms(audio->samples, 48000, 2);
             audio->rhythm = musdesk::analyzeRhythm(audio->samples, 48000, 2);
+            audio->spectrum = musdesk::analyzeSpectrum(audio->samples, 48000, 2);
             renderer.setArtwork(musdesk::loadArtwork(argv[3]));
             musdesk::CompositionSettings composition;
             composition.title = "Export benchmark";
@@ -233,6 +234,21 @@ int main(int argc, char* argv[]) {
             const auto status = finish(job);
             require(status.phase == musdesk::ExportPhase::Completed && status.encoder == "CPU (x264 veryfast)", "Explicit CPU export failed");
             require(status.elapsedSeconds > 0, "Export duration was not reported");
+        }
+        for (auto format : {musdesk::CompositionFormat::Portrait, musdesk::CompositionFormat::Landscape,
+            musdesk::CompositionFormat::Square, musdesk::CompositionFormat::PortraitThreeFour, musdesk::CompositionFormat::LandscapeFourThree}) {
+            for (int edge : {720,1080}) {
+                auto shortClip = std::make_shared<musdesk::DecodedAudio>(*clip);
+                shortClip->samples.resize(4800 * 2);
+                auto variant = settings;
+                variant.format = format;
+                variant.shortEdge = edge;
+                const auto name = "layout-" + std::to_string(static_cast<int>(format)) + "-" + std::to_string(edge) + ".mp4";
+                musdesk::ExportEngine job(renderer, variant, shortClip, tools, utf8(folder / name));
+                const auto result = finish(job);
+                require(result.phase == musdesk::ExportPhase::Completed && result.totalFrames == 3,
+                    "Each format/resolution must encode and pass ffprobe dimension verification");
+            }
         }
         const auto guarded = folder / "preserved.mp4";
         { std::ofstream file(guarded); file << "existing destination"; }

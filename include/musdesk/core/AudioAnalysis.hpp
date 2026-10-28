@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 #include <span>
 #include <stop_token>
 #include <vector>
@@ -41,10 +42,23 @@ struct AudioRhythm {
     float pulseAt(double timeSeconds, float minimumStrength = 0) const;
 };
 
+using SpectrumFrame = std::array<float, 32>;
+
+struct AudioSpectrum {
+    double stepSeconds = 0.04;
+    double durationSeconds = 0;
+    std::vector<SpectrumFrame> frames;
+    SpectrumFrame at(double seconds) const;
+};
+
+AudioSpectrum analyzeSpectrum(std::span<const std::int16_t> samples, int sampleRate, int channels,
+    std::stop_token cancellation = {});
+
 struct AudioReaction {
     float energy = 0;
     float bass = 0;
     float beat = 0;
+    SpectrumFrame spectrum{};
 };
 
 AudioRhythm analyzeRhythm(std::span<const std::int16_t> samples, int sampleRate, int channels,

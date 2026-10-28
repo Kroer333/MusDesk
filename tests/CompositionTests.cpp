@@ -14,6 +14,23 @@ void require(bool condition, const char* message) {
 
 int main() {
     try {
+        for (auto format : {musdesk::CompositionFormat::Portrait, musdesk::CompositionFormat::Landscape,
+            musdesk::CompositionFormat::Square, musdesk::CompositionFormat::PortraitThreeFour, musdesk::CompositionFormat::LandscapeFourThree}) {
+            require(musdesk::parseCompositionFormat(musdesk::formatName(format)) == format, "Format identifiers must round trip");
+            const auto layout = musdesk::layoutFor(format);
+            const double maximumRing = layout.discRadius * 1.18 * 1.21;
+            require(layout.discX > maximumRing && layout.discY > maximumRing
+                && layout.discX + maximumRing < layout.canvas.width && layout.discY + maximumRing < layout.canvas.height,
+                "Maximum vinyl/ring pulse must remain inside every layout");
+            require(layout.timelineY + 60 < layout.canvas.height
+                && layout.textX - layout.textWidth / 2 >= 0 && layout.textX + layout.textWidth / 2 <= layout.canvas.width,
+                "Text/timeline must fit every layout");
+            for (int edge : {720,1080}) {
+                const auto size = musdesk::outputSize(format, edge);
+                require(std::min(size.width,size.height) == edge && size.width % 2 == 0 && size.height % 2 == 0,
+                    "All output sizes must have the selected short edge and be H.264 compatible");
+            }
+        }
         musdesk::CompositionSettings settings;
         settings.preset.discRpm = 6;
         const auto atZero = musdesk::compositionAt(0, settings);

@@ -43,6 +43,7 @@ struct GlFunctions {
     PFNGLGETUNIFORMLOCATIONPROC GetUniformLocation{};
     PFNGLUNIFORM1IPROC Uniform1i{};
     PFNGLUNIFORM1FPROC Uniform1f{};
+    PFNGLUNIFORM1FVPROC Uniform1fv{};
     PFNGLUNIFORM2FPROC Uniform2f{};
     PFNGLUNIFORM4FPROC Uniform4f{};
     PFNGLACTIVETEXTUREPROC ActiveTexture{};
@@ -68,7 +69,7 @@ struct GlFunctions {
         LOAD_GL(CreateShader); LOAD_GL(ShaderSource); LOAD_GL(CompileShader); LOAD_GL(GetShaderiv);
         LOAD_GL(GetShaderInfoLog); LOAD_GL(DeleteShader); LOAD_GL(CreateProgram); LOAD_GL(AttachShader);
         LOAD_GL(LinkProgram); LOAD_GL(GetProgramiv); LOAD_GL(GetProgramInfoLog); LOAD_GL(DeleteProgram);
-        LOAD_GL(UseProgram); LOAD_GL(GetUniformLocation); LOAD_GL(Uniform1i); LOAD_GL(Uniform1f);
+        LOAD_GL(UseProgram); LOAD_GL(GetUniformLocation); LOAD_GL(Uniform1i); LOAD_GL(Uniform1f); LOAD_GL(Uniform1fv);
         LOAD_GL(Uniform2f); LOAD_GL(Uniform4f); LOAD_GL(ActiveTexture); LOAD_GL(GenBuffers);
         LOAD_GL(DeleteBuffers); LOAD_GL(BindBuffer); LOAD_GL(BufferData);
         LOAD_GL(EnableVertexAttribArray); LOAD_GL(VertexAttribPointer); LOAD_GL(BlendFuncSeparate);
@@ -101,6 +102,11 @@ uniform float audioEnergy;
 uniform float subjectScale;
 uniform float ringMotion;
 uniform float ringPhase;
+uniform float spectrum[32];
+uniform float spectrumStrength;
+uniform vec2 canvasSize;
+uniform vec4 discGeometry;
+uniform vec4 timelineGeometry;
 uniform vec4 glowSettings;
 uniform float pulseStrength;
 uniform float backgroundBrightness;
@@ -120,13 +126,14 @@ float segmentDistance(vec2 p, vec2 a, vec2 b) {
 }
 void main() {
     vec2 topUv = vec2(uv.x, 1.0-uv.y);
-    vec2 p = topUv * vec2(1080.0,1920.0);
+    vec2 p = topUv * canvasSize;
     vec3 color = mix(vec3(0.025,0.04,0.075), vec3(0.085,0.13,0.20), 1.0-topUv.y);
     if (hasArtwork) {
-        vec2 bg = (topUv-0.5)*vec2(0.5625,1.0);
+        float aspect = canvasSize.x/canvasSize.y;
+        vec2 bg = (topUv-0.5)*vec2(aspect,1.0);
         bg = rotatePoint(bg,backgroundAngle)/backgroundZoom;
-        bg = bg/vec2(0.5625,1.0) + 0.5 + backgroundOffset;
-        vec4 sampleColor = texture(backgroundImage, coverCrop(bg,0.5625));
+        bg = bg/vec2(aspect,1.0) + 0.5 + backgroundOffset;
+        vec4 sampleColor = texture(backgroundImage, coverCrop(bg,aspect));
         vec3 lifted = pow(max(sampleColor.rgb,vec3(0.0)),vec3(0.72));
         color = mix(color,lifted,sampleColor.a);
     }
@@ -134,7 +141,7 @@ void main() {
     float vignette = 1.0 - 0.55*smoothstep(0.15,0.80,length(topUv-0.5));
     color *= vignette * (1.0-0.26*smoothstep(0.5,0.9,topUv.y));
 
-    vec2 discPoint = (p-vec2(540.0,760.0))/(370.0*subjectScale);
+    vec2 discPoint = (p-discGeometry.xy)/(discGeometry.z*subjectScale);
     float r = length(discPoint);
     vec2 material = rotatePoint(discPoint,-discAngle);
     float phi = atan(material.y,material.x);
@@ -142,9 +149,15 @@ void main() {
     float pulse = audioEnergy*pulseStrength;
     float wave = 0.0;
     if (ringMotion > 0.0) wave = 0.5 + 0.3*sin(phi*18.0+ringPhase) + 0.2*sin(phi*31.0-ringPhase*1.3);
-    float rimRadius = 1.0 + 0.025*pulse + 0.04*ringMotion*wave;
+    float spectral = 0.0;
+    if (spectrumStrength > 0.0) {
+        float bandPosition = abs(atan(discPoint.y,discPoint.x))/3.141592654*31.0;
+        int band = min(int(bandPosition),30);
+        spectral = mix(spectrum[band],spectrum[band+1],smoothstep(0.0,1.0,bandPosition-float(band)));
+    }
+    float rimRadius = 1.0 + 0.025*pulse + 0.04*ringMotion*wave + 0.04*spectrumStrength*spectral;
     float rimDistance = abs(r-rimRadius);
-    color += accent * glowSettings.a * (1.0+2.0*pulse+ringMotion)
+    color += accent * glowSettings.a * (1.0+2.0*pulse+ringMotion+spectrumStrength*spectral)
         * (0.25*exp(-rimDistance*(24.0-6.0*pulse)) + 0.65*exp(-rimDistance*180.0));
     if (r < 1.0) {
         float grooves = 0.009*sin(r*950.0) + 0.006*sin(r*420.0);
@@ -163,10 +176,12 @@ void main() {
         }
         color = mix(color,vinyl,1.0-smoothstep(0.994,1.0,r));
     }
-    float bar = segmentDistance(p,vec2(160.0,1480.0),vec2(920.0,1480.0));
+    vec2 barStart = vec2(timelineGeometry.x,timelineGeometry.z);
+    vec2 barEnd = vec2(timelineGeometry.y,timelineGeometry.z);
+    float bar = segmentDistance(p,barStart,barEnd);
     color = mix(color,vec3(0.20,0.26,0.36),1.0-smoothstep(3.0,5.0,bar));
-    vec2 marker = vec2(160.0+760.0*progress,1480.0);
-    float fill = segmentDistance(p,vec2(160.0,1480.0),marker);
+    vec2 marker = mix(barStart,barEnd,progress);
+    float fill = segmentDistance(p,barStart,marker);
     color += accent*0.18*exp(-fill*0.12);
     color = mix(color,vec3(0.65,0.86,1.0),1.0-smoothstep(3.0,5.0,fill));
     color = mix(color,vec3(0.84,0.94,1.0),1.0-smoothstep(11.0,13.0,length(p-marker)));
@@ -178,8 +193,9 @@ constexpr const char* textVertex = R"glsl(#version 330 core
 layout(location=0) in vec2 position;
 layout(location=1) in vec2 texCoord;
 out vec2 uv;
+uniform vec2 canvasSize;
 void main() {
-    gl_Position=vec4(position.x/1080.0*2.0-1.0,1.0-position.y/1920.0*2.0,0.0,1.0);
+    gl_Position=vec4(position.x/canvasSize.x*2.0-1.0,1.0-position.y/canvasSize.y*2.0,0.0,1.0);
     uv=texCoord;
 }
 )glsl";
@@ -263,6 +279,7 @@ struct VisualizerRenderer::Impl {
     GLuint framebuffer = 0, canvas = 0, artwork = 0, background = 0, fontAtlas = 0;
     GLuint sceneProgram = 0, textProgram = 0, sceneVao = 0, textVao = 0, textBuffer = 0;
     float imageAspect = 1.0f;
+    int pixelsWidth = width, pixelsHeight = height;
     std::array<stbtt_packedchar, 352> glyphs{};
 
     ~Impl() {
@@ -354,10 +371,11 @@ struct VisualizerRenderer::Impl {
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size() / 4));
     }
 
-    void centeredText(const std::string& value, float baseline, float scale, const std::array<float, 4>& color) {
+    void centeredText(const std::string& value, float baseline, float scale, const std::array<float, 4>& color,
+        float centerX, float maximumWidth) {
         const float unscaledWidth = textWidth(value);
-        if (unscaledWidth > 0) scale = std::min(scale, 900.0f / unscaledWidth);
-        const float x = (width - unscaledWidth * scale) * 0.5f;
+        if (unscaledWidth > 0) scale = std::min(scale, maximumWidth / unscaledWidth);
+        const float x = centerX - unscaledWidth * scale * 0.5f;
         text(value, x + 2, baseline + 3, scale, {0, 0, 0, 0.6f});
         text(value, x, baseline, scale, color);
     }
@@ -398,17 +416,34 @@ void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettin
 
 void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettings& settings, const AudioReaction& audio) {
     auto& gl = impl_->gl;
+    const auto size = outputSize(settings.format, settings.shortEdge);
+    const auto layout = layoutFor(settings.format);
+    if (size.width != impl_->pixelsWidth || size.height != impl_->pixelsHeight) {
+        GLint maximum = 0;
+        glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maximum);
+        if (size.width > maximum || size.height > maximum) throw std::runtime_error("Output exceeds the GPU texture limit.");
+        glBindTexture(GL_TEXTURE_2D, impl_->canvas);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, size.width, size.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        if (glGetError() != GL_NO_ERROR) throw std::runtime_error("Cannot resize the composition framebuffer.");
+        impl_->pixelsWidth = size.width;
+        impl_->pixelsHeight = size.height;
+    }
     const auto frame = compositionAt(timeSeconds, settings, audio);
     GLint oldFramebuffer = 0;
     std::array<GLint, 4> oldViewport{};
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &oldFramebuffer);
     glGetIntegerv(GL_VIEWPORT, oldViewport.data());
     gl.BindFramebuffer(GL_FRAMEBUFFER, impl_->framebuffer);
-    glViewport(0, 0, width, height);
+    glViewport(0, 0, size.width, size.height);
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
     gl.UseProgram(impl_->sceneProgram);
+    gl.Uniform2f(gl.GetUniformLocation(impl_->sceneProgram, "canvasSize"),
+        static_cast<float>(layout.canvas.width), static_cast<float>(layout.canvas.height));
+    gl.Uniform4f(gl.GetUniformLocation(impl_->sceneProgram, "discGeometry"), layout.discX, layout.discY, layout.discRadius, 0);
+    gl.Uniform4f(gl.GetUniformLocation(impl_->sceneProgram, "timelineGeometry"),
+        layout.timelineLeft, layout.timelineRight, layout.timelineY, 0);
     auto scalar = [&](const char* name, double value) {
         gl.Uniform1f(gl.GetUniformLocation(impl_->sceneProgram, name), static_cast<float>(value));
     };
@@ -436,6 +471,10 @@ void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettin
         safe(preset.glowColor[0], 0, 1, 0.24f), safe(preset.glowColor[1], 0, 1, 0.6f),
         safe(preset.glowColor[2], 0, 1, 1), safe(preset.glowIntensity, 0, 3, 0.8f));
     scalar("pulseStrength", safe(preset.pulseStrength, 0, 2, 0.6f));
+    scalar("spectrumStrength", safe(preset.spectrumStrength, 0, 1, 0) * safe(preset.pulseStrength, 0, 2, 0));
+    SpectrumFrame spectrum = audio.spectrum;
+    for (auto& value : spectrum) value = safe(value, 0, 1, 0);
+    gl.Uniform1fv(gl.GetUniformLocation(impl_->sceneProgram, "spectrum[0]"), static_cast<GLsizei>(spectrum.size()), spectrum.data());
     scalar("backgroundBrightness", safe(preset.backgroundBrightness, 0, 1.5f, 0.88f));
     gl.Uniform2f(gl.GetUniformLocation(impl_->sceneProgram, "backgroundOffset"),
         static_cast<float>(frame.backgroundOffsetX), static_cast<float>(frame.backgroundOffsetY));
@@ -446,21 +485,26 @@ void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettin
     glEnable(GL_BLEND);
     gl.BlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     gl.UseProgram(impl_->textProgram);
+    gl.Uniform2f(gl.GetUniformLocation(impl_->textProgram, "canvasSize"),
+        static_cast<float>(layout.canvas.width), static_cast<float>(layout.canvas.height));
     gl.ActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, impl_->fontAtlas);
     gl.BindVertexArray(impl_->textVao);
     gl.BindBuffer(GL_ARRAY_BUFFER, impl_->textBuffer);
     const auto subjectScale = static_cast<float>(frame.subjectScale);
     impl_->centeredText(settings.title.empty() ? "Track title" : settings.title,
-        760 + 490 * subjectScale, subjectScale, {0.92f,0.95f,1,1});
+        layout.discY + (layout.titleY-layout.discY) * subjectScale, subjectScale, {0.92f,0.95f,1,1},
+        layout.textX, layout.textWidth);
     impl_->centeredText(settings.artist.empty() ? "Artist name" : settings.artist,
-        760 + 580 * subjectScale, 0.64f * subjectScale, {0.60f,0.68f,0.80f,1});
+        layout.discY + (layout.artistY-layout.discY) * subjectScale, 0.64f * subjectScale, {0.60f,0.68f,0.80f,1},
+        layout.textX, layout.textWidth);
     const double duration = std::isfinite(settings.durationSeconds) && settings.durationSeconds > 0
         ? settings.durationSeconds : 252.0;
     const auto positionLabel = formatTime(static_cast<std::uint64_t>(std::min(frame.timeSeconds, 1.0e12)));
     const auto durationLabel = formatTime(static_cast<std::uint64_t>(std::min(duration, 1.0e12)));
-    impl_->text(positionLabel, 160, 1540, 0.54f, {0.66f,0.73f,0.84f,1});
-    impl_->text(durationLabel, 920 - impl_->textWidth(durationLabel) * 0.54f, 1540, 0.54f, {0.66f,0.73f,0.84f,1});
+    impl_->text(positionLabel, layout.timelineLeft, layout.timelineY + 60, 0.54f, {0.66f,0.73f,0.84f,1});
+    impl_->text(durationLabel, layout.timelineRight - impl_->textWidth(durationLabel) * 0.54f,
+        layout.timelineY + 60, 0.54f, {0.66f,0.73f,0.84f,1});
     gl.BindVertexArray(0);
     gl.BindBuffer(GL_ARRAY_BUFFER, 0);
     gl.UseProgram(0);
@@ -469,13 +513,15 @@ void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettin
 }
 
 std::uint32_t VisualizerRenderer::textureId() const { return impl_->canvas; }
+int VisualizerRenderer::outputWidth() const { return impl_->pixelsWidth; }
+int VisualizerRenderer::outputHeight() const { return impl_->pixelsHeight; }
 
 std::vector<std::uint8_t> VisualizerRenderer::readPixels() const {
     GLint oldFramebuffer = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &oldFramebuffer);
     impl_->gl.BindFramebuffer(GL_FRAMEBUFFER, impl_->framebuffer);
-    std::vector<std::uint8_t> pixels(static_cast<std::size_t>(width) * height * 4);
-    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    std::vector<std::uint8_t> pixels(static_cast<std::size_t>(impl_->pixelsWidth) * impl_->pixelsHeight * 4);
+    glReadPixels(0, 0, impl_->pixelsWidth, impl_->pixelsHeight, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
     impl_->gl.BindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(oldFramebuffer));
     return pixels;
 }

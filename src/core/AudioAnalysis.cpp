@@ -4,9 +4,101 @@
 #include <cmath>
 #include <array>
 #include <numbers>
+#include <complex>
 #include <stdexcept>
 
 namespace musdesk {
+SpectrumFrame AudioSpectrum::at(double seconds) const {
+    SpectrumFrame result{};
+    if (frames.empty() || !std::isfinite(seconds) || seconds < 0 || seconds >= durationSeconds
+        || !std::isfinite(stepSeconds) || stepSeconds <= 0) return result;
+    const double position = seconds / stepSeconds;
+    const auto index = static_cast<std::size_t>(std::min(position, static_cast<double>(frames.size() - 1)));
+    const auto next = std::min(index + 1, frames.size() - 1);
+    const auto fraction = static_cast<float>(std::clamp(position - index, 0.0, 1.0));
+    for (std::size_t band = 0; band < result.size(); ++band)
+        result[band] = std::lerp(frames[index][band], frames[next][band], fraction);
+    return result;
+}
+
+AudioSpectrum analyzeSpectrum(std::span<const std::int16_t> samples, int sampleRate, int channels,
+    std::stop_token cancellation) {
+    if (sampleRate < 1000 || sampleRate > 384000 || channels < 1 || channels > 8
+        || samples.empty() || samples.size() % channels != 0)
+        throw std::runtime_error("Invalid PCM audio for spectrum analysis.");
+    const auto frameCount = samples.size() / channels;
+    if (static_cast<double>(frameCount) / sampleRate > 1200)
+        throw std::runtime_error("Spectrum analysis supports tracks up to 20 minutes.");
+    constexpr std::size_t size = 2048;
+    using Complex = std::complex<float>;
+    std::array<Complex, size / 2> roots;
+    std::array<float, size> window;
+    std::array<std::size_t, size> reverse{};
+    for (std::size_t i = 0; i < size; ++i) {
+        window[i] = static_cast<float>(0.5 - 0.5 * std::cos(2 * std::numbers::pi * i / size));
+        for (std::size_t bits = i, count = size; count > 1; count >>= 1, bits >>= 1)
+            reverse[i] = (reverse[i] << 1) | (bits & 1);
+        if (i < roots.size()) roots[i] = std::polar(1.0f, static_cast<float>(-2 * std::numbers::pi * i / size));
+    }
+    const auto hop = static_cast<std::size_t>(sampleRate / 25);
+    AudioSpectrum result;
+    result.stepSeconds = static_cast<double>(hop) / sampleRate;
+    result.durationSeconds = static_cast<double>(frameCount) / sampleRate;
+    result.frames.reserve((frameCount + hop - 1) / hop + 1);
+    SpectrumFrame smoothed{};
+    const auto attack = static_cast<float>(1 - std::exp(-result.stepSeconds / 0.035));
+    const auto release = static_cast<float>(1 - std::exp(-result.stepSeconds / 0.12));
+    for (std::size_t center = 0; center < frameCount + hop; center += hop) {
+        if (cancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
+        std::array<float, size / 2 + 1> power{};
+        for (int channel = 0; channel < channels; ++channel) {
+            std::array<Complex, size> fft{};
+            double mean = 0;
+            std::size_t valid = 0;
+            for (std::size_t i = 0; i < size; ++i) {
+                const auto frame = static_cast<std::int64_t>(center) + static_cast<std::int64_t>(i) - static_cast<std::int64_t>(size / 2);
+                if (frame >= 0 && static_cast<std::size_t>(frame) < frameCount) {
+                    mean += samples[frame * channels + channel] / 32768.0;
+                    ++valid;
+                }
+            }
+            if (valid) mean /= valid;
+            for (std::size_t i = 0; i < size; ++i) {
+                const auto frame = static_cast<std::int64_t>(center) + static_cast<std::int64_t>(i) - static_cast<std::int64_t>(size / 2);
+                if (frame >= 0 && static_cast<std::size_t>(frame) < frameCount)
+                    fft[reverse[i]] = static_cast<float>(samples[frame * channels + channel] / 32768.0 - mean) * window[i];
+            }
+            for (std::size_t length = 2; length <= size; length *= 2) {
+                for (std::size_t base = 0; base < size; base += length) {
+                    for (std::size_t i = 0; i < length / 2; ++i) {
+                        const auto even = fft[base + i];
+                        const auto odd = fft[base + i + length / 2] * roots[i * size / length];
+                        fft[base + i] = even + odd;
+                        fft[base + i + length / 2] = even - odd;
+                    }
+                }
+            }
+            for (std::size_t bin = 1; bin < power.size(); ++bin) power[bin] += std::norm(fft[bin]) / channels;
+        }
+        const double maximumHz = std::min(12000.0, sampleRate / 2.0);
+        for (std::size_t band = 0; band < smoothed.size(); ++band) {
+            const auto lower = 40 * std::pow(maximumHz / 40, static_cast<double>(band) / smoothed.size());
+            const auto upper = 40 * std::pow(maximumHz / 40, static_cast<double>(band + 1) / smoothed.size());
+            const double binPosition = std::sqrt(lower * upper) * size / sampleRate;
+            const auto left = std::clamp<std::size_t>(static_cast<std::size_t>(binPosition), 1, size / 2 - 1);
+            float peak = std::lerp(power[left], power[left + 1], static_cast<float>(std::clamp(binPosition - left, 0.0, 1.0)));
+            for (auto bin = static_cast<std::size_t>(std::ceil(lower * size / sampleRate));
+                bin < std::min<std::size_t>(power.size(), static_cast<std::size_t>(std::ceil(upper * size / sampleRate))); ++bin)
+                peak = std::max(peak, power[bin]);
+            const float magnitude = 4 * std::sqrt(peak) / size;
+            const float target = std::clamp((20 * std::log10(std::max(magnitude, 1e-6f)) + 60) / 60, 0.0f, 1.0f);
+            smoothed[band] += (target - smoothed[band]) * (target > smoothed[band] ? attack : release);
+        }
+        result.frames.push_back(smoothed);
+    }
+    return result;
+}
+
 namespace {
 struct Biquad {
     double b0, b1, b2, a1, a2;

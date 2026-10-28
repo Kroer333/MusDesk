@@ -1,5 +1,6 @@
 #include "musdesk/render/VisualizerRenderer.hpp"
 #include "musdesk/presets/PresetStore.hpp"
+#include "musdesk/media/AudioImporter.hpp"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -46,6 +47,30 @@ int main(int argc, char* argv[]) {
         require(context.gl != nullptr, "GL context creation failed");
         require(SDL_GL_MakeCurrent(context.window, context.gl), "GL context activation failed");
         musdesk::VisualizerRenderer renderer(std::string(SDL_GetBasePath()) + "assets/Roboto-Medium.ttf");
+        if (argc == 4 && std::string(argv[1]) == "--layouts") {
+            renderer.setArtwork(musdesk::loadArtwork(argv[2]));
+            const auto audio = musdesk::prepareAudio(argv[3], musdesk::detectMediaTools());
+            const auto folder = std::filesystem::u8path(SDL_GetBasePath()) / "test-fixtures" / "layout-gallery";
+            std::filesystem::create_directories(folder);
+            for (int index = 0; index < 5; ++index) {
+                musdesk::CompositionSettings composition;
+                composition.title = "MusDesk";
+                composition.artist = "FFT visualizer";
+                composition.durationSeconds = audio.durationSeconds();
+                composition.preset = musdesk::beatPulsePreset();
+                composition.format = static_cast<musdesk::CompositionFormat>(index);
+                renderer.renderFrame(4.04, composition, audio.reactionAt(4.04, composition.preset.beatThreshold));
+                auto pixels = renderer.readPixels();
+                std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> surface(SDL_CreateSurfaceFrom(
+                    renderer.outputWidth(), renderer.outputHeight(), SDL_PIXELFORMAT_RGBA32, pixels.data(),
+                    renderer.outputWidth() * 4), SDL_DestroySurface);
+                require(surface && SDL_FlipSurface(surface.get(), SDL_FLIP_VERTICAL), "Cannot prepare layout gallery image");
+                const auto path = (folder / ("layout-" + std::to_string(index) + ".bmp")).u8string();
+                require(SDL_SaveBMP(surface.get(), std::string(path.begin(),path.end()).c_str()), "Cannot save layout gallery image");
+            }
+            std::cout << "Five layout gallery frames saved.\n";
+            return 0;
+        }
         if (argc == 2) {
             const auto image = musdesk::loadArtwork(argv[1]);
             renderer.setArtwork(image);
@@ -54,6 +79,18 @@ int main(int argc, char* argv[]) {
             renderer.setArtwork({2,2,{255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,0,255}});
         }
         musdesk::CompositionSettings settings;
+        auto fftSettings = settings;
+        fftSettings.preset.ringReactivity = fftSettings.preset.subjectPulse = fftSettings.preset.backgroundReactivity = 0;
+        musdesk::AudioReaction spectrumA, spectrumB;
+        spectrumA.spectrum[6] = 1;
+        spectrumB.spectrum[25] = 1;
+        renderer.renderFrame(2, fftSettings, spectrumA);
+        const auto lowFrequency = renderer.readPixels();
+        renderer.renderFrame(2, fftSettings, spectrumB);
+        require(lowFrequency != renderer.readPixels(), "Different FFT bands must deform different ring sectors");
+        renderer.renderFrame(9, fftSettings, spectrumB);
+        renderer.renderFrame(2, fftSettings, spectrumA);
+        require(lowFrequency == renderer.readPixels(), "FFT ring must reproduce identical pixels after seek");
         settings.title = "Deterministic frame";
         renderer.renderFrame(0, settings);
         const auto first = renderer.readPixels();
@@ -130,6 +167,20 @@ int main(int argc, char* argv[]) {
         require(cleared == renderer.readPixels(), "Clearing artwork repeatedly must be safe");
         for (std::size_t p = 3; p < first.size(); p += 4) {
             require(first[p] == 255, "Composition must remain opaque including text edges");
+        }
+        const auto previewTexture = renderer.textureId();
+        for (auto format : {musdesk::CompositionFormat::Portrait, musdesk::CompositionFormat::Landscape,
+            musdesk::CompositionFormat::Square, musdesk::CompositionFormat::PortraitThreeFour, musdesk::CompositionFormat::LandscapeFourThree}) {
+            settings.format = format;
+            for (int edge : {720,1080}) {
+                settings.shortEdge = edge;
+                const auto size = musdesk::outputSize(format, edge);
+                renderer.renderFrame(4, settings, spectrumA);
+                require(renderer.outputWidth() == size.width && renderer.outputHeight() == size.height
+                    && renderer.readPixels().size() == static_cast<std::size_t>(size.width) * size.height * 4,
+                    "Framebuffer/readback dimensions must match the selected format");
+                require(renderer.textureId() == previewTexture, "Resizing must retain the texture submitted to the preview UI");
+            }
         }
         require(glGetError() == GL_NO_ERROR, "OpenGL reported an error during composition rendering");
         std::cout << "1080x1920 readback, animation, exact seek repeatability, opacity and replacement checks passed.\n";

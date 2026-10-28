@@ -168,10 +168,22 @@ int main(int, char*[]) {
         rejected([&] { musdesk::saveProject(utf8(path), self); });
         require(musdesk::loadProject(utf8(path)) == project, "Media-overwrite protection destroyed the project");
         rejected([&] { (void)musdesk::parseProject("{"); });
-        rejected([&] { (void)musdesk::parseProject(replace(json, "\"version\": 1", "\"version\": 2")); });
-        rejected([&] { (void)musdesk::parseProject(replace(json, "\"version\": 1", "\"version\": 1.0")); });
-        rejected([&] { (void)musdesk::parseProject(replace(json, "\"version\": 1", "\"version\": 1, \"version\": 1")); });
-        rejected([&] { (void)musdesk::parseProject(replace(json, "\"format\": \"9:16\"", "\"format\": \"4:3\"")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json, "\"version\": 2", "\"version\": 3")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json, "\"version\": 2", "\"version\": 2.0")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json, "\"version\": 2", "\"version\": 2, \"version\": 2")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json, "\"format\": \"9:16\"", "\"format\": \"5:4\"")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json, "\"short_edge\": 1080", "\"short_edge\": 721")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json, "\"short_edge\": 1080", "\"short_edge\": 4294968376")); });
+        for (auto format : {musdesk::CompositionFormat::Portrait, musdesk::CompositionFormat::Landscape,
+            musdesk::CompositionFormat::Square, musdesk::CompositionFormat::PortraitThreeFour, musdesk::CompositionFormat::LandscapeFourThree}) {
+            for (int edge : {720, 1080}) {
+                auto variant = project;
+                variant.composition.format = format;
+                variant.composition.shortEdge = edge;
+                require(musdesk::parseProject(musdesk::serializeProject(variant)) == variant,
+                    "Each layout/resolution must survive project round trip");
+            }
+        }
         rejected([&] { (void)musdesk::parseProject(replace(json, "\"duration_seconds\": 252.0", "\"duration_seconds\": true")); });
         rejected([&] { (void)musdesk::parseProject(std::string(262145, ' ')); });
         rejected([&] { (void)musdesk::parseProject(std::string(30, '[') + "0" + std::string(30, ']')); });

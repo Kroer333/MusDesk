@@ -3,8 +3,41 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <stdexcept>
 
 namespace musdesk {
+const char* formatName(CompositionFormat format) {
+    switch (format) {
+    case CompositionFormat::Portrait: return "9:16";
+    case CompositionFormat::Landscape: return "16:9";
+    case CompositionFormat::Square: return "1:1";
+    case CompositionFormat::PortraitThreeFour: return "3:4";
+    case CompositionFormat::LandscapeFourThree: return "4:3";
+    }
+    throw std::runtime_error("Unsupported composition format.");
+}
+CompositionFormat parseCompositionFormat(const std::string& name) {
+    for (auto format : {CompositionFormat::Portrait, CompositionFormat::Landscape, CompositionFormat::Square,
+        CompositionFormat::PortraitThreeFour, CompositionFormat::LandscapeFourThree})
+        if (name == formatName(format)) return format;
+    throw std::runtime_error("Unsupported composition format.");
+}
+CompositionLayout layoutFor(CompositionFormat format) {
+    switch (format) {
+    case CompositionFormat::Portrait: return {{1080,1920},540,760,370,540,900,1250,1340,160,920,1480};
+    case CompositionFormat::Landscape: return {{1920,1080},520,540,320,1390,800,470,575,1060,1720,740};
+    case CompositionFormat::Square: return {{1080,1080},540,355,235,540,900,720,795,160,920,930};
+    case CompositionFormat::PortraitThreeFour: return {{1080,1440},540,480,280,540,900,930,1020,160,920,1180};
+    case CompositionFormat::LandscapeFourThree: return {{1440,1080},400,540,250,1080,600,470,575,800,1360,740};
+    }
+    throw std::runtime_error("Unsupported composition format.");
+}
+OutputSize outputSize(CompositionFormat format, int shortEdge) {
+    if (shortEdge != 720 && shortEdge != 1080) throw std::runtime_error("Choose a 720 or 1080 pixel short edge.");
+    const auto canvas = layoutFor(format).canvas;
+    return {canvas.width * shortEdge / 1080, canvas.height * shortEdge / 1080};
+}
+
 CompositionFrame compositionAt(double timeSeconds, const CompositionSettings& settings, const AudioReaction& audio) {
     const double duration = std::isfinite(settings.durationSeconds) && settings.durationSeconds > 0
         ? settings.durationSeconds : 252.0;

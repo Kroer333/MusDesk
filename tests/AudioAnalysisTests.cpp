@@ -15,6 +15,42 @@ template<class Action> void rejected(Action action) {
     try { action(); } catch (const std::exception&) { return; }
     throw std::runtime_error("Invalid audio analysis input was accepted");
 }
+void spectrumTests() {
+    constexpr int rate = 48000;
+    const auto tone = [](double frequency) {
+        std::vector<std::int16_t> pcm(rate * 2);
+        for (int i = 0; i < rate; ++i) {
+            pcm[i * 2] = static_cast<std::int16_t>(20000 * std::sin(2 * std::numbers::pi * frequency * i / rate));
+            pcm[i * 2 + 1] = -pcm[i * 2];
+        }
+        return pcm;
+    };
+    const auto low = musdesk::analyzeSpectrum(tone(187.5), rate, 2);
+    const auto high = musdesk::analyzeSpectrum(tone(3000), rate, 2);
+    const auto a = low.at(0.5), b = high.at(0.5);
+    const auto lowBand = std::max_element(a.begin(), a.end()) - a.begin();
+    const auto highBand = std::max_element(b.begin(), b.end()) - b.begin();
+    require(lowBand + 8 < highBand && a[lowBand] > 0.7f && b[highBand] > 0.7f,
+        "FFT must distinguish low/high tones and retain opposite-phase stereo");
+    require(low.frames.size() <= 27, "Spectrum cache must be bounded to 25 frames per second plus endpoint");
+    for (const auto& frame : low.frames) for (float value : frame)
+        require(std::isfinite(value) && value >= 0 && value <= 1, "Spectrum bands must be finite and normalized");
+    for (auto dc : {0, 4096}) {
+        const auto flat = musdesk::analyzeSpectrum(std::vector<std::int16_t>(rate * 2, dc), rate, 2);
+        require(flat.at(0.5) == musdesk::SpectrumFrame{}, "Silence and DC must not appear as a frequency spectrum");
+    }
+    (void)low.at(0.9);
+    require(low.at(0.5) == a && low.at(-1) == musdesk::SpectrumFrame{}
+        && low.at(1) == musdesk::SpectrumFrame{} && low.at(std::numeric_limits<double>::quiet_NaN()) == musdesk::SpectrumFrame{},
+        "Spectrum seeking must be deterministic and reject invalid timeline positions");
+    std::stop_source stop;
+    stop.request_stop();
+    const auto pcm = tone(1000);
+    rejected([&] { musdesk::analyzeSpectrum(pcm, rate, 2, stop.get_token()); });
+    rejected([&] { musdesk::analyzeSpectrum({}, rate, 2); });
+    rejected([&] { musdesk::analyzeSpectrum(pcm, 0, 2); });
+    std::cout << "FFT frequency separation, stereo phase, silence/DC, bounds and deterministic lookup passed.\n";
+}
 void waveformTests() {
     std::vector<std::int16_t> silence(40000, 0);
     const auto quiet = musdesk::analyzeWaveform(silence, 2);
@@ -125,6 +161,7 @@ void rhythmTests() {
 int main() {
     try {
         waveformTests();
+        spectrumTests();
         rhythmTests();
         constexpr int rate = 48000;
         std::vector<std::int16_t> samples(rate * 2 * 2, 0);
