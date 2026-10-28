@@ -6,6 +6,7 @@
 #include "musdesk/audio/AudioPlayer.hpp"
 #include "musdesk/presets/PresetStore.hpp"
 #include "musdesk/export/ExportEngine.hpp"
+#include "musdesk/projects/ProjectStore.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_opengl3.h>
@@ -27,6 +28,7 @@
 #include <stdexcept>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 
 namespace {
 struct ApplicationResources {
@@ -88,20 +90,26 @@ int main(int argc, char* argv[]) {
         return EXIT_SUCCESS;
     }
     if (argc == 2 && std::string(argv[1]) == "--help") {
-        std::cout << "MusDesk " MUSDESK_VERSION "\nUsage: MusDesk [--artwork image.png] [--audio track.mp3] [--preset preset.json]\n";
+        std::cout << "MusDesk " MUSDESK_VERSION "\nUsage: MusDesk [--project file.musdesk] OR [--artwork image.png] [--audio track.mp3] [--preset preset.json]\n";
         return EXIT_SUCCESS;
     }
     std::string startupArtwork;
     std::string startupAudio;
     std::string startupPreset;
+    std::string startupProject;
     for (int i = 1; i < argc; i += 2) {
         if (i + 1 < argc && std::string(argv[i]) == "--artwork") startupArtwork = argv[i + 1];
         else if (i + 1 < argc && std::string(argv[i]) == "--audio") startupAudio = argv[i + 1];
         else if (i + 1 < argc && std::string(argv[i]) == "--preset") startupPreset = argv[i + 1];
+        else if (i + 1 < argc && std::string(argv[i]) == "--project") startupProject = argv[i + 1];
         else {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Usage: MusDesk [--artwork image.png] [--audio track.mp3] [--preset preset.json]");
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Usage: MusDesk [--project file.musdesk] OR [--artwork image.png] [--audio track.mp3] [--preset preset.json]");
             return EXIT_FAILURE;
         }
+    }
+    if (!startupProject.empty() && (!startupArtwork.empty() || !startupAudio.empty() || !startupPreset.empty())) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "--project cannot be combined with media or preset options.");
+        return EXIT_FAILURE;
     }
     ApplicationResources resources;
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -180,6 +188,8 @@ int main(int argc, char* argv[]) {
         musdesk::ArtworkDialog presetOpenDialog;
         musdesk::ArtworkDialog presetSaveDialog;
         musdesk::ArtworkDialog exportDialog;
+        musdesk::ArtworkDialog projectOpenDialog;
+        musdesk::ArtworkDialog projectSaveDialog;
         std::unique_ptr<musdesk::ExportEngine> exporter;
         bool exportVsyncDisabled = false;
         Uint64 lastExportUiFrame = 0;
@@ -209,6 +219,7 @@ int main(int argc, char* argv[]) {
         std::future<std::shared_ptr<const musdesk::DecodedAudio>> audioFuture;
         StopImportOnExit stopImport{audioCancellation};
         bool resumeAfterSeek = false;
+        std::optional<double> projectRestoreTime;
         auto importAudio = [&](const std::string& path) {
             if (!editorState.toolsChecked) {
                 startupAudio = path;
@@ -220,6 +231,7 @@ int main(int argc, char* argv[]) {
             }
             editorState.audioError.clear();
             editorState.audioImportPending = true;
+            if (!editorState.missingAudioPath.empty()) projectRestoreTime = editorState.timeSeconds;
             audioCancellation = std::stop_source{};
             audioFuture = std::async(std::launch::async, [path, tools = mediaTools, token = audioCancellation.get_token()]
                     () -> std::shared_ptr<const musdesk::DecodedAudio> {
@@ -232,6 +244,7 @@ int main(int argc, char* argv[]) {
                 const auto absolute = std::filesystem::absolute(std::filesystem::u8path(path)).u8string();
                 composition.setArtwork(image);
                 editorState.artworkPath.assign(absolute.begin(), absolute.end());
+                editorState.missingArtworkPath.clear();
                 const auto slash = path.find_last_of("/\\");
                 editorState.artworkName = path.substr(slash == std::string::npos ? 0 : slash + 1);
                 editorState.importError.clear();
@@ -282,6 +295,114 @@ int main(int argc, char* argv[]) {
         bool running = true;
         Uint64 lastSourceCheck = 0;
         std::string sourceError;
+        musdesk::ProjectDocument savedProject;
+        auto currentProject = [&] {
+            musdesk::ProjectDocument project;
+            project.composition = {editorState.title.data(), editorState.artist.data(), editorState.durationSeconds, editorState.preset};
+            project.audioPath = editorState.missingAudioPath.empty() ? editorState.audioPath : editorState.missingAudioPath;
+            project.artworkPath = editorState.missingArtworkPath.empty() ? editorState.artworkPath : editorState.missingArtworkPath;
+            project.previewTimeSeconds = editorState.timeSeconds;
+            return project;
+        };
+        auto projectDirty = [&] {
+            auto current = currentProject();
+            current.previewTimeSeconds = 0;
+            return current != savedProject;
+        };
+        auto applyProject = [&](const musdesk::ProjectDocument& project, const std::string& path) {
+            startupAudio.clear();
+            audioPlayer.unload();
+            audioClip.reset();
+            composition.clearArtwork();
+            sourceError.clear();
+            lastSourceCheck = 0;
+            editorState.audioPath.clear();
+            editorState.audioName.clear();
+            editorState.artworkPath.clear();
+            editorState.artworkName.clear();
+            editorState.audioError.clear();
+            editorState.previewError.clear();
+            editorState.importError.clear();
+            editorState.audioReady = editorState.audioPlaying = editorState.audioSeeking = false;
+            editorState.audioEnergy = 0;
+            editorState.title.fill('\0');
+            editorState.artist.fill('\0');
+            std::copy(project.composition.title.begin(), project.composition.title.end(), editorState.title.begin());
+            std::copy(project.composition.artist.begin(), project.composition.artist.end(), editorState.artist.begin());
+            musdesk::applyVisualPreset(editorState, project.composition.preset);
+            editorState.durationSeconds = project.composition.durationSeconds;
+            editorState.timeSeconds = project.previewTimeSeconds;
+            editorState.animatePreview = false;
+            resumeAfterSeek = false;
+            anchorTime = project.previewTimeSeconds;
+            anchorTicks = SDL_GetTicksNS();
+            editorState.projectPath = path;
+            editorState.projectError.clear();
+            editorState.exportStatus.clear();
+            editorState.missingArtworkPath = project.artworkPath;
+            editorState.missingAudioPath = project.audioPath;
+            savedProject = project;
+            savedProject.previewTimeSeconds = 0;
+            projectRestoreTime.reset();
+            if (!project.artworkPath.empty()) importArtwork(project.artworkPath);
+            if (!project.audioPath.empty()) {
+                projectRestoreTime = project.previewTimeSeconds;
+                importAudio(project.audioPath);
+            }
+            editorState.projectStatus = path.empty() ? "New project." : "Project opened; playback is paused.";
+            SDL_Log("%s", editorState.projectStatus.c_str());
+        };
+        enum class ProjectAction { None, New, Open, OpenPath, Close };
+        ProjectAction pendingProjectAction = ProjectAction::None;
+        std::string pendingProjectPath;
+        auto continueProjectAction = [&] {
+            const auto action = pendingProjectAction;
+            pendingProjectAction = ProjectAction::None;
+            try {
+                if (action == ProjectAction::Close) running = false;
+                else if (action == ProjectAction::New) applyProject({}, {});
+                else if (action == ProjectAction::Open) projectOpenDialog.open(resources.window, musdesk::FileDialogKind::ProjectOpen);
+                else if (action == ProjectAction::OpenPath) {
+                    const auto document = musdesk::loadProject(pendingProjectPath);
+                    const auto absolute = std::filesystem::absolute(std::filesystem::u8path(pendingProjectPath)).lexically_normal().u8string();
+                    applyProject(document, {absolute.begin(), absolute.end()});
+                }
+            } catch (const std::exception& error) { editorState.projectError = error.what(); }
+        };
+        auto requestProjectAction = [&](ProjectAction action, const std::string& path = std::string{}) {
+            if (pendingProjectAction != ProjectAction::None || editorState.projectDialogPending) return;
+            if (action != ProjectAction::Close && (editorState.exportBusy || editorState.audioImportPending)) {
+                editorState.projectError = "Finish or cancel the current import/export before opening a project.";
+                return;
+            }
+            pendingProjectAction = action;
+            pendingProjectPath = path;
+            if (projectDirty()) {
+                editorState.showUnsavedPrompt = true;
+                if (action == ProjectAction::Close) SDL_RestoreWindow(resources.window);
+            }
+            else continueProjectAction();
+        };
+        auto saveCurrentProject = [&](const std::string& path) {
+            editorState.projectStatus.clear();
+            try {
+                const auto document = currentProject();
+                musdesk::saveProject(path, document);
+                const auto absolute = std::filesystem::absolute(std::filesystem::u8path(path)).lexically_normal().u8string();
+                editorState.projectPath.assign(absolute.begin(), absolute.end());
+                savedProject = document;
+                savedProject.previewTimeSeconds = 0;
+                editorState.projectError.clear();
+                editorState.projectStatus = "Project saved.";
+                SDL_Log("Project saved: %s", editorState.projectPath.c_str());
+                return true;
+            } catch (const std::exception& error) {
+                editorState.projectError = error.what();
+                pendingProjectAction = ProjectAction::None;
+                return false;
+            }
+        };
+        std::string windowTitle;
         while (running) {
             const Uint64 frameStart = SDL_GetTicks();
             SDL_Event event{};
@@ -289,7 +410,10 @@ int main(int argc, char* argv[]) {
                 ImGui_ImplSDL3_ProcessEvent(&event);
                 if (event.type == SDL_EVENT_DROP_FILE && event.drop.data != nullptr
                     && event.drop.windowID == SDL_GetWindowID(resources.window)) {
-                    if (editorState.exportBusy) editorState.exportStatus = "Finish or cancel export before importing files.";
+                    if (editorState.projectDialogPending || pendingProjectAction != ProjectAction::None)
+                        editorState.projectError = "Finish the current project action before importing files.";
+                    else if (editorState.exportBusy) editorState.exportStatus = "Finish or cancel export before importing files.";
+                    else if (musdesk::isProjectPath(event.drop.data)) requestProjectAction(ProjectAction::OpenPath, event.drop.data);
                     else if (isJsonPath(event.drop.data)) importPreset(event.drop.data);
                     else if (musdesk::isAudioPath(event.drop.data)) importAudio(event.drop.data);
                     else importArtwork(event.drop.data);
@@ -297,7 +421,7 @@ int main(int argc, char* argv[]) {
                 if (event.type == SDL_EVENT_QUIT ||
                     (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
                      event.window.windowID == SDL_GetWindowID(resources.window))) {
-                    running = false;
+                    requestProjectAction(ProjectAction::Close);
                 }
                 if (event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED &&
                     event.window.windowID == SDL_GetWindowID(resources.window)) {
@@ -318,6 +442,10 @@ int main(int argc, char* argv[]) {
                     editorState.mediaToolsStatus = std::string("Media tool detection failed: ") + error.what();
                 }
                 editorState.toolsChecked = true;
+                if (!startupProject.empty()) {
+                    requestProjectAction(ProjectAction::OpenPath, startupProject);
+                    startupProject.clear();
+                }
                 if (!startupAudio.empty()) {
                     importAudio(startupAudio);
                     startupAudio.clear();
@@ -334,12 +462,14 @@ int main(int argc, char* argv[]) {
                     const auto slash = audio->path.find_last_of("/\\");
                     editorState.audioName = audio->path.substr(slash == std::string::npos ? 0 : slash + 1);
                     editorState.durationSeconds = audio->durationSeconds();
-                    editorState.timeSeconds = 0;
+                    editorState.timeSeconds = std::clamp(projectRestoreTime.value_or(0), 0.0, editorState.durationSeconds);
+                    projectRestoreTime.reset();
+                    editorState.missingAudioPath.clear();
                     editorState.audioPlaying = false;
                     editorState.audioSeeking = false;
                     editorState.animatePreview = false;
                     resumeAfterSeek = false;
-                    anchorTime = 0;
+                    anchorTime = editorState.timeSeconds;
                     anchorTicks = SDL_GetTicksNS();
                     preparePlayback();
                     SDL_Log("Audio ready: %.3f seconds, %zu RMS values", audio->durationSeconds(), audio->envelope.values.size());
@@ -351,6 +481,24 @@ int main(int argc, char* argv[]) {
                 }
                 editorState.audioImportPending = false;
             }
+            if (auto selection = projectOpenDialog.takeSelection()) {
+                if (!selection->error.empty()) editorState.projectError = selection->error;
+                else if (!selection->path.empty()) {
+                    pendingProjectAction = ProjectAction::OpenPath;
+                    pendingProjectPath = selection->path;
+                    continueProjectAction();
+                }
+            }
+            if (auto selection = projectSaveDialog.takeSelection()) {
+                if (!selection->error.empty()) editorState.projectError = selection->error;
+                if (!selection->error.empty() || selection->path.empty()) pendingProjectAction = ProjectAction::None;
+                else {
+                    auto path = selection->path;
+                    if (std::filesystem::u8path(path).extension().empty()) path += ".musdesk";
+                    if (saveCurrentProject(path)) continueProjectAction();
+                }
+            }
+            editorState.projectDialogPending = projectOpenDialog.pending() || projectSaveDialog.pending();
             if (auto selection = artworkDialog.takeSelection()) {
                 if (!selection->error.empty()) editorState.importError = selection->error;
                 else if (!selection->path.empty()) importArtwork(selection->path);
@@ -439,6 +587,11 @@ int main(int argc, char* argv[]) {
                 }
             }
             editorState.exportBusy = editorState.exportActive || editorState.exportDialogPending;
+            editorState.projectDirty = projectDirty();
+            const auto filename = std::filesystem::u8path(editorState.projectPath).filename().u8string();
+            const auto name = editorState.projectPath.empty() ? std::string("Untitled") : std::string(filename.begin(), filename.end());
+            const auto title = "MusDesk - " + name + (editorState.projectDirty ? " *" : "");
+            if (title != windowTitle) { SDL_SetWindowTitle(resources.window, title.c_str()); windowTitle = title; }
             if (audioClip && !editorState.exportActive && (lastSourceCheck == 0 || SDL_GetTicks() - lastSourceCheck >= 1000)) {
                 lastSourceCheck = SDL_GetTicks();
                 try { musdesk::validateAudioSource(*audioClip); sourceError.clear(); }
@@ -498,6 +651,39 @@ int main(int argc, char* argv[]) {
             const float beforeVolume = editorState.previewVolume;
             const bool beforeMute = editorState.muteAudio;
             musdesk::drawEditorUi(editorState, composition.textureId());
+            if (!editorState.exportBusy && !editorState.audioImportPending && !editorState.projectDialogPending
+                && !editorState.artworkDialogPending && !editorState.audioDialogPending && !editorState.presetDialogPending
+                && !editorState.showUnsavedPrompt && editorState.toolsChecked && io.KeyCtrl) {
+                if (ImGui::IsKeyPressed(ImGuiKey_S, false)) {
+                    if (io.KeyShift) editorState.requestSaveProjectAs = true;
+                    else editorState.requestSaveProject = true;
+                }
+                if (ImGui::IsKeyPressed(ImGuiKey_O, false)) editorState.requestOpenProject = true;
+                if (ImGui::IsKeyPressed(ImGuiKey_N, false)) editorState.requestNewProject = true;
+            }
+            if (editorState.cancelProjectAction) {
+                editorState.cancelProjectAction = false;
+                pendingProjectAction = ProjectAction::None;
+            }
+            if (editorState.discardProjectChanges) {
+                editorState.discardProjectChanges = false;
+                continueProjectAction();
+            }
+            if (editorState.requestNewProject) {
+                editorState.requestNewProject = false;
+                requestProjectAction(ProjectAction::New);
+            }
+            if (editorState.requestOpenProject) {
+                editorState.requestOpenProject = false;
+                requestProjectAction(ProjectAction::Open);
+            }
+            if (editorState.requestSaveProject || editorState.requestSaveProjectAs) {
+                const bool saveAs = editorState.requestSaveProjectAs || editorState.projectPath.empty();
+                editorState.requestSaveProject = editorState.requestSaveProjectAs = false;
+                if (saveAs) projectSaveDialog.open(resources.window, musdesk::FileDialogKind::ProjectSave);
+                else if (saveCurrentProject(editorState.projectPath)) continueProjectAction();
+            }
+            editorState.projectDialogPending = projectOpenDialog.pending() || projectSaveDialog.pending();
             if (audioClip && !editorState.exportBusy && !io.WantCaptureKeyboard) {
                 if (editorState.audioReady && ImGui::IsKeyPressed(ImGuiKey_Space, false)) editorState.requestPlayPause = true;
                 const double shift = (ImGui::IsKeyPressed(ImGuiKey_RightArrow) ? 5.0 : 0)

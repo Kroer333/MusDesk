@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- New/Open/Save/Save As for `.musdesk` JSON projects, including labels, visual
+  settings, relative media paths and paused restoration of the preview position.
+- Missing-media relinking, project shortcuts and unsaved-change confirmation.
+- Safe project writes, strict version/size/text validation and source-media protection.
+- Opening/new projects clear old media rather than reusing an unrelated composition.
+
 ## 0.1.0
 
 - SDL3/OpenGL desktop editor and a vertical 1080 × 1920 composition.

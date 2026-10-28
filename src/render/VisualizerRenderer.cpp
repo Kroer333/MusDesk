@@ -381,6 +381,12 @@ void VisualizerRenderer::setArtwork(const ImageData& image) {
     impl_->imageAspect = static_cast<float>(image.width) / image.height;
 }
 
+void VisualizerRenderer::clearArtwork() {
+    glDeleteTextures(1, &impl_->artwork);
+    glDeleteTextures(1, &impl_->background);
+    impl_->artwork = impl_->background = 0;
+}
+
 void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettings& settings, float audioEnergy) {
     auto& gl = impl_->gl;
     const auto frame = compositionAt(timeSeconds, settings);

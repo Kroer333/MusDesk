@@ -9,6 +9,7 @@ struct CompositionSettings {
     std::string artist = "Artist name";
     double durationSeconds = 252.0;
     VisualPreset preset;
+    bool operator==(const CompositionSettings&) const = default;
 };
 
 struct CompositionFrame {

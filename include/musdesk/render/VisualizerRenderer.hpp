@@ -18,6 +18,7 @@ public:
     VisualizerRenderer& operator=(const VisualizerRenderer&) = delete;
 
     void setArtwork(const ImageData& image);
+    void clearArtwork();
     void renderFrame(double timeSeconds, const CompositionSettings& settings, float audioEnergy = 0);
     std::uint32_t textureId() const;
     // Bottom-up RGBA readback, used for frame reproducibility checks.

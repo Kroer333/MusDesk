@@ -28,6 +28,7 @@ void ArtworkDialog::open(SDL_Window* window, FileDialogKind kind) {
     static constexpr SDL_DialogFileFilter audioFilters[] = {{"MP3 / WAV / OGG audio", "mp3;wav;ogg"}};
     static constexpr SDL_DialogFileFilter jsonFilters[] = {{"MusDesk preset JSON", "json"}};
     static constexpr SDL_DialogFileFilter videoFilters[] = {{"MP4 video", "mp4"}};
+    static constexpr SDL_DialogFileFilter projectFilters[] = {{"MusDesk project", "musdesk"}};
     const auto callback = [](void* userdata, const char* const* files, int) {
         std::unique_ptr<std::shared_ptr<State>> owner(static_cast<std::shared_ptr<State>*>(userdata));
         ArtworkSelection result;
@@ -40,13 +41,16 @@ void ArtworkDialog::open(SDL_Window* window, FileDialogKind kind) {
         (*owner)->selection = std::move(result);
         (*owner)->pending = false;
     };
-    if (kind == FileDialogKind::ExportSave) {
+    if (kind == FileDialogKind::ProjectSave) {
+        SDL_ShowSaveFileDialog(callback, callbackState, window, projectFilters, 1, "project.musdesk");
+    } else if (kind == FileDialogKind::ExportSave) {
         SDL_ShowSaveFileDialog(callback, callbackState, window, videoFilters, 1, "MusDesk.mp4");
     } else if (kind == FileDialogKind::PresetSave) {
         SDL_ShowSaveFileDialog(callback, callbackState, window, jsonFilters, 1, "preset.json");
     } else {
         const auto* selectedFilters = kind == FileDialogKind::Audio ? audioFilters
-            : (kind == FileDialogKind::PresetOpen ? jsonFilters : filters);
+            : (kind == FileDialogKind::PresetOpen ? jsonFilters
+                : (kind == FileDialogKind::ProjectOpen ? projectFilters : filters));
         SDL_ShowOpenFileDialog(callback, callbackState, window, selectedFilters, 1, nullptr, false);
     }
 }

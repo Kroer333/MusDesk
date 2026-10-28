@@ -7,6 +7,20 @@
 
 namespace musdesk {
 struct EditorUiState {
+    std::string projectPath;
+    std::string projectStatus;
+    std::string projectError;
+    std::string missingAudioPath;
+    std::string missingArtworkPath;
+    bool projectDirty = false;
+    bool projectDialogPending = false;
+    bool requestNewProject = false;
+    bool requestOpenProject = false;
+    bool requestSaveProject = false;
+    bool requestSaveProjectAs = false;
+    bool showUnsavedPrompt = false;
+    bool discardProjectChanges = false;
+    bool cancelProjectAction = false;
     float previewScalePercent = 100.0f;
     bool showSafeArea = false;
     std::array<char, 128> title{"Track title"};

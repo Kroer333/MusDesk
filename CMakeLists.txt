@@ -96,6 +96,10 @@ add_library(musdesk_presets STATIC src/presets/PresetStore.cpp)
 target_include_directories(musdesk_presets PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(musdesk_presets PUBLIC musdesk_core PRIVATE nlohmann_json::nlohmann_json SDL3::SDL3)
 
+add_library(musdesk_projects STATIC src/projects/ProjectStore.cpp)
+target_include_directories(musdesk_projects PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(musdesk_projects PUBLIC musdesk_presets PRIVATE nlohmann_json::nlohmann_json SDL3::SDL3)
+
 add_library(musdesk_render STATIC src/render/VisualizerRenderer.cpp)
 target_include_directories(musdesk_render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_include_directories(musdesk_render SYSTEM PRIVATE "${stb_SOURCE_DIR}")
@@ -110,7 +114,7 @@ add_executable(MusDesk
     src/app/EditorUi.cpp
     src/app/ArtworkDialog.cpp
 )
-target_link_libraries(MusDesk PRIVATE musdesk_export musdesk_audio musdesk_presets musdesk_imgui SDL3::SDL3 OpenGL::GL)
+target_link_libraries(MusDesk PRIVATE musdesk_export musdesk_audio musdesk_projects musdesk_imgui SDL3::SDL3 OpenGL::GL)
 target_compile_definitions(MusDesk PRIVATE MUSDESK_VERSION="${PROJECT_VERSION}")
 if(WIN32)
     enable_language(RC)
@@ -147,6 +151,13 @@ musdesk_stage_media_tools(MusDesk)
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(MusDeskProjectTests tests/ProjectTests.cpp)
+    target_link_libraries(MusDeskProjectTests PRIVATE musdesk_projects SDL3::SDL3)
+    musdesk_copy_runtime_files(MusDeskProjectTests)
+    add_test(NAME MusDeskProjectTests COMMAND MusDeskProjectTests)
+    if(MSVC)
+        target_compile_options(MusDeskProjectTests PRIVATE /utf-8)
+    endif()
     add_executable(MusDeskExportTests tests/ExportTests.cpp)
     target_link_libraries(MusDeskExportTests PRIVATE musdesk_export SDL3::SDL3 OpenGL::GL)
     musdesk_copy_runtime_files(MusDeskExportTests)

@@ -126,6 +126,38 @@ the console; startup failures produce a nonzero exit code.
 
 ## Current workspace
 
+### Projects (development)
+
+The editor's **Project** section provides **New**, **Open**, **Save** and
+**Save As**. Shortcuts are Ctrl+N, Ctrl+O, Ctrl+S and Ctrl+Shift+S. You can also
+drop a `.musdesk` file or start with `MusDesk.exe --project "path/to/project.musdesk"`.
+The project startup option is exclusive with `--artwork`, `--audio` and `--preset`.
+
+Projects are versioned, readable JSON files containing track labels, all visual
+preset values, media references, duration and the saved preview position.
+They reopen paused. Audio samples and artwork are not embedded: media paths
+are stored relative to the project where possible. Move the project together
+with its referenced folders to keep those paths valid. **Save As** recalculates
+references for the new project folder. Files on another drive use absolute paths.
+
+Unavailable or damaged media are identified with **Locate artwork** / **Locate
+audio** buttons; other project settings remain editable. Point to replacement
+files, then save the project. Opening another project clears the previous
+composition's media, so missing files cannot silently reuse an old image or song.
+A malformed project leaves the current composition unchanged.
+
+An asterisk marks unsaved composition changes. Opening/new/closing prompts to
+save, discard or cancel; cancelling a save dialog or a failed save does not
+continue the destructive action. Moving the playhead alone does not mark the
+composition dirty, but its current position is included when you save.
+Writes use an exclusive temporary file and replace the destination only after
+writing successfully. Import/export must finish or be cancelled before project
+opening or saving. Volume, mute, loop and preview-only guides/scale remain
+session settings. Project files are ignored by Git by default because they can
+contain personal media references.
+
+These changes belong to the next update; the published 0.1.0 ZIP is unchanged.
+
 - Use **Import artwork**, drop an image onto the window, or launch with
   `MusDesk.exe --artwork "path/to/artwork.png"`. Unicode paths are supported.
   Failed imports display an error and preserve the previous image.
@@ -181,7 +213,8 @@ the current format and are rejected; they are not included in the package.
 
 Presets contain visual settings and their name. They do not contain media paths,
 track labels, preview volume, playback position, guides or window settings.
-Loading a preset does not reset audio or its timeline. This is not project saving.
+Loading a preset does not reset audio or its timeline. Preset files store effects;
+use a `.musdesk` project to preserve media references and labels as well.
 
 JSON format version **1** requires exactly these root fields: `version`, `name`,
 `disc_rpm`, `glow` and `background`. `glow` contains `color`, `intensity` and

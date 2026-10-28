@@ -63,7 +63,32 @@ void drawPresetControls(EditorUiState& state) {
 }
 
 void drawControls(EditorUiState& state) {
-    ImGui::BeginDisabled(state.exportBusy);
+    ImGui::BeginDisabled(state.exportBusy || state.projectDialogPending);
+    ImGui::SeparatorText("Project");
+    ImGui::TextWrapped("%s%s", state.projectPath.empty() ? "Untitled project" : state.projectPath.c_str(), state.projectDirty ? " *" : "");
+    ImGui::BeginDisabled(state.audioImportPending || !state.toolsChecked || state.artworkDialogPending
+        || state.audioDialogPending || state.presetDialogPending || state.showUnsavedPrompt);
+    if (ImGui::Button("New")) state.requestNewProject = true;
+    ImGui::SameLine();
+    if (ImGui::Button("Open")) state.requestOpenProject = true;
+    ImGui::SameLine();
+    if (ImGui::Button("Save")) state.requestSaveProject = true;
+    ImGui::SameLine();
+    if (ImGui::Button("Save As")) state.requestSaveProjectAs = true;
+    ImGui::EndDisabled();
+    if (!state.projectStatus.empty()) ImGui::TextWrapped("%s", state.projectStatus.c_str());
+    if (!state.projectError.empty()) ImGui::TextWrapped("%s", state.projectError.c_str());
+    if (!state.missingArtworkPath.empty()) {
+        ImGui::TextWrapped("Artwork unavailable: %s", state.missingArtworkPath.c_str());
+        if (ImGui::Button("Locate artwork")) state.requestArtwork = true;
+    }
+    if (!state.missingAudioPath.empty()) {
+        ImGui::TextWrapped("Audio unavailable: %s", state.missingAudioPath.c_str());
+        ImGui::BeginDisabled(state.audioImportPending || !state.ffmpegReady || !state.ffprobeReady);
+        if (ImGui::Button("Locate audio")) state.requestAudio = true;
+        ImGui::EndDisabled();
+    }
+    ImGui::Spacing();
     ImGui::SeparatorText("Composition");
     ImGui::TextUnformatted("Vertical music visualizer");
     ImGui::TextDisabled("1080 x 1920  /  9:16");
@@ -293,5 +318,29 @@ void drawEditorUi(EditorUiState& state, std::uint32_t compositionTexture) {
         ImGui::TextDisabled("Composition preview  |  MP4: 1080 x 1920 / 30 FPS");
     }
     ImGui::End();
+    if (state.showUnsavedPrompt) ImGui::OpenPopup("Unsaved project");
+    if (ImGui::BeginPopupModal("Unsaved project", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Save the project before continuing?");
+        ImGui::BeginDisabled(state.exportBusy || state.audioImportPending || state.projectDialogPending);
+        if (ImGui::Button("Save changes")) {
+            state.requestSaveProject = true;
+            state.showUnsavedPrompt = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("Discard changes")) {
+            state.discardProjectChanges = true;
+            state.showUnsavedPrompt = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel")) {
+            state.cancelProjectAction = true;
+            state.showUnsavedPrompt = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 }
 }

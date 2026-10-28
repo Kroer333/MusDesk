@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <thread>
 #include <atomic>
+#include <chrono>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -32,7 +33,8 @@ int main(int argc, char* argv[]) {
         require(detectionCancelled, "Pre-cancelled tool detection must stop");
 #ifdef _WIN32
         const auto base = std::filesystem::u8path(SDL_GetBasePath());
-        const auto folder = base / "test-fixtures" / ("detection-" + std::to_string(SDL_GetTicksNS()));
+        const auto folder = base / "test-fixtures" / ("detection-"
+            + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()));
         std::filesystem::create_directories(folder);
         std::filesystem::copy_file(base / "MusDeskAudioTests.exe", folder / "ffmpeg.exe");
         std::filesystem::copy_file(base / "SDL3.dll", folder / "SDL3.dll");

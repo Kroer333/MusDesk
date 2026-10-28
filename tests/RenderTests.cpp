@@ -84,6 +84,13 @@ int main(int argc, char* argv[]) {
         require(rejected, "Invalid replacement must be rejected");
         renderer.renderFrame(0, settings);
         require(first == renderer.readPixels(), "Failed replacement must preserve the previous artwork");
+        renderer.clearArtwork();
+        renderer.renderFrame(0, settings);
+        const auto cleared = renderer.readPixels();
+        require(cleared != first, "New/missing-media projects must not display artwork from the previous project");
+        renderer.clearArtwork();
+        renderer.renderFrame(0, settings);
+        require(cleared == renderer.readPixels(), "Clearing artwork repeatedly must be safe");
         for (std::size_t p = 3; p < first.size(); p += 4) {
             require(first[p] == 255, "Composition must remain opaque including text edges");
         }
