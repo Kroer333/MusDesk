@@ -50,11 +50,12 @@ VisualPreset parsePreset(std::string_view text) {
             if (event == Json::parse_event_t::object_end) keys.pop_back();
             return true;
         });
-        if (!json.at("version").is_number_integer() || json.at("version") < 1 || json.at("version") > 4)
-            throw std::runtime_error("Unsupported preset version; expected integer 1..4.");
+        if (!json.at("version").is_number_integer() || json.at("version") < 1 || json.at("version") > 5)
+            throw std::runtime_error("Unsupported preset version; expected integer 1..5.");
         const bool legacy = json.at("version") == 1;
         if (legacy) fields(json, {"version", "name", "disc_rpm", "glow", "background"});
-        else fields(json, {"version", "name", "disc_rpm", "glow", "background", "reactivity"});
+        else if (json.at("version") < 5) fields(json, {"version", "name", "disc_rpm", "glow", "background", "reactivity"});
+        else fields(json, {"version", "name", "disc_rpm", "glow", "background", "reactivity", "effects"});
         if (!json.at("name").is_string()) throw std::runtime_error("Preset name must be a string.");
         const auto& glow = json.at("glow");
         const auto& background = json.at("background");
@@ -85,10 +86,26 @@ VisualPreset parsePreset(std::string_view text) {
             preset.ringReactivity = static_cast<float>(number(reactivity.at("ring"), 0, 1, "reactivity.ring"));
             if (json.at("version") >= 3)
                 preset.spectrumStrength = static_cast<float>(number(reactivity.at("spectrum"), 0, 1, "reactivity.spectrum"));
-            if (json.at("version") == 4) {
+            if (json.at("version") >= 4) {
                 preset.spectrumGainDb = static_cast<float>(number(reactivity.at("spectrum_gain_db"), -24, 24, "reactivity.spectrum_gain_db"));
                 preset.spectrumBalance = static_cast<float>(number(reactivity.at("spectrum_balance"), -1, 1, "reactivity.spectrum_balance"));
             }
+        }
+        if (json.at("version") == 5) {
+            const auto& effects = json.at("effects");
+            fields(effects, {"glow", "spectrum", "waves", "subject", "background", "camera", "camera_strength", "camera_threshold"});
+            const auto flag = [&](const char* name) {
+                if (!effects.at(name).is_boolean()) throw std::runtime_error(std::string("Effect flag must be boolean: ") + name);
+                return effects.at(name).get<bool>();
+            };
+            preset.glowEnabled = flag("glow");
+            preset.spectrumEnabled = flag("spectrum");
+            preset.wavesEnabled = flag("waves");
+            preset.subjectEnabled = flag("subject");
+            preset.backgroundEnabled = flag("background");
+            preset.cameraEnabled = flag("camera");
+            preset.cameraStrength = static_cast<float>(number(effects.at("camera_strength"), 0, 0.05f, "effects.camera_strength"));
+            preset.cameraThreshold = static_cast<float>(number(effects.at("camera_threshold"), 0, 1, "effects.camera_threshold"));
         }
         validatePreset(preset);
         return preset;
@@ -100,7 +117,10 @@ VisualPreset parsePreset(std::string_view text) {
 std::string serializePreset(const VisualPreset& preset) {
     validatePreset(preset);
     try {
-        const Json json{{"version", 4}, {"name", preset.name}, {"disc_rpm", preset.discRpm},
+        const Json json{{"version", 5}, {"name", preset.name}, {"disc_rpm", preset.discRpm},
+            {"effects", {{"glow", preset.glowEnabled}, {"spectrum", preset.spectrumEnabled},
+                {"waves", preset.wavesEnabled}, {"subject", preset.subjectEnabled}, {"background", preset.backgroundEnabled},
+                {"camera", preset.cameraEnabled}, {"camera_strength", preset.cameraStrength}, {"camera_threshold", preset.cameraThreshold}}},
             {"glow", {{"color", preset.glowColor}, {"intensity", preset.glowIntensity}, {"pulse_strength", preset.pulseStrength}}},
             {"background", {{"speed", preset.backgroundSpeed}, {"zoom", preset.backgroundZoom}, {"brightness", preset.backgroundBrightness}}},
             {"reactivity", {{"beat_threshold", preset.beatThreshold}, {"subject_pulse", preset.subjectPulse},

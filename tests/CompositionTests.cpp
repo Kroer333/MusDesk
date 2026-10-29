@@ -33,6 +33,15 @@ int main() {
             musdesk::CompositionFormat::Square, musdesk::CompositionFormat::PortraitThreeFour, musdesk::CompositionFormat::LandscapeFourThree}) {
             require(musdesk::parseCompositionFormat(musdesk::formatName(format)) == format, "Format identifiers must round trip");
             const auto layout = musdesk::layoutFor(format);
+            musdesk::CompositionSettings maximumPulse;
+            maximumPulse.format = format;
+            maximumPulse.preset.subjectPulse = 0.12f;
+            maximumPulse.preset.pulseStrength = 2;
+            const auto pose = musdesk::compositionAt(1, maximumPulse, {1,1,1});
+            require(pose.subjectScale >= 1 && pose.subjectScale <= 1.18
+                && layout.discY + (layout.timelineY + 85 - layout.discY)*pose.subjectScale <= layout.canvas.height - 11
+                && layout.discX + (layout.timelineRight - layout.discX)*pose.subjectScale <= layout.canvas.width - 11,
+                "Maximum overlay pulse must keep the timeline and timestamps within each layout");
             const double maximumRing = layout.discRadius * 1.18 * 1.21;
             require(layout.discX > maximumRing && layout.discY > maximumRing
                 && layout.discX + maximumRing < layout.canvas.width && layout.discY + maximumRing < layout.canvas.height,
@@ -59,6 +68,19 @@ int main() {
         (void)musdesk::compositionAt(99, settings, {1, 1, 1});
         require(musdesk::compositionAt(5, settings, hit) == reacting, "Reactive frame must be independent of playback history");
         const auto bassOnly = musdesk::compositionAt(5, settings, {0, 1, 0});
+        auto kicked = settings;
+        kicked.preset = musdesk::sideKickPreset();
+        auto kickAudio = hit;
+        kickAudio.kick = 1;
+        const auto rightKick = musdesk::compositionAt(5, kicked, kickAudio);
+        kickAudio.kick = -1;
+        const auto leftKick = musdesk::compositionAt(5, kicked, kickAudio);
+        require(rightKick.subjectScale == 1 && rightKick.cameraOffsetX > 0
+            && leftKick.cameraOffsetX == -rightKick.cameraOffsetX && leftKick.cameraZoom > 1,
+            "Side Kick must move the whole screen in either direction without subject scaling");
+        kicked.preset.cameraEnabled = false;
+        require(musdesk::compositionAt(5, kicked, kickAudio).cameraOffsetX == 0,
+            "Disabling screen kick must restore a neutral camera");
         require(bassOnly.subjectScale == 1 && bassOnly.ringMotion > 0,
             "Sustained bass must move rim/background without triggering subject scaling");
         auto disabled = settings;

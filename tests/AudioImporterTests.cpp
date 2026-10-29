@@ -80,6 +80,10 @@ int main(int argc, char* argv[]) {
                 require(std::isfinite(audio.durationSeconds) && audio.durationSeconds > 0, "Positive duration expected");
                 std::cout << "Audio duration: " << audio.durationSeconds << " seconds\n";
                 const auto decoded = musdesk::prepareAudio(argv[i], tools);
+                for (const auto& beat : decoded.rhythm.beats) {
+                    if (beat.timeSeconds >= 8) break;
+                    std::cout << "Opening bass onset: " << beat.timeSeconds << " s, strength " << beat.strength << '\n';
+                }
                 require(!decoded.samples.empty() && std::abs(decoded.durationSeconds() - audio.durationSeconds) < 1,
                     "Decoded PCM duration must agree with container metadata within codec padding");
                 require(!decoded.envelope.values.empty(), "Decoded audio must include the RMS envelope");

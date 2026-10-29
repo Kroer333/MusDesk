@@ -1,5 +1,6 @@
 {
-  "version": 4,
+  "version": 5,
+  "effects": { "glow": true, "spectrum": true, "waves": true, "subject": true, "background": true, "camera": false, "camera_strength": 0.025, "camera_threshold": 0.35 },
   "name": "Beat Pulse",
   "disc_rpm": 12,
   "glow": { "color": [0.6, 0.35, 1.0], "intensity": 1.2, "pulse_strength": 1.7 },

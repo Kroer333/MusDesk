@@ -18,10 +18,11 @@ void applyVisualPreset(EditorUiState& state, const VisualPreset& preset) {
 
 namespace {
 void drawPresetControls(EditorUiState& state) {
-    if (!ImGui::CollapsingHeader("Effects and presets")) return;
+    ImGui::SeparatorText("Presets");
     if (ImGui::Button("Soft Glow")) applyVisualPreset(state, softGlowPreset());
     ImGui::SameLine();
     if (ImGui::Button("Beat Pulse")) applyVisualPreset(state, beatPulsePreset());
+    if (ImGui::Button("Side Kick")) applyVisualPreset(state, sideKickPreset());
     ImGui::TextWrapped("%s%s", state.preset.name.c_str(), state.presetDirty ? " (modified)" : "");
     ImGui::SetNextItemWidth(-1);
     bool changed = ImGui::InputTextWithHint("##PresetName", "Preset name", state.presetName.data(), state.presetName.size());
@@ -32,9 +33,8 @@ void drawPresetControls(EditorUiState& state) {
     if (ImGui::Button("Save JSON")) state.requestSavePreset = true;
     ImGui::EndDisabled();
     auto& preset = state.preset;
-    changed |= ImGui::ColorEdit3("Rim color", preset.glowColor.data(), ImGuiColorEditFlags_NoInputs);
-    ImGui::SetNextItemWidth(-1);
-    changed |= ImGui::SliderFloat("##Glow", &preset.glowIntensity, 0, 3, "Glow: %.2f", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SeparatorText("Audio response");
+    changed |= ImGui::ColorEdit3("Accent color", preset.glowColor.data(), ImGuiColorEditFlags_NoInputs);
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderFloat("##Pulse", &preset.pulseStrength, 0, 2, "Audio response: %.2f", ImGuiSliderFlags_AlwaysClamp);
     float thresholdPercent = preset.beatThreshold * 100;
@@ -44,17 +44,34 @@ void drawPresetControls(EditorUiState& state) {
         preset.beatThreshold = thresholdPercent / 100;
         changed = true;
     }
+    ImGui::SeparatorText("Independent effects");
+    changed |= ImGui::Checkbox("Glow", &preset.glowEnabled);
+    ImGui::BeginDisabled(!preset.glowEnabled);
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##SubjectPulse", &subjectPercent, 0, 12, "Vinyl + text pulse: %.1f%%", ImGuiSliderFlags_AlwaysClamp)) {
+    changed |= ImGui::SliderFloat("##Glow", &preset.glowIntensity, 0, 3, "Glow intensity: %.2f", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::EndDisabled();
+    changed |= ImGui::Checkbox("Overlay pulse", &preset.subjectEnabled);
+    ImGui::BeginDisabled(!preset.subjectEnabled);
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##SubjectPulse", &subjectPercent, 0, 12, "Vinyl + text + timeline: %.1f%%", ImGuiSliderFlags_AlwaysClamp)) {
         preset.subjectPulse = subjectPercent / 100;
         changed = true;
     }
+    ImGui::EndDisabled();
+    changed |= ImGui::Checkbox("Reactive background", &preset.backgroundEnabled);
+    ImGui::BeginDisabled(!preset.backgroundEnabled);
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderFloat("##BackgroundReaction", &preset.backgroundReactivity, 0, 1,
         "Background reaction: %.2f", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::EndDisabled();
+    changed |= ImGui::Checkbox("Rim waves", &preset.wavesEnabled);
+    ImGui::BeginDisabled(!preset.wavesEnabled);
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderFloat("##RingReaction", &preset.ringReactivity, 0, 1,
         "Ring waves: %.2f", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::EndDisabled();
+    changed |= ImGui::Checkbox("Spectrum outline", &preset.spectrumEnabled);
+    ImGui::BeginDisabled(!preset.spectrumEnabled);
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderFloat("##Spectrum", &preset.spectrumStrength, 0, 1,
         "Spectrum ring: %.2f", ImGuiSliderFlags_AlwaysClamp);
@@ -73,7 +90,23 @@ void drawPresetControls(EditorUiState& state) {
         changed = true;
     }
     ImGui::TextWrapped("Balance: bass (-), treble (+). Spectrum tuning does not change audio volume.");
+    ImGui::EndDisabled();
+    changed |= ImGui::Checkbox("Alternating screen kick", &preset.cameraEnabled);
+    ImGui::BeginDisabled(!preset.cameraEnabled);
+    float kickPercent = preset.cameraStrength * 100, kickGate = preset.cameraThreshold * 100;
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##CameraStrength", &kickPercent, 0, 5, "Screen kick: %.1f%%", ImGuiSliderFlags_AlwaysClamp)) {
+        preset.cameraStrength = kickPercent / 100;
+        changed = true;
+    }
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##CameraGate", &kickGate, 0, 100, "Kick beat gate: %.0f%%", ImGuiSliderFlags_AlwaysClamp)) {
+        preset.cameraThreshold = kickGate / 100;
+        changed = true;
+    }
+    ImGui::EndDisabled();
     ImGui::TextWrapped("Beat gate selects strong bass hits. Audio response amplifies all reactions; zero disables them.");
+    ImGui::SeparatorText("Motion and lighting");
     ImGui::SetNextItemWidth(-1);
     const double minRpm = -45, maxRpm = 45, minSpeed = 0, maxSpeed = 3;
     changed |= ImGui::SliderScalar("##Rotation", ImGuiDataType_Double, &preset.discRpm,
@@ -191,180 +224,190 @@ void drawControls(EditorUiState& state) {
         if (ImGui::Button("Cancel collection")) state.requestCancelCollection = true;
     }
     ImGui::BeginDisabled(state.exportBusy || state.projectDialogPending);
-    ImGui::SeparatorText("Project");
-    ImGui::TextWrapped("%s%s", state.projectPath.empty() ? "Untitled project" : state.projectPath.c_str(), state.projectDirty ? " *" : "");
-    ImGui::BeginDisabled(state.audioImportPending || !state.toolsChecked || state.artworkDialogPending
-        || state.audioDialogPending || state.presetDialogPending || state.showUnsavedPrompt || state.showRecoveryPrompt);
-    if (ImGui::Button("New")) state.requestNewProject = true;
-    ImGui::SameLine();
-    if (ImGui::Button("Open")) state.requestOpenProject = true;
-    ImGui::SameLine();
-    if (ImGui::Button("Save")) state.requestSaveProject = true;
-    ImGui::SameLine();
-    if (ImGui::Button("Save As")) state.requestSaveProjectAs = true;
-    if (ImGui::Button("Collect project...")) state.requestCollectProject = true;
-    ImGui::TextWrapped("Copy this composition and its media into a new folder.");
-    if (ImGui::Button("Review recovery copies")) state.requestRecoveryList = true;
-    ImGui::EndDisabled();
-    if (!state.collectionStatus.empty()) ImGui::TextWrapped("%s", state.collectionStatus.c_str());
-    if (!state.recoveryStatus.empty()) ImGui::TextWrapped("%s", state.recoveryStatus.c_str());
-    if (!state.projectStatus.empty()) ImGui::TextWrapped("%s", state.projectStatus.c_str());
-    if (!state.projectError.empty()) ImGui::TextWrapped("%s", state.projectError.c_str());
-    if (!state.missingArtworkPath.empty()) {
-        ImGui::TextWrapped("Artwork unavailable: %s", state.missingArtworkPath.c_str());
-        if (ImGui::Button("Locate artwork")) state.requestArtwork = true;
-    }
-    if (!state.missingAudioPath.empty()) {
-        ImGui::TextWrapped("Audio unavailable: %s", state.missingAudioPath.c_str());
-        ImGui::BeginDisabled(state.audioImportPending || !state.ffmpegReady || !state.ffprobeReady);
-        if (ImGui::Button("Locate audio")) state.requestAudio = true;
-        ImGui::EndDisabled();
-    }
-    ImGui::Spacing();
-    ImGui::SeparatorText("Composition");
-    int selectedFormat = static_cast<int>(state.format);
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::Combo("##OutputFormat", &selectedFormat, "9:16 portrait\0" "16:9 landscape\0" "1:1 square\0" "3:4 portrait\0" "4:3 landscape\0"))
-        state.format = static_cast<CompositionFormat>(selectedFormat);
-    int resolution = state.shortEdge == 720 ? 0 : 1;
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::Combo("##OutputResolution", &resolution, "720 px short edge\0" "1080 px short edge\0")) state.shortEdge = resolution == 0 ? 720 : 1080;
-    const auto dimensions = outputSize(state.format, state.shortEdge);
-    ImGui::TextDisabled("%d x %d  /  %s", dimensions.width, dimensions.height, formatName(state.format));
-    ImGui::TextDisabled("Target: 30 FPS");
-    ImGui::Spacing();
-    drawPresetControls(state);
-
-    ImGui::SeparatorText("Media");
-    ImGui::BeginDisabled(state.artworkDialogPending || state.audioDialogPending || state.presetDialogPending);
-    if (ImGui::Button(state.artworkDialogPending ? "Choosing artwork..." : "Import artwork", ImVec2(-1, 0))) {
-        state.requestArtwork = true;
-    }
-    ImGui::EndDisabled();
-    ImGui::TextWrapped("%s", state.artworkName.empty() ? "Choose PNG/JPEG/WebP, or drop an image onto this window." : state.artworkName.c_str());
-    if (!state.importError.empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.55f, 0.45f, 1));
-        ImGui::TextWrapped("%s", state.importError.c_str());
-        ImGui::PopStyleColor();
-    }
-    drawFramingControls(state);
-    ImGui::TextWrapped("%s", state.mediaToolsStatus.c_str());
-    if (state.toolsChecked && (!state.ffmpegReady || !state.ffprobeReady)) {
-        ImGui::TextWrapped("Tools: MUSDESK_FFMPEG_DIR, executable directory, or PATH. Restart after installing.");
-    }
-    ImGui::BeginDisabled(!state.ffprobeReady || !state.ffmpegReady || state.audioDialogPending || state.artworkDialogPending || state.presetDialogPending || state.audioImportPending);
-    const char* audioButton = state.audioImportPending ? "Preparing audio..."
-        : (state.audioDialogPending ? "Choosing audio..." : "Import audio");
-    if (ImGui::Button(audioButton, ImVec2(-1, 0))) {
-        state.requestAudio = true;
-    }
-    ImGui::EndDisabled();
-    if (state.audioImportPending) {
-        ImGui::TextWrapped("Decoding audio and analyzing energy...");
-        if (ImGui::Button("Cancel import", ImVec2(-1, 0))) state.requestCancelAudio = true;
-    }
-    if (!state.audioName.empty()) ImGui::TextWrapped("%s", state.audioName.c_str());
-    if (!state.audioError.empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.55f, 0.45f, 1));
-        ImGui::TextWrapped("%s", state.audioError.c_str());
-        ImGui::PopStyleColor();
-    }
-    if (!state.audioPath.empty()) {
-        ImGui::SeparatorText("Preview audio");
-        if (!state.previewError.empty()) {
-            ImGui::TextWrapped("%s", state.previewError.c_str());
-            if (ImGui::Button("Retry audio output")) state.requestRetryPreview = true;
-        }
-        ImGui::BeginDisabled(!state.audioReady);
-        if (ImGui::Button(state.audioPlaying ? "Pause" : "Play")) state.requestPlayPause = true;
+    if (state.workspacePanel == 0) {
+        ImGui::SeparatorText("Project");
+        ImGui::TextWrapped("%s%s", state.projectPath.empty() ? "Untitled project" : state.projectPath.c_str(), state.projectDirty ? " *" : "");
+        ImGui::BeginDisabled(state.audioImportPending || !state.toolsChecked || state.artworkDialogPending
+            || state.audioDialogPending || state.presetDialogPending || state.showUnsavedPrompt || state.showRecoveryPrompt);
+        if (ImGui::Button("New")) state.requestNewProject = true;
         ImGui::SameLine();
-        if (ImGui::Button("Restart")) state.requestRestart = true;
-        ImGui::EndDisabled();
-        const auto position = formatTime(static_cast<std::uint64_t>(state.timeSeconds));
-        const auto duration = formatTime(static_cast<std::uint64_t>(state.durationSeconds));
-        ImGui::Text("%s / %s", position.c_str(), duration.c_str());
-        ImGui::BeginDisabled(state.audioImportPending);
-        drawWaveform(state);
-        const double start = 0;
-        ImGui::SetNextItemWidth(-1);
-        if (ImGui::SliderScalar("##AudioTime", ImGuiDataType_Double, &state.timeSeconds,
-                &start, &state.durationSeconds, "%.2f s", ImGuiSliderFlags_AlwaysClamp)) state.seekAudio = true;
-        trackSeekInteraction(state);
-        ImGui::EndDisabled();
-        ImGui::BeginDisabled(!state.audioReady);
-        ImGui::SetNextItemWidth(-1);
-        ImGui::SliderFloat("##Volume", &state.previewVolume, 0, 100, "Volume: %.0f%%", ImGuiSliderFlags_AlwaysClamp);
-        ImGui::Checkbox("Mute", &state.muteAudio);
+        if (ImGui::Button("Open")) state.requestOpenProject = true;
         ImGui::SameLine();
-        ImGui::Checkbox("Loop", &state.loopAudio);
+        if (ImGui::Button("Save")) state.requestSaveProject = true;
+        ImGui::SameLine();
+        if (ImGui::Button("Save As")) state.requestSaveProjectAs = true;
+        if (ImGui::Button("Collect project...")) state.requestCollectProject = true;
+        ImGui::TextWrapped("Copy this composition and its media into a new folder.");
+        if (ImGui::Button("Review recovery copies")) state.requestRecoveryList = true;
         ImGui::EndDisabled();
-        ImGui::ProgressBar(state.audioEnergy, ImVec2(-1, 0), "Audio energy");
-        if (state.rhythm) {
-            ImGui::ProgressBar(state.rhythm->bass.at(state.timeSeconds), ImVec2(-1, 0), "Bass energy");
-            ImGui::ProgressBar(state.rhythm->pulseAt(state.timeSeconds, state.preset.beatThreshold), ImVec2(-1, 0), "Beat pulse");
-            ImGui::Text("Bass onsets: %zu", state.rhythm->beats.size());
+        if (!state.collectionStatus.empty()) ImGui::TextWrapped("%s", state.collectionStatus.c_str());
+        if (!state.recoveryStatus.empty()) ImGui::TextWrapped("%s", state.recoveryStatus.c_str());
+        if (!state.projectStatus.empty()) ImGui::TextWrapped("%s", state.projectStatus.c_str());
+        if (!state.projectError.empty()) ImGui::TextWrapped("%s", state.projectError.c_str());
+        if (!state.missingArtworkPath.empty()) {
+            ImGui::TextWrapped("Artwork unavailable: %s", state.missingArtworkPath.c_str());
+            if (ImGui::Button("Locate artwork")) state.requestArtwork = true;
         }
-        ImGui::TextDisabled("Volume affects monitoring only.");
+        if (!state.missingAudioPath.empty()) {
+            ImGui::TextWrapped("Audio unavailable: %s", state.missingAudioPath.c_str());
+            ImGui::BeginDisabled(state.audioImportPending || !state.ffmpegReady || !state.ffprobeReady);
+            if (ImGui::Button("Locate audio")) state.requestAudio = true;
+            ImGui::EndDisabled();
+        }
+        ImGui::Spacing();
     }
-    ImGui::SeparatorText("Track labels");
-    ImGui::SetNextItemWidth(-1);
-    ImGui::InputTextWithHint("##Title", "Track title", state.title.data(), state.title.size());
-    ImGui::SetNextItemWidth(-1);
-    ImGui::InputTextWithHint("##Artist", "Artist name", state.artist.data(), state.artist.size());
-    ImGui::SeparatorText("Composition");
-    if (state.audioPath.empty()) {
-        ImGui::Checkbox("Animate demo", &state.animatePreview);
+    if (state.workspacePanel == 1) {
+        ImGui::SeparatorText("Output format");
+        int selectedFormat = static_cast<int>(state.format);
         ImGui::SetNextItemWidth(-1);
-        const double start = 0;
-        if (ImGui::SliderScalar("##Time", ImGuiDataType_Double, &state.timeSeconds,
-                &start, &state.durationSeconds, "Time: %.2f s", ImGuiSliderFlags_AlwaysClamp)) state.animatePreview = false;
-        const double minDuration = 10, maxDuration = 600;
+        if (ImGui::Combo("##OutputFormat", &selectedFormat, "9:16 portrait\0" "16:9 landscape\0" "1:1 square\0" "3:4 portrait\0" "4:3 landscape\0"))
+            state.format = static_cast<CompositionFormat>(selectedFormat);
+        int resolution = state.shortEdge == 720 ? 0 : 1;
         ImGui::SetNextItemWidth(-1);
-        ImGui::SliderScalar("##Duration", ImGuiDataType_Double, &state.durationSeconds,
-            &minDuration, &maxDuration, "Demo length: %.0f s", ImGuiSliderFlags_AlwaysClamp);
-    } else {
-        ImGui::Text("Audio duration: %.3f s", state.durationSeconds);
+        if (ImGui::Combo("##OutputResolution", &resolution, "720 px short edge\0" "1080 px short edge\0")) state.shortEdge = resolution == 0 ? 720 : 1080;
+        const auto dimensions = outputSize(state.format, state.shortEdge);
+        ImGui::TextDisabled("%d x %d  /  %s", dimensions.width, dimensions.height, formatName(state.format));
+        ImGui::TextDisabled("Target: 30 FPS");
+        ImGui::Spacing();
     }
-    state.timeSeconds = std::min(state.timeSeconds, state.durationSeconds);
-    ImGui::TextWrapped(state.audioPath.empty()
-        ? "Time and duration are a visual demo; no audio is loaded."
-        : "Audio and visuals share the playback timeline. Controls are editor-only.");
-    ImGui::Spacing();
+    if (state.workspacePanel == 3) drawPresetControls(state);
 
-    ImGui::SeparatorText("Preview settings");
-    ImGui::SetNextItemWidth(-1);
-    ImGui::SliderFloat("##PreviewScale", &state.previewScalePercent, 50.0f, 100.0f,
-        "Preview scale: %.0f%%", ImGuiSliderFlags_AlwaysClamp);
-    ImGui::Checkbox("Show safe area", &state.showSafeArea);
-    if (ImGui::Button("Reset preview", ImVec2(-1, 0))) {
-        state.previewScalePercent = 100;
-        state.showSafeArea = false;
+    if (state.workspacePanel == 2) {
+        ImGui::SeparatorText("Media");
+        ImGui::BeginDisabled(state.artworkDialogPending || state.audioDialogPending || state.presetDialogPending);
+        if (ImGui::Button(state.artworkDialogPending ? "Choosing artwork..." : "Import artwork", ImVec2(-1, 0))) {
+            state.requestArtwork = true;
+        }
+        ImGui::EndDisabled();
+        ImGui::TextWrapped("%s", state.artworkName.empty() ? "Choose PNG/JPEG/WebP, or drop an image onto this window." : state.artworkName.c_str());
+        if (!state.importError.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.55f, 0.45f, 1));
+            ImGui::TextWrapped("%s", state.importError.c_str());
+            ImGui::PopStyleColor();
+        }
+        drawFramingControls(state);
+        ImGui::TextWrapped("%s", state.mediaToolsStatus.c_str());
+        if (state.toolsChecked && (!state.ffmpegReady || !state.ffprobeReady)) {
+            ImGui::TextWrapped("Tools: MUSDESK_FFMPEG_DIR, executable directory, or PATH. Restart after installing.");
+        }
+        ImGui::BeginDisabled(!state.ffprobeReady || !state.ffmpegReady || state.audioDialogPending || state.artworkDialogPending || state.presetDialogPending || state.audioImportPending);
+        const char* audioButton = state.audioImportPending ? "Preparing audio..."
+            : (state.audioDialogPending ? "Choosing audio..." : "Import audio");
+        if (ImGui::Button(audioButton, ImVec2(-1, 0))) {
+            state.requestAudio = true;
+        }
+        ImGui::EndDisabled();
+        if (state.audioImportPending) {
+            ImGui::TextWrapped("Decoding audio and analyzing energy...");
+            if (ImGui::Button("Cancel import", ImVec2(-1, 0))) state.requestCancelAudio = true;
+        }
+        if (!state.audioName.empty()) ImGui::TextWrapped("%s", state.audioName.c_str());
+        if (!state.audioError.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.55f, 0.45f, 1));
+            ImGui::TextWrapped("%s", state.audioError.c_str());
+            ImGui::PopStyleColor();
+        }
+        if (!state.audioPath.empty()) {
+            ImGui::SeparatorText("Preview audio");
+            if (!state.previewError.empty()) {
+                ImGui::TextWrapped("%s", state.previewError.c_str());
+                if (ImGui::Button("Retry audio output")) state.requestRetryPreview = true;
+            }
+            ImGui::BeginDisabled(!state.audioReady);
+            if (ImGui::Button(state.audioPlaying ? "Pause" : "Play")) state.requestPlayPause = true;
+            ImGui::SameLine();
+            if (ImGui::Button("Restart")) state.requestRestart = true;
+            ImGui::EndDisabled();
+            const auto position = formatTime(static_cast<std::uint64_t>(state.timeSeconds));
+            const auto duration = formatTime(static_cast<std::uint64_t>(state.durationSeconds));
+            ImGui::Text("%s / %s", position.c_str(), duration.c_str());
+            ImGui::BeginDisabled(state.audioImportPending);
+            drawWaveform(state);
+            const double start = 0;
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::SliderScalar("##AudioTime", ImGuiDataType_Double, &state.timeSeconds,
+                    &start, &state.durationSeconds, "%.2f s", ImGuiSliderFlags_AlwaysClamp)) state.seekAudio = true;
+            trackSeekInteraction(state);
+            ImGui::EndDisabled();
+            ImGui::BeginDisabled(!state.audioReady);
+            ImGui::SetNextItemWidth(-1);
+            ImGui::SliderFloat("##Volume", &state.previewVolume, 0, 100, "Volume: %.0f%%", ImGuiSliderFlags_AlwaysClamp);
+            ImGui::Checkbox("Mute", &state.muteAudio);
+            ImGui::SameLine();
+            ImGui::Checkbox("Loop", &state.loopAudio);
+            ImGui::EndDisabled();
+            ImGui::ProgressBar(state.audioEnergy, ImVec2(-1, 0), "Audio energy");
+            if (state.rhythm) {
+                ImGui::ProgressBar(state.rhythm->bass.at(state.timeSeconds), ImVec2(-1, 0), "Bass energy");
+                ImGui::ProgressBar(state.rhythm->pulseAt(state.timeSeconds, state.preset.beatThreshold), ImVec2(-1, 0), "Beat pulse");
+                ImGui::Text("Bass onsets: %zu", state.rhythm->beats.size());
+            }
+            ImGui::TextDisabled("Volume affects monitoring only.");
+        }
     }
-    ImGui::Spacing();
-    ImGui::TextWrapped("Preview settings are kept for this session only.");
+    if (state.workspacePanel == 1) {
+        ImGui::SeparatorText("Track labels");
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##Title", "Track title", state.title.data(), state.title.size());
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##Artist", "Artist name", state.artist.data(), state.artist.size());
+        ImGui::SeparatorText("Composition");
+        if (state.audioPath.empty()) {
+            ImGui::Checkbox("Animate demo", &state.animatePreview);
+            ImGui::SetNextItemWidth(-1);
+            const double start = 0;
+            if (ImGui::SliderScalar("##Time", ImGuiDataType_Double, &state.timeSeconds,
+                    &start, &state.durationSeconds, "Time: %.2f s", ImGuiSliderFlags_AlwaysClamp)) state.animatePreview = false;
+            const double minDuration = 10, maxDuration = 600;
+            ImGui::SetNextItemWidth(-1);
+            ImGui::SliderScalar("##Duration", ImGuiDataType_Double, &state.durationSeconds,
+                &minDuration, &maxDuration, "Demo length: %.0f s", ImGuiSliderFlags_AlwaysClamp);
+        } else {
+            ImGui::Text("Audio duration: %.3f s", state.durationSeconds);
+        }
+        state.timeSeconds = std::min(state.timeSeconds, state.durationSeconds);
+        ImGui::TextWrapped(state.audioPath.empty()
+            ? "Time and duration are a visual demo; no audio is loaded."
+            : "Audio and visuals share the playback timeline. Controls are editor-only.");
+        ImGui::Spacing();
+
+        ImGui::SeparatorText("Preview settings");
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderFloat("##PreviewScale", &state.previewScalePercent, 50.0f, 100.0f,
+            "Preview scale: %.0f%%", ImGuiSliderFlags_AlwaysClamp);
+        ImGui::Checkbox("Show safe area", &state.showSafeArea);
+        if (ImGui::Button("Reset preview", ImVec2(-1, 0))) {
+            state.previewScalePercent = 100;
+            state.showSafeArea = false;
+        }
+        ImGui::Spacing();
+        ImGui::TextWrapped("Preview settings are kept for this session only.");
+    }
 
     ImGui::EndDisabled();
-    ImGui::SeparatorText("Export");
-    ImGui::BeginDisabled(state.exportBusy);
-    ImGui::SetNextItemWidth(-1);
-    ImGui::Combo("##ExportEncoder", &state.exportEncoder, "Automatic (GPU / CPU)\0CPU (veryfast)\0");
-    ImGui::EndDisabled();
-    const bool ready = state.exportBlockedReason.empty();
-    ImGui::BeginDisabled(!ready || state.exportBusy || state.audioImportPending || state.artworkDialogPending
-        || state.audioDialogPending || state.presetDialogPending || state.projectDialogPending);
-    if (ImGui::Button("Export MP4", ImVec2(-1, 0))) state.requestExport = true;
-    ImGui::EndDisabled();
-    if (!ready) ImGui::TextWrapped("%s", state.exportBlockedReason.c_str());
-    if (state.exportDialogPending) ImGui::TextUnformatted("Choosing export destination...");
-    if (state.exportActive) {
-        ImGui::ProgressBar(state.exportProgress, ImVec2(-1, 0));
-        if (ImGui::Button("Cancel export", ImVec2(-1, 0))) state.requestCancelExport = true;
+    if (state.workspacePanel == 4 || state.exportActive) {
+        ImGui::SeparatorText("Export");
+        ImGui::BeginDisabled(state.exportBusy);
+        ImGui::SetNextItemWidth(-1);
+        ImGui::Combo("##ExportEncoder", &state.exportEncoder, "Automatic (GPU / CPU)\0CPU (veryfast)\0");
+        ImGui::EndDisabled();
+        const bool ready = state.exportBlockedReason.empty();
+        ImGui::BeginDisabled(!ready || state.exportBusy || state.audioImportPending || state.artworkDialogPending
+            || state.audioDialogPending || state.presetDialogPending || state.projectDialogPending);
+        if (ImGui::Button("Export MP4", ImVec2(-1, 0))) state.requestExport = true;
+        ImGui::EndDisabled();
+        if (!ready) ImGui::TextWrapped("%s", state.exportBlockedReason.c_str());
+        if (state.exportDialogPending) ImGui::TextUnformatted("Choosing export destination...");
+        if (state.exportActive) {
+            ImGui::ProgressBar(state.exportProgress, ImVec2(-1, 0));
+            if (ImGui::Button("Cancel export", ImVec2(-1, 0))) state.requestCancelExport = true;
+        }
+        if (state.exportError) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.55f, 0.45f, 1));
+        if (!state.exportStatus.empty()) ImGui::TextWrapped("%s", state.exportStatus.c_str());
+        if (state.exportError) ImGui::PopStyleColor();
+        const auto exportSize = outputSize(state.format, state.shortEdge);
+        ImGui::TextWrapped("H.264 / AAC, %d x %d, 30 FPS. Exports the full track with original audio; preview volume and loop are ignored.", exportSize.width, exportSize.height);
     }
-    if (state.exportError) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.55f, 0.45f, 1));
-    if (!state.exportStatus.empty()) ImGui::TextWrapped("%s", state.exportStatus.c_str());
-    if (state.exportError) ImGui::PopStyleColor();
-    const auto exportSize = outputSize(state.format, state.shortEdge);
-    ImGui::TextWrapped("H.264 / AAC, %d x %d, 30 FPS. Exports the full track with original audio; preview volume and loop are ignored.", exportSize.width, exportSize.height);
 }
 
 void drawPreview(const EditorUiState& state, std::uint32_t texture) {
@@ -448,8 +491,15 @@ void drawEditorUi(EditorUiState& state, std::uint32_t compositionTexture) {
         const ImVec2 available = ImGui::GetContentRegionAvail();
         const float controlsWidth = std::clamp(available.x * 0.30f, em * 16.0f, em * 22.0f);
         const float panelHeight = std::max(1.0f, available.y - em * 2.0f);
-        if (ImGui::BeginChild("Controls", ImVec2(controlsWidth, panelHeight), ImGuiChildFlags_Borders)) {
-            drawControls(state);
+        if (ImGui::BeginChild("Controls", ImVec2(controlsWidth, panelHeight), ImGuiChildFlags_Borders,
+                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
+            ImGui::SetNextItemWidth(-1);
+            ImGui::Combo("##WorkspacePanel", &state.workspacePanel,
+                "Project\0Composition\0Media and preview audio\0Effects\0Export\0");
+            ImGui::PushID(state.workspacePanel);
+            if (ImGui::BeginChild("PanelContents")) drawControls(state);
+            ImGui::EndChild();
+            ImGui::PopID();
         }
         ImGui::EndChild();
         ImGui::SameLine();

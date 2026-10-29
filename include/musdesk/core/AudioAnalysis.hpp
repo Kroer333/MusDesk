@@ -40,6 +40,7 @@ struct AudioRhythm {
     AudioEnvelope bass;
     std::vector<BeatEvent> beats;
     float pulseAt(double timeSeconds, float minimumStrength = 0) const;
+    float kickAt(double timeSeconds, float minimumStrength = 0.35f) const;
 };
 
 using SpectrumFrame = std::array<float, 32>;
@@ -60,6 +61,7 @@ struct AudioReaction {
     float bass = 0;
     float beat = 0;
     SpectrumFrame spectrum{};
+    float kick = 0;
 };
 
 AudioRhythm analyzeRhythm(std::span<const std::int16_t> samples, int sampleRate, int channels,

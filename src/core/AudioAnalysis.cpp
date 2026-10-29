@@ -151,6 +151,24 @@ float AudioRhythm::pulseAt(double timeSeconds, float minimumStrength) const {
     return 0;
 }
 
+float AudioRhythm::kickAt(double timeSeconds, float minimumStrength) const {
+    if (!std::isfinite(timeSeconds) || timeSeconds < 0 || timeSeconds >= bass.durationSeconds
+        || !std::isfinite(minimumStrength)) return 0;
+    const auto end = std::upper_bound(beats.begin(), beats.end(), timeSeconds,
+        [](double time, const BeatEvent& beat) { return time < beat.timeSeconds; });
+    const BeatEvent* latest = nullptr;
+    std::size_t accepted = 0;
+    for (auto it = beats.begin(); it != end; ++it) {
+        if (it->strength >= std::clamp(minimumStrength, 0.0f, 1.0f)) {
+            latest = &*it;
+            ++accepted;
+        }
+    }
+    if (!latest) return 0;
+    return (accepted % 2 ? 1 : -1) * latest->strength
+        * static_cast<float>(std::exp(-(timeSeconds - latest->timeSeconds) / 0.09));
+}
+
 AudioRhythm analyzeRhythm(std::span<const std::int16_t> samples, int sampleRate, int channels,
     std::stop_token cancellation) {
     if (sampleRate < 1000 || sampleRate > 384000 || channels < 1 || channels > 8
@@ -184,6 +202,7 @@ AudioRhythm analyzeRhythm(std::span<const std::int16_t> samples, int sampleRate,
         peak = std::max(peak, value);
     }
     double baseline = 0;
+    double localReference = 0.03;
     float previous = 0;
     float onsetLevel = 0;
     float smoothed = 0;
@@ -195,15 +214,19 @@ AudioRhythm analyzeRhythm(std::span<const std::int16_t> samples, int sampleRate,
     for (std::size_t i = 0; i < energy.size(); ++i) {
         if (cancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
         const auto value = energy[i];
+        localReference = std::max<double>(value, localReference * std::exp(-result.bass.stepSeconds / 0.8));
         onsetLevel += (value - onsetLevel) * onsetSmoothing;
         const auto rise = std::max(0.0f, onsetLevel - previous);
         const double time = (i + 0.5) * result.bass.stepSeconds;
-        if (time < result.bass.durationSeconds && onsetLevel > std::max(0.015, baseline * 1.6)
-            && rise > std::max(0.004f, onsetLevel * 0.15f)
+        if (time < result.bass.durationSeconds && onsetLevel > std::max(0.010, baseline * 1.45)
+            && rise > std::max(0.003f, onsetLevel * 0.15f)
             && (result.beats.empty() || time - result.beats.back().timeSeconds >= 0.18)) {
             const auto end = std::min(i + 4, energy.size());
             const auto localPeak = *std::max_element(energy.begin() + i, energy.begin() + end);
-            result.beats.push_back({time, std::clamp(localPeak / peak, 0.0f, 1.0f)});
+            const double prominence = (onsetLevel - baseline) / std::max<double>(onsetLevel, 0.01);
+            const double relativeLevel = localPeak / std::max<double>(localReference, 0.03);
+            result.beats.push_back({time, static_cast<float>(std::clamp(
+                0.65 * relativeLevel + 0.35 * prominence, 0.0, 1.0))});
         }
         baseline += (onsetLevel - baseline) * baselineSmoothing;
         previous = onsetLevel;

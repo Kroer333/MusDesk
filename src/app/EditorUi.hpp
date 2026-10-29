@@ -10,6 +10,7 @@
 
 namespace musdesk {
 struct EditorUiState {
+    int workspacePanel = 2;
     CompositionFormat format = CompositionFormat::Portrait;
     int shortEdge = 1080;
     ImageFraming backgroundFraming;

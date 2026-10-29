@@ -906,7 +906,8 @@ int main(int argc, char* argv[]) {
                 editorState.durationSeconds, editorState.preset, editorState.format, editorState.shortEdge,
                 editorState.backgroundFraming, editorState.labelFraming, editorState.backgroundSoftness};
             if (!editorState.exportActive) composition.renderFrame(editorState.timeSeconds, settings,
-                audioClip ? audioClip->reactionAt(editorState.timeSeconds, settings.preset.beatThreshold) : musdesk::AudioReaction{});
+                audioClip ? audioClip->reactionAt(editorState.timeSeconds, settings.preset.beatThreshold,
+                    settings.preset.cameraThreshold) : musdesk::AudioReaction{});
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             if (!SDL_GL_SwapWindow(resources.window)) {

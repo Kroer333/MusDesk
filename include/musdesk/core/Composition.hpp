@@ -56,6 +56,8 @@ struct CompositionFrame {
     double progress;
     double subjectScale = 1;
     double ringMotion = 0;
+    double cameraOffsetX = 0;
+    double cameraZoom = 1;
     bool operator==(const CompositionFrame&) const = default;
 };
 

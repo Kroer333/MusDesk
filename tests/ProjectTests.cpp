@@ -115,6 +115,9 @@ int main(int, char*[]) {
         project.composition.preset.discRpm = -12;
         project.composition.preset.beatThreshold = 0.68f;
         project.composition.preset.subjectPulse = 0.10f;
+        project.composition.preset.glowEnabled = false;
+        project.composition.preset.cameraEnabled = true;
+        project.composition.preset.cameraThreshold = 0.3f;
         project.composition.backgroundFraming = {1.8f,0.25f,0.7f};
         project.composition.labelFraming = {2,0.8f,0.2f};
         project.composition.backgroundSoftness = 0.35f;

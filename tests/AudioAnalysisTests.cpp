@@ -127,6 +127,15 @@ void rhythmTests() {
             && rhythm.pulseAt(beat.timeSeconds + 0.1) < beat.strength, "Beat pulse must decay from the onset");
     }
     const auto high = musdesk::analyzeRhythm(signal(2000, false), rate, 2);
+    auto risingTrack = pcm;
+    for (std::size_t sample = 0; sample < risingTrack.size(); ++sample) {
+        const double time = static_cast<double>(sample / 2) / rate;
+        if (time < 1.2) risingTrack[sample] /= 4;
+    }
+    const auto adaptive = musdesk::analyzeRhythm(risingTrack, rate, 2);
+    require(adaptive.beats.size() == 3 && adaptive.beats[0].strength >= 0.55f
+        && adaptive.beats[1].strength >= 0.55f,
+        "Quieter opening drums must not be gated out by a louder later section");
     require(high.beats.empty(), "High-frequency bursts must not trigger bass onsets");
     for (double frequency : {40.0, 70.0, 120.0, 180.0}) {
         require(musdesk::analyzeRhythm(signal(frequency, true), rate, 2).beats.size() == 1,
@@ -150,6 +159,14 @@ void rhythmTests() {
     musdesk::AudioRhythm gated;
     gated.bass.durationSeconds = 2;
     gated.beats = {{0.2, 0.8f}, {0.4, 0.2f}};
+    gated.beats.push_back({0.6, 0.9f});
+    require(gated.kickAt(0.2, 0.6f) > 0 && gated.kickAt(0.6, 0.6f) < 0,
+        "Screen kicks must alternate across qualifying beats, skipping rejected events");
+    const auto kick = gated.kickAt(0.65, 0.6f);
+    (void)gated.kickAt(1.5, 0.6f);
+    require(gated.kickAt(0.65, 0.6f) == kick && std::abs(kick) < 0.9f
+        && gated.kickAt(-1) == 0 && gated.kickAt(2) == 0,
+        "Screen kick decay must be bounded and independent of seeks");
     require(gated.pulseAt(0.3, 0.9f) == 0 && gated.pulseAt(0.3, 0.6f) > 0,
         "Gate must reject weak events without clipping the decay of accepted events");
     require(gated.pulseAt(0.45, 0.6f) == 0.8f * static_cast<float>(std::exp(-0.25 / 0.14)),

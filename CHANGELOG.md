@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Fixed workspace navigation with separate Project, Composition, Media, Effects
+  and Export sections, preserving section scroll positions.
+- Independent glow, FFT outline, rim waves, overlay pulse, background response
+  and screen kick switches, persisted in preset v5 with v1–v4 reading support.
+- Separated glow from the spectral line and kept a base gap around quiet sectors.
+- Local adaptive onset strength improves quieter opening drums before loud sections.
+- Included progress line/time labels in overlay scaling, bounded for each layout.
+- Added Side Kick preset with deterministic alternating full-frame displacement,
+  independent beat gate and edge-covering zoom for preview and MP4 export.
+
 - Independent artwork zoom/focus for background and rotating vinyl label, plus
   background softness from sharp original to softened image, stored in project v3.
 - Immediate spectrum display gain and bass/treble balance, neutral reset and

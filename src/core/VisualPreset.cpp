@@ -23,6 +23,15 @@ VisualPreset beatPulsePreset() {
     return preset;
 }
 
+VisualPreset sideKickPreset() {
+    auto preset = beatPulsePreset();
+    preset.name = "Side Kick";
+    preset.subjectEnabled = false;
+    preset.cameraEnabled = true;
+    preset.glowIntensity = 0.6f;
+    return preset;
+}
+
 void validatePreset(const VisualPreset& preset) {
     if (preset.name.empty() || preset.name.size() > 96
         || std::all_of(preset.name.begin(), preset.name.end(), [](char c) { return c == ' '; })
@@ -46,5 +55,7 @@ void validatePreset(const VisualPreset& preset) {
     range(preset.spectrumStrength, 0, 1, "reactivity.spectrum (0..1)");
     range(preset.spectrumGainDb, -24, 24, "reactivity.spectrum_gain_db (-24..24)");
     range(preset.spectrumBalance, -1, 1, "reactivity.spectrum_balance (-1..1)");
+    range(preset.cameraStrength, 0, 0.05f, "effects.camera_strength (0..0.05)");
+    range(preset.cameraThreshold, 0, 1, "effects.camera_threshold (0..1)");
 }
 }

@@ -37,6 +37,9 @@ int main(int argc, char* argv[]) {
     try {
         const auto soft = musdesk::softGlowPreset();
         const auto beat = musdesk::beatPulsePreset();
+        const auto kick = musdesk::sideKickPreset();
+        require(musdesk::parsePreset(musdesk::serializePreset(kick)) == kick,
+            "Side Kick switches and camera settings must round trip");
         musdesk::validatePreset(soft);
         musdesk::validatePreset(beat);
         const auto json = musdesk::serializePreset(soft);
@@ -60,12 +63,20 @@ int main(int argc, char* argv[]) {
             "reactivity":{"beat_threshold":0.55,"subject_pulse":0.05,"background":0.65,"ring":0.55,"spectrum":0.65}})");
         require(version3.spectrumGainDb == 0 && version3.spectrumBalance == 0
             && version3.spectrumStrength == soft.spectrumStrength, "Version 3 spectra must retain neutral gain/balance");
+        const auto version4 = musdesk::parsePreset(R"({"version":4,"name":"Old tuning","disc_rpm":8,
+            "glow":{"color":[0.24,0.6,1],"intensity":0.8,"pulse_strength":0.6},
+            "background":{"speed":0.6,"zoom":1.16,"brightness":0.88},
+            "reactivity":{"beat_threshold":0.55,"subject_pulse":0.05,"background":0.65,"ring":0.55,
+                "spectrum":0.65,"spectrum_gain_db":-5,"spectrum_balance":0.2}})");
+        require(version4.glowEnabled && version4.spectrumEnabled && !version4.cameraEnabled
+            && version4.spectrumGainDb == -5, "Version 4 must keep tuning without enabling camera kicks");
         require(musdesk::parsePreset(json) == soft && musdesk::parsePreset(musdesk::serializePreset(beat)) == beat,
             "Built-in preset round trip must preserve every value");
         if (argc == 2) {
             const auto examples = std::filesystem::u8path(argv[1]);
             require(musdesk::loadPreset(utf8(examples / "soft-glow.json")) == soft
-                && musdesk::loadPreset(utf8(examples / "beat-pulse.json")) == beat, "Example JSON and built-in presets must agree");
+                && musdesk::loadPreset(utf8(examples / "beat-pulse.json")) == beat
+                && musdesk::loadPreset(utf8(examples / "side-kick.json")) == kick, "Example JSON and built-in presets must agree");
         }
         auto custom = beat;
         custom.name = "Nocna plaża \"mix\"";
@@ -80,6 +91,11 @@ int main(int argc, char* argv[]) {
         custom.spectrumStrength = 0.37f;
         custom.spectrumGainDb = -6.5f;
         custom.spectrumBalance = 0.35f;
+        custom.glowEnabled = custom.wavesEnabled = custom.backgroundEnabled = false;
+        custom.subjectEnabled = custom.spectrumEnabled = false;
+        custom.cameraEnabled = true;
+        custom.cameraStrength = 0.05f;
+        custom.cameraThreshold = 0.2f;
         const auto folder = std::filesystem::u8path(SDL_GetBasePath()) / "test-fixtures";
         std::filesystem::create_directories(folder);
         const auto path = utf8(folder / std::filesystem::path(u8"własny preset.json"));
@@ -96,14 +112,16 @@ int main(int argc, char* argv[]) {
         }
         rejected([&] { (void)musdesk::loadPreset(utf8(folder / "missing-preset.json")); });
         rejected([&] { (void)musdesk::parsePreset("{"); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 4", "\"version\": 5")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 4", "\"version\": 4.0")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 5", "\"version\": 6")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 5", "\"version\": 5.0")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"disc_rpm\": 8.0", "\"disc_rpm\": true")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"disc_rpm\": 8.0", "\"disc_rpm\": 46")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"name\": \"Soft Glow\"", "\"name\": \"\"")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 4", "\"unknown\": 0")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 4", "\"version\": 4, \"version\": 4")); }, "duplicate");
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 5", "\"unknown\": 0")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 5", "\"version\": 5, \"version\": 5")); }, "duplicate");
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"spectrum_gain_db\": 0.0", "\"spectrum_gain_db\": 25")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"camera\": false", "\"camera\": 0")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"camera_strength\": 0.025", "\"camera_strength\": 0.9")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"beat_threshold\": 0.55", "\"beat_threshold\": 2.55")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"subject_pulse\": 0.05", "\"subject_pulse\": -0.05")); });
         rejected([&] { (void)musdesk::parsePreset(std::string(65537, ' ')); });
