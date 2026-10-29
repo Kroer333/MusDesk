@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Distributed spectrum motion around the record with smooth reproducible
+  irregularity, and restored identical record size with spectrum on or off.
 - Measured hit-level gate in dBFS, shared by overlay pulse and Side Kick, with
   instant selection of cached bass, drum-range or wide-band attacks.
 - Removed confidence boosting and pattern-based level promotion; added 5 ms

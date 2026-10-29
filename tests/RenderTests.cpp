@@ -176,6 +176,41 @@ int main(int argc, char* argv[]) {
         fftSettings.preset.glowEnabled = true;
         renderer.renderFrame(2, fftSettings, spectrumA);
         const auto glowOnly = renderer.readPixels();
+        fftSettings.preset.spectrumEnabled = true;
+        renderer.renderFrame(2, fftSettings, spectrumA);
+        const auto balancedSpectrum = renderer.readPixels();
+        for (int y = 395; y < 1125; ++y) {
+            for (int x = 175; x < 905; ++x) {
+                const double dx = x+0.5-540, dy = y+0.5-760;
+                if (dx*dx+dy*dy >= 365*365) continue;
+                const auto pixel = ((1919-y)*1080+x)*4;
+                require(std::equal(glowOnly.begin()+pixel,glowOnly.begin()+pixel+3,
+                    balancedSpectrum.begin()+pixel),
+                    "Enabling spectrum must preserve the record radius and artwork pixels");
+            }
+        }
+        // Compare only the additive line, excluding artwork and background asymmetry.
+        std::array<double,4> quadrants{};
+        double mirrorDifference = 0;
+        for (int y = 300; y < 1220; ++y) {
+            for (int x = 80; x < 1000; ++x) {
+                const double dx = x+0.5-540, dy = y+0.5-760;
+                if (dx*dx+dy*dy < 380*380) continue;
+                const auto pixel = ((1919-y)*1080+x)*4;
+                const auto mirror = ((1919-y)*1080+(1079-x))*4;
+                mirrorDifference += std::abs((int(balancedSpectrum[pixel])-int(glowOnly[pixel]))
+                    -(int(balancedSpectrum[mirror])-int(glowOnly[mirror])));
+                for (int c = 0; c < 3; ++c)
+                    quadrants[(dy >= 0 ? 2 : 0)+(dx >= 0 ? 1 : 0)] +=
+                        int(balancedSpectrum[pixel+c])-int(glowOnly[pixel+c]);
+            }
+        }
+        const auto [minimum,maximum] = std::minmax_element(quadrants.begin(),quadrants.end());
+        require(*minimum > 1000 && *maximum < *minimum*2,
+            "An irregular spectrum must still react around the entire record");
+        require(mirrorDifference > 1000,
+            "Spectrum detail must not form a mirrored pattern");
+        fftSettings.preset.spectrumEnabled = false;
         renderer.renderFrame(2, fftSettings, spectrumB);
         require(glowOnly == renderer.readPixels(), "Glow alone must not deform with FFT bands");
         settings.title = "Deterministic frame";
