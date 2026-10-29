@@ -33,6 +33,13 @@ int main() {
             musdesk::CompositionFormat::Square, musdesk::CompositionFormat::PortraitThreeFour, musdesk::CompositionFormat::LandscapeFourThree}) {
             require(musdesk::parseCompositionFormat(musdesk::formatName(format)) == format, "Format identifiers must round trip");
             const auto layout = musdesk::layoutFor(format);
+            for (int edge : {360,540,720,1080}) {
+                const auto size = musdesk::previewSize(format,edge);
+                require(std::min(size.width,size.height) == edge && size.width%2 == 0 && size.height%2 == 0,
+                    "Preview sizes must retain aspect ratio and even pixel dimensions");
+            }
+            require(musdesk::previewSize(format,1500,720) == musdesk::outputSize(format,720),
+                "Preview must not exceed the selected export resolution");
             musdesk::CompositionSettings maximumPulse;
             maximumPulse.format = format;
             maximumPulse.preset.subjectPulse = 0.12f;

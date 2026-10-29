@@ -198,6 +198,16 @@ project preserve both crops and softness. No source image is modified.
 
 ### Beat-reactive visuals (development)
 
+Preview rendering follows the image's on-screen size, including display scaling.
+It automatically selects a 360, 540, 720 or 1080 pixel short edge, capped by the
+composition's output size. This reduces rendering work for a small preview;
+MP4 export always renders the full selected output resolution. Preview resizing
+preserves the composition and its animation settings.
+
+During playback, preceding GPU work is completed before the newest audio position
+is sampled for the next preview. Stalled frames use the current playhead instead
+of replaying intermediate visual timestamps. Export retains its separate pipeline.
+
 Choose a workspace section using the fixed selector above the controls:
 **Project**, **Composition**, **Media and preview audio**, **Effects**, or **Export**.
 Each section retains its own scroll position. Export progress/cancellation remains

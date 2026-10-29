@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Sized preview rendering to its on-screen area (360/540/720/1080 short edge),
+  retaining full selected resolution for MP4 export and a stable preview texture.
+- Drained preceding GPU work before sampling the current audio position during
+  playback to limit stale preview-frame buffering under rendering load.
+
 - Refined percussion detection with local attack-peak picking, bounded loudness/
   novelty scores and slow-swell rejection; shortened minimum onset separation
   from 180 to 70 ms to retain faster drum rolls without changing playback timing.

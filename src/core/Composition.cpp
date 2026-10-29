@@ -58,6 +58,17 @@ OutputSize outputSize(CompositionFormat format, int shortEdge) {
     return {canvas.width * shortEdge / 1080, canvas.height * shortEdge / 1080};
 }
 
+OutputSize previewSize(CompositionFormat format, int displayedShortEdge, int outputShortEdge) {
+    outputSize(format,outputShortEdge);
+    int edge = 1080;
+    for (int candidate : {360,540,720,1080}) {
+        if (displayedShortEdge <= candidate) { edge = candidate; break; }
+    }
+    edge = std::min(edge,outputShortEdge);
+    const auto canvas = layoutFor(format).canvas;
+    return {canvas.width*edge/1080,canvas.height*edge/1080};
+}
+
 CompositionFrame compositionAt(double timeSeconds, const CompositionSettings& settings, const AudioReaction& audio) {
     const double duration = std::isfinite(settings.durationSeconds) && settings.durationSeconds > 0
         ? settings.durationSeconds : 252.0;

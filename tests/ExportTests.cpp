@@ -179,6 +179,9 @@ int main(int argc, char* argv[]) {
         settings.preset.cameraStrength = 0.018f;
         settings.preset.cameraThreshold = 0.4f;
         settings.durationSeconds = clip->durationSeconds();
+        renderer.renderPreviewFrame(0,settings,clip->reactionAt(0,settings.preset.beatThreshold),300);
+        require(renderer.outputWidth() == 360 && renderer.outputHeight() == 640,
+            "Export regression must start with a reduced-resolution preview framebuffer");
         const auto output = folder / std::filesystem::path(L"gotowy film.mp4");
         { std::ofstream file(output); file << "previous export"; }
         {

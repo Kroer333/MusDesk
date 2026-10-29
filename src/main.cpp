@@ -905,9 +905,12 @@ int main(int argc, char* argv[]) {
             const musdesk::CompositionSettings settings{editorState.title.data(), editorState.artist.data(),
                 editorState.durationSeconds, editorState.preset, editorState.format, editorState.shortEdge,
                 editorState.backgroundFraming, editorState.labelFraming, editorState.backgroundSoftness};
-            if (!editorState.exportActive) composition.renderFrame(editorState.timeSeconds, settings,
+            // Drain the previous GPU frame before sampling the current audio position.
+            if (editorState.audioPlaying && !editorState.exportActive) glFinish();
+            refreshPlayback();
+            if (!editorState.exportActive) composition.renderPreviewFrame(editorState.timeSeconds, settings,
                 audioClip ? audioClip->reactionAt(editorState.timeSeconds, settings.preset.beatThreshold,
-                    settings.preset.cameraThreshold) : musdesk::AudioReaction{});
+                    settings.preset.cameraThreshold) : musdesk::AudioReaction{},editorState.previewDisplayedShortEdge);
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             if (!SDL_GL_SwapWindow(resources.window)) {

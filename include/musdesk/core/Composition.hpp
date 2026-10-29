@@ -31,6 +31,7 @@ ImageCrop imageCrop(double imageAspect, double targetAspect, const ImageFraming&
 const char* formatName(CompositionFormat format);
 CompositionFormat parseCompositionFormat(const std::string& name);
 OutputSize outputSize(CompositionFormat format, int shortEdge = 1080);
+OutputSize previewSize(CompositionFormat format, int displayedShortEdge, int outputShortEdge = 1080);
 CompositionLayout layoutFor(CompositionFormat format);
 
 struct CompositionSettings {

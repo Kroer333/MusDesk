@@ -4,6 +4,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <cmath>
 
 namespace musdesk {
 void applyVisualPreset(EditorUiState& state, const VisualPreset& preset) {
@@ -410,7 +411,7 @@ void drawControls(EditorUiState& state) {
     }
 }
 
-void drawPreview(const EditorUiState& state, std::uint32_t texture) {
+void drawPreview(EditorUiState& state, std::uint32_t texture) {
     ImGui::TextUnformatted("Preview");
     ImGui::SameLine();
     ImGui::TextDisabled("%s", formatName(state.format));
@@ -430,6 +431,9 @@ void drawPreview(const EditorUiState& state, std::uint32_t texture) {
     const float width = std::min(usableWidth, usableHeight * aspectRatio)
         * (state.previewScalePercent / 100.0f);
     const float height = width / aspectRatio;
+    const auto framebufferScale = ImGui::GetIO().DisplayFramebufferScale;
+    state.previewDisplayedShortEdge = static_cast<int>(std::ceil(std::min(
+        width*framebufferScale.x,height*framebufferScale.y)));
     const ImVec2 topLeft(origin.x + (available.x - width) * 0.5f,
         origin.y + (available.y - height) * 0.5f);
     const ImVec2 bottomRight(topLeft.x + width, topLeft.y + height);

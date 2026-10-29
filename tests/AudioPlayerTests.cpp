@@ -7,6 +7,9 @@
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <fstream>
+#include <filesystem>
+#include <algorithm>
 
 namespace {
 void require(bool condition, const char* message) {
@@ -21,8 +24,50 @@ template<class Predicate> void eventually(Predicate predicate, const char* messa
 }
 }
 
-int main(int, char*[]) {
+int main(int argc, char* argv[]) {
     try {
+        if (argc >= 4 && std::string(argv[1]) == "--profile-clock") {
+            std::cout << std::unitbuf;
+            std::ofstream report(argv[2]);
+            require(bool(report),"Cannot create audio clock report");
+            report << "track,max_step_ms,max_freeze_ms,max_drift_ms,updates\n";
+            const auto tools = musdesk::detectMediaTools();
+            for (int source = 3; source < argc; ++source) {
+                std::cout << "Preparing clock sample " << source-2 << '\n';
+                auto clip = std::make_shared<musdesk::DecodedAudio>(musdesk::prepareAudio(argv[source],tools));
+                musdesk::AudioPlayer player;
+                player.load(clip);
+                player.setVolume(0);
+                player.seek(std::min(18.0,clip->durationSeconds()/2));
+                const auto origin = player.state().timeSeconds;
+                player.play();
+                const auto started = SDL_GetTicksNS();
+                auto changed = started;
+                double previous = origin, maxStep = 0, maxFreeze = 0, maxDrift = 0;
+                int updates = 0;
+                while (SDL_GetTicksNS()-started < 2000000000ULL) {
+                    const auto now = SDL_GetTicksNS();
+                    const auto state = player.state();
+                    require(state.timeSeconds >= previous,"Audio clock must not rewind");
+                    if (state.timeSeconds != previous) {
+                        maxStep = std::max(maxStep,(state.timeSeconds-previous)*1000);
+                        maxFreeze = std::max(maxFreeze,(now-changed)/1e6);
+                        changed = now;
+                        ++updates;
+                    }
+                    maxDrift = std::max(maxDrift,std::abs(state.timeSeconds-origin-(now-started)/1e9)*1000);
+                    previous = state.timeSeconds;
+                    SDL_Delay(1);
+                }
+                player.pause();
+                const auto name = std::filesystem::u8path(argv[source]).filename().string();
+                report << name << ',' << maxStep << ',' << maxFreeze << ',' << maxDrift << ',' << updates << '\n';
+                report.flush();
+                std::cout << name << " step=" << maxStep << " freeze=" << maxFreeze << " drift=" << maxDrift << " ms updates=" << updates << '\n';
+            }
+            SDL_Quit();
+            return 0;
+        }
         {
             auto clip = std::make_shared<musdesk::DecodedAudio>();
             clip->samples.resize(48000 * 2, 1000);
@@ -62,6 +107,13 @@ int main(int, char*[]) {
             player.seek(0.25);
             require(player.loaded() && !player.state().playing && std::abs(player.state().timeSeconds - 0.25) < 1.0 / 48000,
                 "Reopening playback must support restoring the paused visual position");
+            player.play();
+            eventually([&] { return player.state().timeSeconds > 0.28; },"Playback must advance before a render stall");
+            const auto beforeStall = player.state().timeSeconds;
+            SDL_Delay(180);
+            require(player.state().timeSeconds-beforeStall > 0.10,
+                "Playback time must advance independently of a stalled rendering/UI thread");
+            player.pause();
         }
         SDL_Quit();
         std::cout << "Audio playback, pause, seeks, end, restart, gain and replacement checks passed.\n";

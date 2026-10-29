@@ -427,8 +427,17 @@ void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettin
 }
 
 void VisualizerRenderer::renderFrame(double timeSeconds, const CompositionSettings& settings, const AudioReaction& audio) {
+    renderAtSize(timeSeconds,settings,audio,outputSize(settings.format,settings.shortEdge));
+}
+
+void VisualizerRenderer::renderPreviewFrame(double timeSeconds, const CompositionSettings& settings,
+    const AudioReaction& audio, int displayedShortEdge) {
+    renderAtSize(timeSeconds,settings,audio,previewSize(settings.format,displayedShortEdge,settings.shortEdge));
+}
+
+void VisualizerRenderer::renderAtSize(double timeSeconds, const CompositionSettings& settings,
+    const AudioReaction& audio, OutputSize size) {
     auto& gl = impl_->gl;
-    const auto size = outputSize(settings.format, settings.shortEdge);
     const auto layout = layoutFor(settings.format);
     if (size.width != impl_->pixelsWidth || size.height != impl_->pixelsHeight) {
         GLint maximum = 0;

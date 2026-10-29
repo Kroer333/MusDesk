@@ -21,6 +21,8 @@ public:
     void clearArtwork();
     void renderFrame(double timeSeconds, const CompositionSettings& settings, float audioEnergy = 0);
     void renderFrame(double timeSeconds, const CompositionSettings& settings, const AudioReaction& audio);
+    void renderPreviewFrame(double timeSeconds, const CompositionSettings& settings, const AudioReaction& audio,
+        int displayedShortEdge);
     std::uint32_t textureId() const;
     int outputWidth() const;
     int outputHeight() const;
@@ -28,6 +30,7 @@ public:
     std::vector<std::uint8_t> readPixels() const;
 
 private:
+    void renderAtSize(double timeSeconds, const CompositionSettings& settings, const AudioReaction& audio, OutputSize size);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

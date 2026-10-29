@@ -9,6 +9,9 @@
 #include <iostream>
 #include <stdexcept>
 #include <filesystem>
+#include <algorithm>
+#include <fstream>
+#include <numeric>
 
 namespace {
 struct Context {
@@ -47,6 +50,58 @@ int main(int argc, char* argv[]) {
         require(context.gl != nullptr, "GL context creation failed");
         require(SDL_GL_MakeCurrent(context.window, context.gl), "GL context activation failed");
         musdesk::VisualizerRenderer renderer(std::string(SDL_GetBasePath()) + "assets/Roboto-Medium.ttf");
+        if (argc >= 4 && std::string(argv[1]) == "--profile-audio") {
+            std::cout << std::unitbuf;
+            std::ofstream report(argv[2]);
+            require(bool(report), "Cannot create preview profile report");
+            report << "track,beats,region,edge,mean_ms,p95_ms,lookup_us\n";
+            const auto tools = musdesk::detectMediaTools();
+            renderer.setArtwork({2,2,{255,0,0,255,0,255,0,255,0,0,255,255,255,255,0,255}});
+            for (int source = 3; source < argc; ++source) {
+                std::cout << "Preparing audio sample " << source-2 << '\n';
+                const auto audio = musdesk::prepareAudio(argv[source],tools);
+                double denseTime = 0;
+                std::size_t maximum = 0, last = 0;
+                for (std::size_t first = 0; first < audio.rhythm.beats.size(); ++first) {
+                    while (last < audio.rhythm.beats.size()
+                        && audio.rhythm.beats[last].timeSeconds < audio.rhythm.beats[first].timeSeconds+1) ++last;
+                    if (last-first > maximum) { maximum = last-first; denseTime = audio.rhythm.beats[first].timeSeconds; }
+                }
+                const auto lookupStart = SDL_GetTicksNS();
+                double checksum = 0;
+                for (int query = 0; query < 10000; ++query) {
+                    const auto reaction = audio.reactionAt(audio.durationSeconds()*query/10000,0.55f,0.35f);
+                    checksum += reaction.beat+reaction.kick;
+                }
+                const double lookupUs = (SDL_GetTicksNS()-lookupStart)/1e7;
+                musdesk::CompositionSettings settings;
+                settings.durationSeconds = audio.durationSeconds();
+                settings.preset = musdesk::sideKickPreset();
+                const auto name = std::filesystem::u8path(argv[source]).filename().string();
+                for (int edge : {1080,720,540,360}) for (int region = 0; region < 2; ++region) {
+                    settings.shortEdge = edge >= 720 ? edge : 1080;
+                    std::vector<double> timings;
+                    const double begin = region ? denseTime : 0;
+                    for (int frame = -3; frame < 12; ++frame) {
+                        const double time = std::min(audio.durationSeconds()-0.001,begin+std::max(0,frame)/60.0);
+                        const auto started = SDL_GetTicksNS();
+                        if (edge >= 720) renderer.renderFrame(time,settings,audio.reactionAt(time,0.55f,0.35f));
+                        else renderer.renderPreviewFrame(time,settings,audio.reactionAt(time,0.55f,0.35f),edge);
+                        glFinish();
+                        if (frame >= 0) timings.push_back((SDL_GetTicksNS()-started)/1e6);
+                    }
+                    const auto mean = std::accumulate(timings.begin(),timings.end(),0.0)/timings.size();
+                    std::sort(timings.begin(),timings.end());
+                    const auto p95 = timings[static_cast<std::size_t>((timings.size()-1)*0.95)];
+                    report << name << ',' << audio.rhythm.beats.size() << ',' << (region ? "dense" : "opening")
+                        << ',' << edge << ',' << mean << ',' << p95 << ',' << lookupUs << '\n';
+                    report.flush();
+                    std::cout << name << " edge=" << edge << " dense=" << region << " mean=" << mean
+                        << " ms p95=" << p95 << " ms lookup=" << lookupUs << " us checksum=" << checksum << '\n';
+                }
+            }
+            return 0;
+        }
         if (argc == 4 && (std::string(argv[1]) == "--layouts" || std::string(argv[1]) == "--framing")) {
             const bool framingGallery = std::string(argv[1]) == "--framing";
             renderer.setArtwork(musdesk::loadArtwork(argv[2]));
@@ -222,6 +277,17 @@ int main(int argc, char* argv[]) {
             require(first[p] == 255, "Composition must remain opaque including text edges");
         }
         const auto previewTexture = renderer.textureId();
+        for (int displayEdge : {250,360,420,540,700,720,900,1500}) {
+            renderer.renderPreviewFrame(4,settings,spectrumA,displayEdge);
+            const auto expected = musdesk::previewSize(settings.format,displayEdge,settings.shortEdge);
+            require(renderer.outputWidth() == expected.width && renderer.outputHeight() == expected.height,
+                "Preview framebuffer must match the displayed size budget");
+            require(renderer.textureId() == previewTexture,"Preview resizing must retain its texture ID");
+        }
+        renderer.renderFrame(4,settings,spectrumA);
+        const auto restoredOutput = musdesk::outputSize(settings.format,settings.shortEdge);
+        require(renderer.outputWidth() == restoredOutput.width && renderer.outputHeight() == restoredOutput.height,
+            "Export rendering must restore full output size after reduced-resolution preview");
         for (auto format : {musdesk::CompositionFormat::Portrait, musdesk::CompositionFormat::Landscape,
             musdesk::CompositionFormat::Square, musdesk::CompositionFormat::PortraitThreeFour, musdesk::CompositionFormat::LandscapeFourThree}) {
             settings.format = format;
