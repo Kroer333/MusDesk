@@ -264,11 +264,17 @@ onsets. Seeking evaluates the same precomputed timeline, including when paused.
 Volume and mute affect monitoring only.
 
 Background import filters each audio channel to approximately 35–180 Hz, measures
-energy in 10 ms windows and detects sharp rises above an adaptive local baseline.
-Short smoothing and a 180 ms minimum interval suppress repeated triggers from
-sustained notes. Bass level uses track peak normalization. Onset strength combines
-local peak level (with a decaying reference) and prominence over the local baseline,
-so louder sections later in a track no longer suppress opening drum strengths.
+energy in 10 ms windows and picks local peaks of a 30 ms energy rise.
+Attack concentration rejects slow bass swells; a 70 ms minimum separation allows
+faster drum rolls while merging repeated candidates from one attack.
+Bass level uses track peak normalization. Onset strength combines separately
+bounded loudness and attack scores against local 90th/95th percentile references,
+with a track-percentile floor limiting amplification of quiet sections. A single
+oversized ratio cannot force every candidate to maximum strength.
+Short regular rolls with two to four softer interior attacks can receive bounded
+rhythmic confidence when bracketed by strong hits. Isolated weak hits are not
+promoted this way, and confirmation never creates events where no attack was detected.
+The short lookahead runs during import, without delaying playback or shifting its clock.
 A noise floor prevents near-silence from being normalized into strong hits;
 the beat pulse decays over time and is evaluated directly from the playhead.
 Filter coefficients follow the [W3C Audio EQ Cookbook](https://www.w3.org/TR/audio-eq-cookbook/).

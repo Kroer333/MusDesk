@@ -137,6 +137,49 @@ void rhythmTests() {
         && adaptive.beats[1].strength >= 0.55f,
         "Quieter opening drums must not be gated out by a louder later section");
     require(high.beats.empty(), "High-frequency bursts must not trigger bass onsets");
+    const auto drumRoll = [&](bool weakAlternating, bool bassBed = false, bool quietMiddle = false) {
+        std::vector<std::int16_t> data(rate * 2, 0);
+        for (int frame = 0; frame < rate * 2; ++frame) {
+            const double t = static_cast<double>(frame) / rate;
+            double value = bassBed ? 0.16 * std::min(1.0,t/0.2)
+                * std::sin(2*std::numbers::pi*50*t) : 0;
+            for (int hit = 0; hit < 8; ++hit) {
+                const double age = t - (0.25 + hit * 0.12);
+                const double amplitude = quietMiddle && (hit%4 == 1 || hit%4 == 2) ? 0.22
+                    : (weakAlternating && hit%2 ? 0.12 : 0.7);
+                if (age >= 0 && age < 0.08) value += amplitude
+                    * std::min(1.0,age/0.003) * std::exp(-age/0.018)
+                    * std::sin(2*std::numbers::pi*80*age);
+            }
+            data[frame] = static_cast<std::int16_t>(value*32767);
+        }
+        return musdesk::analyzeRhythm(data,rate,1);
+    };
+    const auto roll = drumRoll(false);
+    require(roll.beats.size() == 8, "Fast drum rolls spaced 120 ms apart must retain all eight attacks");
+    for (std::size_t i = 0; i < roll.beats.size(); ++i)
+        require(std::abs(roll.beats[i].timeSeconds-(0.25+i*0.12)) < 0.04,
+            "Roll event times must stay near the actual attack");
+    const auto mixedRoll = drumRoll(true);
+    const auto layeredRoll = drumRoll(false,true);
+    const auto groupedRoll = drumRoll(false,false,true);
+    require(std::count_if(groupedRoll.beats.begin(),groupedRoll.beats.end(),
+        [](const auto& event) { return event.strength >= 0.55f; }) == 8,
+        "Regular short rolls bounded by strong hits must retain their quieter middle attacks");
+    require(std::count_if(layeredRoll.beats.begin(),layeredRoll.beats.end(), [](const auto& event) {
+        return event.timeSeconds >= 0.23 && event.strength >= 0.55f;
+    }) == 8, "A sustained bass bed must not hide rapid percussive attacks");
+    require(std::count_if(mixedRoll.beats.begin(),mixedRoll.beats.end(),
+        [](const auto& event) { return event.strength >= 0.55f; }) == 4,
+        "Beat strength must separate four strong drum hits from quieter intervening hits");
+    std::vector<std::int16_t> melody(rate*2);
+    for (std::size_t i = 0; i < melody.size(); ++i) {
+        const double t = static_cast<double>(i)/rate;
+        const double envelope = std::min(1.0,t/0.25)*(0.4+0.2*std::sin(2*std::numbers::pi*2*t));
+        melody[i] = static_cast<std::int16_t>(envelope*32767*std::sin(2*std::numbers::pi*80*t));
+    }
+    require(musdesk::analyzeRhythm(melody,rate,1).beats.empty(),
+        "Slow melodic bass swells must not be classified as percussive attacks");
     for (double frequency : {40.0, 70.0, 120.0, 180.0}) {
         require(musdesk::analyzeRhythm(signal(frequency, true), rate, 2).beats.size() == 1,
             "A sustained bass tone must not repeatedly trigger beats");

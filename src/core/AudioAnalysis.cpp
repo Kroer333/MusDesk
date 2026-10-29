@@ -201,38 +201,84 @@ AudioRhythm analyzeRhythm(std::span<const std::int16_t> samples, int sampleRate,
         energy.push_back(value);
         peak = std::max(peak, value);
     }
-    double baseline = 0;
-    double localReference = 0.03;
-    float previous = 0;
     float onsetLevel = 0;
     float smoothed = 0;
+    std::vector<float> levels, novelty;
+    levels.reserve(energy.size());
+    novelty.reserve(energy.size());
     result.bass.values.push_back(0);
     const float attack = static_cast<float>(1 - std::exp(-result.bass.stepSeconds / 0.015));
     const float release = static_cast<float>(1 - std::exp(-result.bass.stepSeconds / 0.10));
     const float onsetSmoothing = static_cast<float>(1 - std::exp(-result.bass.stepSeconds / 0.025));
-    const double baselineSmoothing = 1 - std::exp(-result.bass.stepSeconds / 0.30);
     for (std::size_t i = 0; i < energy.size(); ++i) {
         if (cancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
         const auto value = energy[i];
-        localReference = std::max<double>(value, localReference * std::exp(-result.bass.stepSeconds / 0.8));
         onsetLevel += (value - onsetLevel) * onsetSmoothing;
-        const auto rise = std::max(0.0f, onsetLevel - previous);
-        const double time = (i + 0.5) * result.bass.stepSeconds;
-        if (time < result.bass.durationSeconds && onsetLevel > std::max(0.010, baseline * 1.45)
-            && rise > std::max(0.003f, onsetLevel * 0.15f)
-            && (result.beats.empty() || time - result.beats.back().timeSeconds >= 0.18)) {
-            const auto end = std::min(i + 4, energy.size());
-            const auto localPeak = *std::max_element(energy.begin() + i, energy.begin() + end);
-            const double prominence = (onsetLevel - baseline) / std::max<double>(onsetLevel, 0.01);
-            const double relativeLevel = localPeak / std::max<double>(localReference, 0.03);
-            result.beats.push_back({time, static_cast<float>(std::clamp(
-                0.65 * relativeLevel + 0.35 * prominence, 0.0, 1.0))});
-        }
-        baseline += (onsetLevel - baseline) * baselineSmoothing;
-        previous = onsetLevel;
+        levels.push_back(onsetLevel);
+        novelty.push_back(std::max(0.0f, onsetLevel - (i >= 3 ? levels[i-3] : 0)));
         const float target = value < 0.0001f ? 0 : std::clamp(value / peak, 0.0f, 1.0f);
         smoothed += (target - smoothed) * (target > smoothed ? attack : release);
         result.bass.values.push_back(smoothed);
+    }
+    const auto percentile = [](const std::vector<float>& values, std::size_t first, std::size_t last, double fraction) {
+        std::vector<float> window(values.begin() + first, values.begin() + last);
+        const auto rank = static_cast<std::size_t>((window.size()-1) * fraction);
+        std::nth_element(window.begin(), window.begin() + rank, window.end());
+        return window[rank];
+    };
+    const auto referenceFloor = std::max(0.03f, percentile(energy, 0, energy.size(), 0.95) * 0.6f);
+    float previousNovelty = 0;
+    for (std::size_t i = 1; i + 1 < levels.size(); ++i) {
+        if (cancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
+        const auto rise = novelty[i];
+        if (rise < novelty[i-1] || rise <= novelty[i+1]
+            || rise < 0.006f || rise < levels[i] * 0.22f || levels[i] < 0.015f) continue;
+        const auto shoulders = ((i >= 2 ? novelty[i-2] : 0)
+            + (i+2 < novelty.size() ? novelty[i+2] : 0)) * 0.5f;
+        if (rise < shoulders * 1.15f) continue;
+        const auto localPeak = *std::max_element(energy.begin()+i, energy.begin()+std::min(i+8,energy.size()));
+        const auto precedingLevel = i >= 3 ? levels[i-3] : 0;
+        if (rise < std::max(0.015f, localPeak-precedingLevel) * 0.35f) continue;
+        auto start = i;
+        while (start > 0 && i-start < 4
+            && novelty[start-1] >= std::max(0.006f, levels[start-1] * 0.22f)) --start;
+        const double time = (start + 0.5) * result.bass.stepSeconds;
+        const auto first = i > 100 ? i-100 : 0;
+        const auto last = std::min(i+20, energy.size());
+        const auto levelReference = std::max(referenceFloor, percentile(energy, first, last, 0.90));
+        const auto attackReference = std::max(0.012f, percentile(novelty, first, last, 0.95));
+        const float strength = std::min(1.0f, localPeak / levelReference)
+            * std::sqrt(std::min(1.0f, rise / attackReference));
+        if (!result.beats.empty() && time-result.beats.back().timeSeconds < 0.07) {
+            if (rise <= previousNovelty) continue;
+            result.beats.pop_back();
+        }
+        if (time < result.bass.durationSeconds) {
+            result.beats.push_back({time,strength});
+            previousNovelty = rise;
+        }
+    }
+    const auto unconfirmed = result.beats;
+    for (std::size_t first = 0; first < unconfirmed.size(); ++first) {
+        if (cancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
+        if (unconfirmed[first].strength < 0.7f) continue;
+        for (std::size_t last = first+3; last < unconfirmed.size() && last <= first+5; ++last) {
+            const auto span = unconfirmed[last].timeSeconds-unconfirmed[first].timeSeconds;
+            if (span > 0.5) break;
+            if (unconfirmed[last].strength < 0.7f) continue;
+            const auto spacing = span/(last-first);
+            bool regular = true;
+            for (auto event = first+1; event <= last; ++event) {
+                const auto gap = unconfirmed[event].timeSeconds-unconfirmed[event-1].timeSeconds;
+                if (unconfirmed[event].strength < 0.15f || (event < last && unconfirmed[event].strength >= 0.7f)
+                    || gap < 0.07 || gap > 0.17
+                    || std::abs(gap-spacing) > spacing*0.3) { regular = false; break; }
+            }
+            if (!regular) continue;
+            const auto confidence = 0.65f * std::sqrt(std::min(unconfirmed[first].strength,unconfirmed[last].strength));
+            for (auto event = first+1; event < last; ++event)
+                result.beats[event].strength = std::max(result.beats[event].strength,confidence);
+        }
     }
     return result;
 }

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Refined percussion detection with local attack-peak picking, bounded loudness/
+  novelty scores and slow-swell rejection; shortened minimum onset separation
+  from 180 to 70 ms to retain faster drum rolls without changing playback timing.
+
 - Fixed workspace navigation with separate Project, Composition, Media, Effects
   and Export sections, preserving section scroll positions.
 - Independent glow, FFT outline, rim waves, overlay pulse, background response

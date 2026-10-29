@@ -80,9 +80,12 @@ int main(int argc, char* argv[]) {
                 require(std::isfinite(audio.durationSeconds) && audio.durationSeconds > 0, "Positive duration expected");
                 std::cout << "Audio duration: " << audio.durationSeconds << " seconds\n";
                 const auto decoded = musdesk::prepareAudio(argv[i], tools);
+                std::ofstream report(std::filesystem::u8path(SDL_GetBasePath()) / "test-fixtures" / "rhythm-report.csv");
+                report << "time_seconds,strength,passes_55_percent\n";
                 for (const auto& beat : decoded.rhythm.beats) {
-                    if (beat.timeSeconds >= 8) break;
-                    std::cout << "Opening bass onset: " << beat.timeSeconds << " s, strength " << beat.strength << '\n';
+                    report << beat.timeSeconds << ',' << beat.strength << ',' << (beat.strength >= 0.55f) << '\n';
+                    if (beat.timeSeconds < 8 || (beat.timeSeconds >= 18 && beat.timeSeconds < 23))
+                        std::cout << "Bass onset: " << beat.timeSeconds << " s, strength " << beat.strength << '\n';
                 }
                 require(!decoded.samples.empty() && std::abs(decoded.durationSeconds() - audio.durationSeconds) < 1,
                     "Decoded PCM duration must agree with container metadata within codec padding");
