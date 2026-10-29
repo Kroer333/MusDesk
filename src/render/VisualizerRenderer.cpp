@@ -128,14 +128,34 @@ float segmentDistance(vec2 p, vec2 a, vec2 b) {
     return length(p-a-ab*clamp(dot(p-a,ab)/max(dot(ab,ab),0.0001),0.0,1.0));
 }
 float ringHash(float sector, float moment) {
-    return fract(sin(dot(vec2(mod(sector,12.0),moment),vec2(127.1,311.7)))*43758.5453);
+    return fract(sin(dot(vec2(sector,moment),vec2(127.1,311.7)))*43758.5453);
 }
 float ringNoise(float angle, float time) {
     float position = (angle+3.141592654)/6.283185307*12.0;
     vec2 cell = floor(vec2(position,time));
     vec2 blend = smoothstep(vec2(0.0),vec2(1.0),fract(vec2(position,time)));
-    return mix(mix(ringHash(cell.x,cell.y),ringHash(cell.x+1.0,cell.y),blend.x),
-        mix(ringHash(cell.x,cell.y+1.0),ringHash(cell.x+1.0,cell.y+1.0),blend.x),blend.y);
+    float left = mod(cell.x,12.0), right = mod(cell.x+1.0,12.0);
+    return mix(mix(ringHash(left,cell.y),ringHash(right,cell.y),blend.x),
+        mix(ringHash(left,cell.y+1.0),ringHash(right,cell.y+1.0),blend.x),blend.y);
+}
+vec2 spectrumVertex(float node) {
+    node = mod(node,128.0);
+    float angle = node/128.0*6.283185307-3.141592654;
+    float irregularity = ringNoise(angle,ringPhase*1.3);
+    float bandPosition = acos(clamp(cos(4.0*angle+1.8*(irregularity-0.5)
+        +ringPhase*0.35),-1.0,1.0))/3.141592654*31.0;
+    int band = min(int(bandPosition),30);
+    float spectral = mix(spectrum[band],spectrum[band+1],fract(bandPosition));
+    float moment = ringPhase*10.0;
+    float motion = mix(ringHash(node,floor(moment)),ringHash(node,floor(moment)+1.0),
+        smoothstep(0.0,1.0,fract(moment)));
+    float level = spectrumLevel*spectrumLevel;
+    spectral = (0.22*level+0.78*spectral*spectral)*(0.8+0.2*irregularity);
+    float wave = 0.5+0.3*sin((angle-discAngle)*18.0+ringPhase)
+        +0.2*sin((angle-discAngle)*31.0-ringPhase*1.3);
+    float radius = 1.055+0.025*ringMotion*wave
+        +ringHeadroom*(1.0-exp(-spectrumStrength*spectral))*(0.25+0.75*motion);
+    return vec2(cos(angle),sin(angle))*radius;
 }
 void main() {
     vec2 topUv = vec2(uv.x, 1.0-uv.y);
@@ -167,23 +187,18 @@ void main() {
     float pulse = audioEnergy*pulseStrength;
     float wave = 0.0;
     if (ringMotion > 0.0) wave = 0.5 + 0.3*sin(phi*18.0+ringPhase) + 0.2*sin(phi*31.0-ringPhase*1.3);
-    float spectral = 0.0;
-    if (spectrumStrength > 0.0) {
-        float angle = atan(discPoint.y,discPoint.x);
-        float irregularity = ringNoise(angle,ringPhase*1.3);
-        float bandPosition = acos(clamp(cos(4.0*angle+1.8*(irregularity-0.5)
-            +ringPhase*0.35),-1.0,1.0))/3.141592654*31.0;
-        int band = min(int(bandPosition),30);
-        spectral = mix(spectrum[band],spectrum[band+1],smoothstep(0.0,1.0,bandPosition-float(band)));
-        spectral = 0.35*pow(spectrumLevel,3.0) + 0.65*spectral*spectral*spectral;
-        spectral *= 0.55+0.45*irregularity;
-    }
     float glowDistance = max(0.0,r-0.90);
     color += accent * glowSettings.a * (1.0+1.3*pulse)
         * (0.5*exp(-glowDistance*glowDistance*(38.0-10.0*pulse)));
-    float rimRadius = 1.055 + 0.025*ringMotion*wave
-        + ringHeadroom*(1.0-exp(-spectrumStrength*spectral));
+    float rimRadius = 1.055 + 0.025*ringMotion*wave;
     float rimDistance = abs(r-rimRadius);
+    if (spectrumStrength > 0.0) {
+        rimDistance = 100.0;
+        if (r > 1.0 && r < 1.12+ringHeadroom) {
+            float node = floor((atan(discPoint.y,discPoint.x)+3.141592654)/6.283185307*128.0);
+            rimDistance = segmentDistance(discPoint,spectrumVertex(node),spectrumVertex(node+1.0));
+        }
+    }
     float lineStrength = min(1.0,spectrumStrength+ringMotion);
     color += accent * lineStrength * (0.9*exp(-rimDistance*230.0)+0.12*exp(-rimDistance*65.0));
     if (r < 1.0) {

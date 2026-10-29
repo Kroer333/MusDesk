@@ -230,8 +230,9 @@ controlled by the hit gate. Each effect remains independently switchable.
 
 **Spectrum ring** now ranges from 0 to 4. Its larger deformation has a contrast
 curve to emphasize loud sectors and a layout-dependent limit to prevent clipping.
-Spectrum keeps the record size unchanged. Smooth timestamp-based variation breaks
-up repeated band patterns, with a shared outward response around the whole record. Deformation
+Spectrum keeps the record size unchanged. Its 128 independently moving vertices
+form straight segments with angular peaks. Timestamp-based variation breaks up
+repeated patterns, with a shared audio response around the whole record. Deformation
 stays clear of the track text as well as the frame edges.
 **Spectrum gain** (-24 to +24 dB) and **Spectrum balance** (bass to treble) remain
 independent controls; **Reset spectrum tuning** restores neutral gain/balance.

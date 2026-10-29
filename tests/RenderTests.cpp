@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <fstream>
 #include <numeric>
+#include <cmath>
+#include <numbers>
 
 namespace {
 struct Context {
@@ -213,6 +215,44 @@ int main(int argc, char* argv[]) {
         fftSettings.preset.spectrumEnabled = false;
         renderer.renderFrame(2, fftSettings, spectrumB);
         require(glowOnly == renderer.readPixels(), "Glow alone must not deform with FFT bands");
+        auto angularSettings = fftSettings;
+        angularSettings.format = musdesk::CompositionFormat::Landscape;
+        angularSettings.preset.spectrumEnabled = true;
+        angularSettings.preset.glowEnabled = false;
+        angularSettings.preset.backgroundBrightness = 0;
+        angularSettings.preset.spectrumStrength = 4;
+        angularSettings.preset.pulseStrength = 1;
+        angularSettings.preset.spectrumGainDb = 0;
+        musdesk::AudioReaction broadSpectrum;
+        broadSpectrum.spectrum.fill(0.8f);
+        renderer.renderFrame(2,angularSettings,broadSpectrum);
+        const auto angularFrame = renderer.readPixels();
+        auto previewPixels = angularFrame;
+        std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> angularSurface(SDL_CreateSurfaceFrom(
+            1920,1080,SDL_PIXELFORMAT_RGBA32,previewPixels.data(),1920*4),SDL_DestroySurface);
+        const auto angularPath = std::filesystem::path(SDL_GetBasePath())/"test-fixtures"/"angular-spectrum.bmp";
+        std::filesystem::create_directories(angularPath.parent_path());
+        require(angularSurface && SDL_FlipSurface(angularSurface.get(),SDL_FLIP_VERTICAL)
+            && SDL_SaveBMP(angularSurface.get(),angularPath.string().c_str()), "Cannot save angular spectrum check frame");
+        std::array<int,128> radii{};
+        for (int node = 0; node < 128; ++node) {
+            const double angle = node/128.0*2*std::numbers::pi-std::numbers::pi;
+            int brightest = -1;
+            for (int radius = 335; radius < 450; ++radius) {
+                const int x = static_cast<int>(std::lround(520+radius*std::cos(angle)-0.5));
+                const int y = static_cast<int>(std::lround(540+radius*std::sin(angle)-0.5));
+                const int value = angularFrame[((1079-y)*1920+x)*4];
+                if (value > brightest) { brightest = value; radii[node] = radius; }
+            }
+        }
+        int variation = 0;
+        for (int node = 0; node < 128; ++node)
+            variation += std::abs(radii[node]-radii[(node+1)%128]);
+        require(variation > 128*3, "Adjacent spectrum vertices must produce distinct angular peaks");
+        renderer.renderFrame(2.12,angularSettings,broadSpectrum);
+        require(angularFrame != renderer.readPixels(), "Spectrum vertices must evolve with playback time");
+        renderer.renderFrame(2,angularSettings,broadSpectrum);
+        require(angularFrame == renderer.readPixels(), "Angular spectrum must remain reproducible after seek");
         settings.title = "Deterministic frame";
         renderer.renderFrame(0, settings);
         const auto first = renderer.readPixels();

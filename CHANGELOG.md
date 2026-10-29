@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Rebuilt the spectrum outline from 128 straight segments with faster independent
+  vertex movement and more pronounced audio-driven peaks.
 - Distributed spectrum motion around the record with smooth reproducible
   irregularity, and restored identical record size with spectrum on or off.
 - Measured hit-level gate in dBFS, shared by overlay pulse and Side Kick, with
