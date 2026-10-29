@@ -2,29 +2,34 @@
 
 ## Unreleased
 
+- Measured hit-level gate in dBFS, shared by overlay pulse and Side Kick, with
+  instant selection of cached bass, drum-range or wide-band attacks.
+- Removed confidence boosting and pattern-based level promotion; added 5 ms
+  analysis, 40 ms retrigger spacing and shorter pulse/camera tails.
+- Glow-only built-ins now use diffuse light without an outline ridge.
+- Added Spectrum Pulse with 0-4 deformation, dedicated layout headroom, 50 Hz
+  FFT updates and faster attack/release.
+- Preset v6 stores explicit dB levels and selected bands, reads v1-v5, merges
+  old gates using the stricter value and migrates built-in glow styles to no lines.
+
 - Sized preview rendering to its on-screen area (360/540/720/1080 short edge),
   retaining full selected resolution for MP4 export and a stable preview texture.
 - Drained preceding GPU work before sampling the current audio position during
   playback to limit stale preview-frame buffering under rendering load.
 
-- Refined percussion detection with local attack-peak picking, bounded loudness/
-  novelty scores and slow-swell rejection; shortened minimum onset separation
-  from 180 to 70 ms to retain faster drum rolls without changing playback timing.
-
 - Fixed workspace navigation with separate Project, Composition, Media, Effects
   and Export sections, preserving section scroll positions.
 - Independent glow, FFT outline, rim waves, overlay pulse, background response
-  and screen kick switches, persisted in preset v5 with v1–v4 reading support.
+  and screen kick switches, persisted in preset v6 with v1–v5 reading support.
 - Separated glow from the spectral line and kept a base gap around quiet sectors.
-- Local adaptive onset strength improves quieter opening drums before loud sections.
 - Included progress line/time labels in overlay scaling, bounded for each layout.
 - Added Side Kick preset with deterministic alternating full-frame displacement,
-  independent beat gate and edge-covering zoom for preview and MP4 export.
+  shared hit gate and edge-covering zoom for preview and MP4 export.
 
 - Independent artwork zoom/focus for background and rotating vinyl label, plus
   background softness from sharp original to softened image, stored in project v3.
 - Immediate spectrum display gain and bass/treble balance, neutral reset and
-  preset v4 persistence, with backwards-compatible defaults for older files.
+  preset v6 persistence, with migration support for older files.
 
 - FFT spectrum ring with 32 logarithmic stereo power bands, cached during import;
   preset v3 preserves older v1/v2 appearances while adding spectrum intensity.

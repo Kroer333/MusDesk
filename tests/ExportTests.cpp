@@ -175,9 +175,11 @@ int main(int argc, char* argv[]) {
         settings.backgroundSoftness = 0.25f;
         settings.preset.spectrumGainDb = -3;
         settings.preset.spectrumBalance = 0.3f;
+        settings.preset.spectrumEnabled = true;
+        settings.preset.spectrumStrength = 3;
         settings.preset.cameraEnabled = true;
         settings.preset.cameraStrength = 0.018f;
-        settings.preset.cameraThreshold = 0.4f;
+        settings.preset.beatBand = musdesk::BeatBand::Wide;
         settings.durationSeconds = clip->durationSeconds();
         renderer.renderPreviewFrame(0,settings,clip->reactionAt(0,settings.preset.beatThreshold),300);
         require(renderer.outputWidth() == 360 && renderer.outputHeight() == 640,
@@ -200,7 +202,7 @@ int main(int argc, char* argv[]) {
         require(rmsAt(decoded, 0.03) > 0.3 && rmsAt(decoded, 0.53) > 0.3,
             "Audio pulses shifted from their source timestamps");
         require(rmsAt(decoded, 0.3) < 0.005 && rmsAt(decoded, 0.9) < 0.005, "Audio silence intervals shifted");
-        renderer.renderFrame(0, settings, clip->reactionAt(0, settings.preset.beatThreshold, settings.preset.cameraThreshold));
+        renderer.renderFrame(0, settings, clip->reactionAt(0, settings.preset.beatThreshold, settings.preset.beatBand));
         const auto reference = renderer.readPixels();
         std::ifstream pixelFile(pixelsPath, std::ios::binary);
         const std::vector<unsigned char> pixels((std::istreambuf_iterator<char>(pixelFile)), {});
@@ -215,7 +217,7 @@ int main(int argc, char* argv[]) {
         const auto reactivePath = folder / "reactive-frame.rgba";
         runTool({tools.ffmpegPath, "-v", "error", "-xerror", "-nostdin", "-y", "-i", utf8(output),
             "-vf", "select=eq(n\\,3)", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", utf8(reactivePath)});
-        const auto reaction = clip->reactionAt(musdesk::exportFrameTime(3), settings.preset.beatThreshold, settings.preset.cameraThreshold);
+        const auto reaction = clip->reactionAt(musdesk::exportFrameTime(3), settings.preset.beatThreshold, settings.preset.beatBand);
         require(reaction.beat > 0 && reaction.bass > 0, "Export fixture must exercise bass and beat effects");
         renderer.renderFrame(musdesk::exportFrameTime(3), settings, reaction);
         const auto reactiveReference = renderer.readPixels();

@@ -4,6 +4,7 @@
 #include <SDL3/SDL_main.h>
 
 #include <cmath>
+#include <algorithm>
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -80,12 +81,35 @@ int main(int argc, char* argv[]) {
                 require(std::isfinite(audio.durationSeconds) && audio.durationSeconds > 0, "Positive duration expected");
                 std::cout << "Audio duration: " << audio.durationSeconds << " seconds\n";
                 const auto decoded = musdesk::prepareAudio(argv[i], tools);
-                std::ofstream report(std::filesystem::u8path(SDL_GetBasePath()) / "test-fixtures" / "rhythm-report.csv");
-                report << "time_seconds,strength,passes_55_percent\n";
-                for (const auto& beat : decoded.rhythm.beats) {
-                    report << beat.timeSeconds << ',' << beat.strength << ',' << (beat.strength >= 0.55f) << '\n';
-                    if (beat.timeSeconds < 8 || (beat.timeSeconds >= 18 && beat.timeSeconds < 23))
-                        std::cout << "Bass onset: " << beat.timeSeconds << " s, strength " << beat.strength << '\n';
+                std::ofstream report(std::filesystem::u8path(SDL_GetBasePath()) / "test-fixtures"
+                    / ("rhythm-levels-"+std::to_string(i)+".csv"));
+                report << "band,time_seconds,level_db,accepted_minus27\n";
+                for (int index = 0; index < 3; ++index) {
+                    const auto band = static_cast<musdesk::BeatBand>(index);
+                    const auto& events = decoded.rhythm.events(band);
+                    require(std::is_sorted(events.begin(),events.end(),[](const auto& a,const auto& b) {
+                        return a.timeSeconds < b.timeSeconds;
+                    }),"Attack cache must remain sorted for deterministic seeking");
+                    std::size_t previousCount = events.size();
+                    std::cout << "Band " << index << " candidates " << events.size();
+                    for (double db : {-45.0,-27.0,-20.0,-12.0,0.0}) {
+                        const auto gate = musdesk::beatLevelFromDb(db);
+                        std::size_t accepted = 0;
+                        for (const auto& event : events) {
+                            if (event.strength < gate) continue;
+                            ++accepted;
+                            const auto reaction = decoded.reactionAt(event.timeSeconds,gate,band);
+                            require(reaction.beat == event.strength && std::abs(reaction.kick) == event.strength,
+                                "Pulse and Side Kick must accept the same level-gated attacks");
+                        }
+                        require(accepted <= previousCount,"Raising the level gate must never accept more attacks");
+                        previousCount = accepted;
+                        std::cout << " gate " << db << " dB=" << accepted;
+                    }
+                    std::cout << '\n';
+                    for (const auto& event : events)
+                        report << index << ',' << event.timeSeconds << ',' << musdesk::beatLevelDb(event.strength)
+                            << ',' << (event.strength >= musdesk::beatLevelFromDb(-27)) << '\n';
                 }
                 require(!decoded.samples.empty() && std::abs(decoded.durationSeconds() - audio.durationSeconds) < 1,
                     "Decoded PCM duration must agree with container metadata within codec padding");

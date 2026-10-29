@@ -49,10 +49,10 @@ int main() {
                 && layout.discY + (layout.timelineY + 85 - layout.discY)*pose.subjectScale <= layout.canvas.height - 11
                 && layout.discX + (layout.timelineRight - layout.discX)*pose.subjectScale <= layout.canvas.width - 11,
                 "Maximum overlay pulse must keep the timeline and timestamps within each layout");
-            const double maximumRing = layout.discRadius * 1.18 * 1.21;
+            const double maximumRing = layout.discRadius * 1.18;
             require(layout.discX > maximumRing && layout.discY > maximumRing
                 && layout.discX + maximumRing < layout.canvas.width && layout.discY + maximumRing < layout.canvas.height,
-                "Maximum vinyl/ring pulse must remain inside every layout");
+                "Maximum vinyl pulse must remain inside every layout");
             require(layout.timelineY + 60 < layout.canvas.height
                 && layout.textX - layout.textWidth / 2 >= 0 && layout.textX + layout.textWidth / 2 <= layout.canvas.width,
                 "Text/timeline must fit every layout");
@@ -64,6 +64,7 @@ int main() {
         }
         musdesk::CompositionSettings settings;
         settings.preset.discRpm = 6;
+        settings.preset.wavesEnabled = true;
         const auto atZero = musdesk::compositionAt(0, settings);
         const auto atFive = musdesk::compositionAt(5, settings);
         const auto atTen = musdesk::compositionAt(10, settings);

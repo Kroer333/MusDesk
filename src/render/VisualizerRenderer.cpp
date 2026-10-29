@@ -103,6 +103,7 @@ uniform float ringMotion;
 uniform float ringPhase;
 uniform float spectrum[32];
 uniform float spectrumStrength;
+uniform float ringHeadroom;
 uniform vec2 canvasSize;
 uniform vec4 discGeometry;
 uniform vec4 timelineGeometry;
@@ -160,11 +161,13 @@ void main() {
         float bandPosition = abs(atan(discPoint.y,discPoint.x))/3.141592654*31.0;
         int band = min(int(bandPosition),30);
         spectral = mix(spectrum[band],spectrum[band+1],smoothstep(0.0,1.0,bandPosition-float(band)));
+        spectral = spectral*spectral*spectral;
     }
-    float glowDistance = abs(r-(1.025+0.025*pulse));
-    color += accent * glowSettings.a * (1.0+2.0*pulse)
-        * (0.25*exp(-glowDistance*(24.0-6.0*pulse)) + 0.65*exp(-glowDistance*180.0));
-    float rimRadius = 1.055 + 0.025*ringMotion*wave + 0.045*spectrumStrength*spectral;
+    float glowDistance = max(0.0,r-0.90);
+    color += accent * glowSettings.a * (1.0+1.3*pulse)
+        * (0.5*exp(-glowDistance*glowDistance*(38.0-10.0*pulse)));
+    float rimRadius = 1.055 + 0.025*ringMotion*wave
+        + ringHeadroom*(1.0-exp(-spectrumStrength*spectral));
     float rimDistance = abs(r-rimRadius);
     float lineStrength = min(1.0,spectrumStrength+ringMotion);
     color += accent * lineStrength * (0.9*exp(-rimDistance*230.0)+0.12*exp(-rimDistance*65.0));
@@ -438,7 +441,8 @@ void VisualizerRenderer::renderPreviewFrame(double timeSeconds, const Compositio
 void VisualizerRenderer::renderAtSize(double timeSeconds, const CompositionSettings& settings,
     const AudioReaction& audio, OutputSize size) {
     auto& gl = impl_->gl;
-    const auto layout = layoutFor(settings.format);
+    auto layout = layoutFor(settings.format);
+    if (settings.preset.spectrumEnabled) layout.discRadius *= 0.85f;
     if (size.width != impl_->pixelsWidth || size.height != impl_->pixelsHeight) {
         GLint maximum = 0;
         glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maximum);
@@ -502,7 +506,12 @@ void VisualizerRenderer::renderAtSize(double timeSeconds, const CompositionSetti
         safe(preset.glowColor[2], 0, 1, 1), preset.glowEnabled ? safe(preset.glowIntensity, 0, 3, 0.8f) : 0);
     scalar("pulseStrength", safe(preset.pulseStrength, 0, 2, 0.6f));
     scalar("spectrumStrength", preset.spectrumEnabled
-        ? safe(preset.spectrumStrength, 0, 1, 0) * safe(preset.pulseStrength, 0, 2, 0) : 0);
+        ? safe(preset.spectrumStrength, 0, 4, 0) * safe(preset.pulseStrength, 0, 2, 0) : 0);
+    const double edgeDistance = std::min({layout.discX,layout.discY,
+        layout.canvas.width-layout.discX,layout.canvas.height-layout.discY});
+    const double textDistance = (layout.textX == layout.discX
+        ? layout.titleY-layout.discY-80 : layout.textX-layout.textWidth/2-layout.discX)*frame.subjectScale;
+    scalar("ringHeadroom",std::max(0.0,(std::min(edgeDistance,textDistance)-12)/(layout.discRadius*frame.subjectScale)-1.105));
     const auto spectrum = spectrumForDisplay(audio.spectrum, preset.spectrumGainDb, preset.spectrumBalance);
     gl.Uniform1fv(gl.GetUniformLocation(impl_->sceneProgram, "spectrum[0]"), static_cast<GLsizei>(spectrum.size()), spectrum.data());
     scalar("backgroundBrightness", safe(preset.backgroundBrightness, 0, 1.5f, 0.88f));

@@ -36,9 +36,9 @@ struct DecodedAudio {
     double durationSeconds() const {
         return static_cast<double>(samples.size() / channels) / sampleRate;
     }
-    AudioReaction reactionAt(double seconds, float beatThreshold, float cameraThreshold = 0.35f) const {
-        return {envelope.at(seconds), rhythm.bass.at(seconds), rhythm.pulseAt(seconds, beatThreshold),
-            spectrum.at(seconds), rhythm.kickAt(seconds, cameraThreshold)};
+    AudioReaction reactionAt(double seconds, float beatThreshold, BeatBand band = BeatBand::Bass) const {
+        return {envelope.at(seconds), rhythm.bass.at(seconds), rhythm.pulseAt(seconds, beatThreshold,band),
+            spectrum.at(seconds), rhythm.kickAt(seconds, beatThreshold,band)};
     }
 };
 

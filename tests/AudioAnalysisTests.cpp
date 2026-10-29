@@ -45,7 +45,7 @@ void spectrumTests() {
     const auto highBand = std::max_element(b.begin(), b.end()) - b.begin();
     require(lowBand + 8 < highBand && a[lowBand] > 0.7f && b[highBand] > 0.7f,
         "FFT must distinguish low/high tones and retain opposite-phase stereo");
-    require(low.frames.size() <= 27, "Spectrum cache must be bounded to 25 frames per second plus endpoint");
+    require(low.frames.size() <= 52, "Spectrum cache must be bounded to 50 frames per second plus endpoint");
     for (const auto& frame : low.frames) for (float value : frame)
         require(std::isfinite(value) && value >= 0 && value <= 1, "Spectrum bands must be finite and normalized");
     for (auto dc : {0, 4096}) {
@@ -136,15 +136,19 @@ void rhythmTests() {
     require(adaptive.beats.size() == 3 && adaptive.beats[0].strength >= 0.55f
         && adaptive.beats[1].strength >= 0.55f,
         "Quieter opening drums must not be gated out by a louder later section");
-    require(high.beats.empty(), "High-frequency bursts must not trigger bass onsets");
-    const auto drumRoll = [&](bool weakAlternating, bool bassBed = false, bool quietMiddle = false) {
+    require(std::none_of(high.beats.begin(),high.beats.end(),[](const auto& event) {
+        return event.strength >= musdesk::beatLevelFromDb(-35);
+    }), "Out-of-band tones must not pass the bass level gate");
+    require(high.events(musdesk::BeatBand::Drums).size() == 3,
+        "The percussion band must retain the three 2 kHz attacks");
+    const auto drumRoll = [&](bool weakAlternating, bool bassBed = false, bool quietMiddle = false, double spacing = 0.12) {
         std::vector<std::int16_t> data(rate * 2, 0);
         for (int frame = 0; frame < rate * 2; ++frame) {
             const double t = static_cast<double>(frame) / rate;
             double value = bassBed ? 0.16 * std::min(1.0,t/0.2)
                 * std::sin(2*std::numbers::pi*50*t) : 0;
             for (int hit = 0; hit < 8; ++hit) {
-                const double age = t - (0.25 + hit * 0.12);
+                const double age = t - (0.25 + hit * spacing);
                 const double amplitude = quietMiddle && (hit%4 == 1 || hit%4 == 2) ? 0.22
                     : (weakAlternating && hit%2 ? 0.12 : 0.7);
                 if (age >= 0 && age < 0.08) value += amplitude
@@ -161,16 +165,64 @@ void rhythmTests() {
         require(std::abs(roll.beats[i].timeSeconds-(0.25+i*0.12)) < 0.04,
             "Roll event times must stay near the actual attack");
     const auto mixedRoll = drumRoll(true);
+    std::vector<std::int16_t> levelsPcm(rate*2);
+    for (std::size_t frame = 0; frame < levelsPcm.size(); ++frame) {
+        const double time = static_cast<double>(frame)/rate;
+        double sample = 0;
+        for (int hit = 0; hit < 2; ++hit) {
+            const double age = time-(0.25+hit*0.5);
+            if (age >= 0 && age < 0.12) sample += (hit ? 0.6 : 0.1)
+                * std::min(1.0,age/0.003)*std::min(1.0,(0.12-age)/0.01)
+                * std::sin(2*std::numbers::pi*80*time);
+        }
+        levelsPcm[frame] = static_cast<std::int16_t>(sample*32767);
+    }
+    const auto measured = musdesk::analyzeRhythm(levelsPcm,rate,1);
+    std::vector<float> hitLevels;
+    for (const auto& event : measured.beats) if (event.strength >= musdesk::beatLevelFromDb(-35))
+        hitLevels.push_back(event.strength);
+    require(hitLevels.size() == 2,"Two calibrated bursts must produce two level-gated attacks");
+    require(std::abs((musdesk::beatLevelDb(hitLevels[1])-musdesk::beatLevelDb(hitLevels[0]))
+        -20*std::log10(6.0)) < 1.0,"Event level must preserve the known 6x amplitude ratio in dB");
+    require(std::count_if(hitLevels.begin(),hitLevels.end(),[](float level) {
+        return level >= musdesk::beatLevelFromDb(-15);
+    }) == 1,"A -15 dBFS gate must pass the louder calibrated burst and reject the quieter one");
+    for (const auto& event : mixedRoll.beats) {
+        const auto gate = event.strength+0.01f;
+        require(mixedRoll.pulseAt(event.timeSeconds,gate) == 0
+            || std::abs(mixedRoll.kickAt(event.timeSeconds,gate)) > 0,
+            "Pulse and camera must use the same selected event stream");
+    }
     const auto layeredRoll = drumRoll(false,true);
+    for (double spacing : {0.05,0.06,0.08}) {
+        const auto fast = drumRoll(false,false,false,spacing);
+        if (fast.beats.size() != 8) {
+            std::cout << "Fast roll " << spacing << ':';
+            for (const auto& event : fast.beats) std::cout << ' ' << event.timeSeconds << '/' << musdesk::beatLevelDb(event.strength);
+            std::cout << '\n';
+        }
+        require(fast.beats.size() == 8,"Eight fast repeated drum attacks must remain separate");
+        const auto varied = drumRoll(true,false,false,spacing);
+        const auto strongCount = std::count_if(varied.beats.begin(),varied.beats.end(),[](const auto& event) {
+            return event.strength >= musdesk::beatLevelFromDb(-15);
+        });
+        require(strongCount == 4,"Fast weak hits must not inherit a neighboring strong hit's level");
+    }
     const auto groupedRoll = drumRoll(false,false,true);
     require(std::count_if(groupedRoll.beats.begin(),groupedRoll.beats.end(),
-        [](const auto& event) { return event.strength >= 0.55f; }) == 8,
-        "Regular short rolls bounded by strong hits must retain their quieter middle attacks");
-    require(std::count_if(layeredRoll.beats.begin(),layeredRoll.beats.end(), [](const auto& event) {
+        [](const auto& event) { return event.strength >= musdesk::beatLevelFromDb(-15); }) == 4,
+        "Regularity must not promote quieter attacks above their measured level");
+    const auto layeredCount = std::count_if(layeredRoll.beats.begin(),layeredRoll.beats.end(), [](const auto& event) {
         return event.timeSeconds >= 0.23 && event.strength >= 0.55f;
-    }) == 8, "A sustained bass bed must not hide rapid percussive attacks");
+    });
+    if (layeredCount != 8) {
+        std::cout << "Layered roll:";
+        for (const auto& event : layeredRoll.beats) std::cout << ' ' << event.timeSeconds << '/' << musdesk::beatLevelDb(event.strength);
+        std::cout << '\n';
+    }
+    require(layeredCount == 8, "A sustained bass bed must not hide rapid percussive attacks");
     require(std::count_if(mixedRoll.beats.begin(),mixedRoll.beats.end(),
-        [](const auto& event) { return event.strength >= 0.55f; }) == 4,
+        [](const auto& event) { return event.strength >= musdesk::beatLevelFromDb(-15); }) == 4,
         "Beat strength must separate four strong drum hits from quieter intervening hits");
     std::vector<std::int16_t> melody(rate*2);
     for (std::size_t i = 0; i < melody.size(); ++i) {
@@ -178,15 +230,22 @@ void rhythmTests() {
         const double envelope = std::min(1.0,t/0.25)*(0.4+0.2*std::sin(2*std::numbers::pi*2*t));
         melody[i] = static_cast<std::int16_t>(envelope*32767*std::sin(2*std::numbers::pi*80*t));
     }
-    require(musdesk::analyzeRhythm(melody,rate,1).beats.empty(),
-        "Slow melodic bass swells must not be classified as percussive attacks");
+    const auto melodic = musdesk::analyzeRhythm(melody,rate,1);
+    for (const auto& event : melodic.beats)
+        std::cout << "Swell candidate: " << event.timeSeconds << " s, " << musdesk::beatLevelDb(event.strength) << " dBFS\n";
+    require(std::none_of(melodic.beats.begin(),melodic.beats.end(),[](const auto& event) {
+        return event.strength >= musdesk::beatLevelFromDb(-27);
+    }), "Slow melodic bass swells must not pass the default hit gate");
     for (double frequency : {40.0, 70.0, 120.0, 180.0}) {
         require(musdesk::analyzeRhythm(signal(frequency, true), rate, 2).beats.size() == 1,
             "A sustained bass tone must not repeatedly trigger beats");
     }
     auto quietPcm = pcm;
     for (auto& sample : quietPcm) sample /= 100;
-    require(musdesk::analyzeRhythm(quietPcm, rate, 2).beats.empty(), "Near-silence must not be amplified into beats");
+    const auto quiet = musdesk::analyzeRhythm(quietPcm, rate, 2);
+    require(std::none_of(quiet.beats.begin(),quiet.beats.end(),[](const auto& event) {
+        return event.strength >= musdesk::beatLevelFromDb(-35);
+    }), "Quiet attacks must not be normalized above their actual band level");
     const auto silent = musdesk::analyzeRhythm(std::vector<std::int16_t>(rate * 2, 0), rate, 2);
     require(silent.beats.empty() && silent.bass.at(0.5) == 0 && silent.pulseAt(0.5) == 0,
         "Silence must not generate bass energy or beats");
@@ -203,6 +262,17 @@ void rhythmTests() {
     gated.bass.durationSeconds = 2;
     gated.beats = {{0.2, 0.8f}, {0.4, 0.2f}};
     gated.beats.push_back({0.6, 0.9f});
+    for (float gate : {0.1f,0.5f,0.85f,1.0f}) {
+        for (const auto& event : gated.beats) {
+            const bool pulse = gated.pulseAt(event.timeSeconds,gate) > 0;
+            const bool camera = gated.kickAt(event.timeSeconds,gate) != 0;
+            require(pulse == camera,"Changing the shared gate must filter pulse and Side Kick identically");
+        }
+    }
+    gated.otherBands[0] = {{0.8,0.95f}};
+    require(gated.pulseAt(0.5,0.5f,musdesk::BeatBand::Drums) == 0
+        && gated.kickAt(0.8,0.5f,musdesk::BeatBand::Drums) > 0,
+        "Selecting a frequency band must select its own attacks");
     require(gated.kickAt(0.2, 0.6f) > 0 && gated.kickAt(0.6, 0.6f) < 0,
         "Screen kicks must alternate across qualifying beats, skipping rejected events");
     const auto kick = gated.kickAt(0.65, 0.6f);
@@ -212,7 +282,7 @@ void rhythmTests() {
         "Screen kick decay must be bounded and independent of seeks");
     require(gated.pulseAt(0.3, 0.9f) == 0 && gated.pulseAt(0.3, 0.6f) > 0,
         "Gate must reject weak events without clipping the decay of accepted events");
-    require(gated.pulseAt(0.45, 0.6f) == 0.8f * static_cast<float>(std::exp(-0.25 / 0.14)),
+    require(gated.pulseAt(0.45, 0.6f) == 0.8f * static_cast<float>(std::exp(-0.25 / 0.055)),
         "A weak onset must not interrupt the decay of a preceding strong beat");
     require(gated.pulseAt(0.3, std::numeric_limits<float>::quiet_NaN()) == 0, "Invalid gate must produce no pulse");
     (void)rhythm.pulseAt(1.8);

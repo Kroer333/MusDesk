@@ -198,102 +198,65 @@ project preserve both crops and softness. No source image is modified.
 
 ### Beat-reactive visuals (development)
 
-Preview rendering follows the image's on-screen size, including display scaling.
-It automatically selects a 360, 540, 720 or 1080 pixel short edge, capped by the
-composition's output size. This reduces rendering work for a small preview;
-MP4 export always renders the full selected output resolution. Preview resizing
-preserves the composition and its animation settings.
+The fixed workspace selector opens **Project**, **Composition**, **Media and preview
+audio**, **Effects**, or **Export**. Each section retains its scroll position.
+Preview rendering follows its on-screen size/DPI (360/540/720/1080 short edge),
+while MP4 uses the full selected resolution. During playback, preceding GPU work
+is completed before sampling the newest audio position for the next preview.
 
-During playback, preceding GPU work is completed before the newest audio position
-is sampled for the next preview. Stalled frames use the current playhead instead
-of replaying intermediate visual timestamps. Export retains its separate pipeline.
+Under **Effects**, **Hit gate** is a minimum measured level in dBFS, from -60 to 0.
+The default is -27 dBFS. Raising the gate rejects quieter attacks. The same gate
+and band select both **Overlay pulse** and **Side Kick**; there is no separate
+camera gate. Audio response changes effect strength after selection, not the gate.
 
-Choose a workspace section using the fixed selector above the controls:
-**Project**, **Composition**, **Media and preview audio**, **Effects**, or **Export**.
-Each section retains its own scroll position. Export progress/cancellation remains
-available while browsing the other sections.
+Choose **Bass: 35-180 Hz**, **Drums: 180-2500 Hz** or **Wide: 35-2500 Hz**.
+These are approximate filter passbands, not instrument isolation. Each is cached
+at import, so switching bands does not decode the source again. Attack level is
+20 ms band-filtered RMS in dBFS, not perceived loudness or a percentage of track peak.
+Analysis uses 5 ms steps, local rises/attack timing and a 40 ms minimum separation.
+It rejects slow swells and post-attack returns to the bass bed; it never raises
+an event's level because neighboring attacks happen to form a regular pattern.
 
-The vinyl, artwork label, track text, progress line and time labels pulse together on strong bass hits.
-The background adds bass-driven zoom and faster drift, while the luminous rim
-can form animated waves around the disc. **Soft Glow** applies a restrained
-response; **Beat Pulse** makes it stronger. Scaling is limited to keep the overlay
-inside each layout. No audio playback buttons are added to the exported composition.
+Pulse decay is 55 ms; camera return is 45 ms. Shorter tails allow closely spaced
+hits to remain visible. The vinyl, artwork label, title, artist, progress line,
+marker and timestamps share the overlay pulse. Scaling stays inside each layout.
+**Side Kick** alternates direction only across accepted attacks, consistently after
+seeking. All reactions use the same timestamp and data in preview and MP4.
 
-Under **Effects**, independent switches preserve each effect's slider values when disabled:
+**Soft Glow**, **Beat Pulse** and **Side Kick** start with soft glow only: spectrum
+and procedural rim lines are off. Glow uses continuous RMS energy; it is not
+controlled by the hit gate. Each effect remains independently switchable.
+**Spectrum Pulse** is a separate preset with the FFT line enabled and glow off.
 
-- **Glow** draws the soft circular light; **Spectrum outline** draws a separate
-  FFT-driven line. Either can be used alone. The outline retains a uniform base
-  gap around the vinyl even when some frequency bands are silent.
-- **Overlay pulse**, **Reactive background** and **Rim waves** can be toggled independently.
-- **Alternating screen kick** moves the entire composition right/left on successive
-  accepted hits and returns quickly to center. **Side Kick** enables this effect
-  with overlay scaling disabled and a lower, independent **Kick beat gate** (35%).
-  **Screen kick** controls displacement (0–5% of frame width before Audio response).
-  A small compensating zoom covers the edges; preview and MP4 use the same camera.
+**Spectrum ring** now ranges from 0 to 4. Its larger deformation has a contrast
+curve to emphasize loud sectors and a layout-dependent limit to prevent clipping.
+Enabling spectrum reserves space around a slightly smaller record; deformation
+stays clear of the track text as well as the frame edges.
+**Spectrum gain** (-24 to +24 dB) and **Spectrum balance** (bass to treble) remain
+independent controls; **Reset spectrum tuning** restores neutral gain/balance.
+FFT uses 2048-sample Hann windows and 32 logarithmic stereo-power bands (40 Hz to
+12 kHz), now cached at 50 Hz with 10 ms attack / 60 ms release. The cache is about
+7.7 MB per 20-minute track. The spectrum responds to all FFT bands independently
+of the hit gate. Silent cached bands stay zero; gain cannot restore data below
+its -60 dB floor. Playback volume, mute and loop remain monitoring-only settings.
 
-- **Beat gate** selects hits by their normalized onset strength (55% by default).
-  It is a strength threshold, not a frequency setting. Accepted hits decay smoothly;
-  the gate does not cut their tail when the displayed pulse falls below 55%.
-- **Vinyl + text + timeline** controls overlay scaling; zero disables it.
-- **Background reaction** controls the added music-driven zoom/drift. Setting
-  background speed to zero freezes background motion, including this response.
-- **Ring waves** controls rim deformation; zero retains the previous circular rim.
-- **Audio response** multiplies the reactions; zero disables audio modulation.
-  Existing glow intensity/color, rotation, zoom and brightness controls still apply.
+New presets use version 6. Versions 1-5 remain readable, but their old confidence
+thresholds cannot retain identical musical behavior with a measured-level gate;
+review the converted dB value. Version 5's two gates merge using the stricter value.
+Older built-in Soft Glow/Beat Pulse/Side Kick names migrate with line effects off;
+custom names retain their effect switches. New version 6 files preserve explicit
+switch choices. The released 0.1.0 application cannot read newer preset versions.
 
-Preview and MP4 export evaluate the same audio reaction and frame at the same
-timestamp. Seeking, paused preview and offline export do not accumulate animation
-state. Volume, mute and loop remain monitoring-only settings. **Ring waves**
-is a procedural bass/beat shape. **Spectrum ring** adds 32 logarithmic FFT bands
-(about 40 Hz–12 kHz), mirrored above/below the horizontal axis. Background import
-uses a 2048-sample [Hann window](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.windows.hann.html), 25 cached frames per second, DC removal and
-separate channel powers so opposite-phase stereo retains its spectrum. A fixed
-−60 to 0 dB scale and attack/release smoothing keep the response stable. The
-cache costs about 3.8 MB per 20-minute track and is regenerated from media.
+### Bass energy and attack candidates (development)
 
-**Spectrum gain** changes the visible level from −24 to +24 dB. **Spectrum balance**
-emphasizes bass at negative values and treble at positive values. Both operate
-on the existing spectrum cache, so changes are immediate and do not reimport or
-alter audio. Silent bands remain zero; gain cannot recover data below the cache's
-noise floor. **Reset spectrum tuning** restores neutral gain and balance.
-
-New presets are written as version 5. Version 1 retains RMS reactions;
-version 2 retains its beat reactions with FFT disabled. Version 3 keeps neutral
-spectrum gain and balance. Version 4 retains tuning; versions 1–4 leave screen
-kicks disabled. Ring geometry uses the improved separation in this development build.
-Choose a built-in preset
-or increase **Spectrum ring** to enable FFT on an older preset.
-Saving writes version 5 settings, including inside projects and recovery
-copies; the released 0.1.0 application cannot read those newer presets.
-
-### Bass energy and beat candidates (development)
-
-The **Preview audio** panel includes **Bass energy**, **Beat pulse** and a count
-of detected bass onsets. Short marks along the top of the waveform locate those
-onsets. Seeking evaluates the same precomputed timeline, including when paused.
-Volume and mute affect monitoring only.
-
-Background import filters each audio channel to approximately 35–180 Hz, measures
-energy in 10 ms windows and picks local peaks of a 30 ms energy rise.
-Attack concentration rejects slow bass swells; a 70 ms minimum separation allows
-faster drum rolls while merging repeated candidates from one attack.
-Bass level uses track peak normalization. Onset strength combines separately
-bounded loudness and attack scores against local 90th/95th percentile references,
-with a track-percentile floor limiting amplification of quiet sections. A single
-oversized ratio cannot force every candidate to maximum strength.
-Short regular rolls with two to four softer interior attacks can receive bounded
-rhythmic confidence when bracketed by strong hits. Isolated weak hits are not
-promoted this way, and confirmation never creates events where no attack was detected.
-The short lookahead runs during import, without delaying playback or shifting its clock.
-A noise floor prevents near-silence from being normalized into strong hits;
-the beat pulse decays over time and is evaluated directly from the playhead.
-Filter coefficients follow the [W3C Audio EQ Cookbook](https://www.w3.org/TR/audio-eq-cookbook/).
-
-These are bass-onset candidates, not a BPM estimate or a musical beat grid.
-Bass melodies can trigger them, quiet hits may be missed and higher-frequency
-percussion is intentionally less prominent. Bass and gated beat pulses drive
-the new reaction controls alongside the existing RMS rim response. Analysis is regenerated from media
-when opening projects and is not stored in project or preset JSON.
+**Media and preview audio** shows waveform candidate marks and the selected band's
+hit pulse. Gray candidates may remain below the gate; candidate count is not the
+number of accepted hits. Continuous bass energy is normalized separately for
+background motion and does not determine the hit gate. Reopening a project or
+importing audio regenerates analysis; cache data is not stored in project JSON.
+These are percussive attack candidates, not a BPM estimate or a guaranteed drum
+stem. Fast melodic notes can also be attacks in a full mix; band/level selection
+lets you choose which ones drive the visual effects.
 
 ### Audio waveform (development)
 
@@ -416,8 +379,8 @@ temporary file in the destination directory and replaces the target only after
 writing and closing it successfully. Unicode names and file paths are supported.
 You can also drop a JSON file onto the editor or launch with
 `MusDesk.exe --preset "path/to/preset.json"`; this combines with `--artwork` and
-`--audio`. Example files are in `presets/soft-glow.json`, `presets/beat-pulse.json`
-and `presets/side-kick.json`.
+`--audio`. Example files are in `presets/soft-glow.json`, `presets/beat-pulse.json`,
+`presets/side-kick.json` and `presets/spectrum-pulse.json`.
 Older `schemaVersion` presets, including the legacy `soft_glow.json`, are not
 the current format and are rejected; they are not included in the package.
 
@@ -426,16 +389,15 @@ track labels, preview volume, playback position, guides or window settings.
 Loading a preset does not reset audio or its timeline. Preset files store effects;
 use a `.musdesk` project to preserve media references and labels as well.
 
-JSON format version **5** requires exactly these root fields: `version`, `name`,
+JSON format version **6** requires exactly these root fields: `version`, `name`,
 `disc_rpm`, `glow`, `background`, `reactivity` and `effects`. `glow` contains `color`, `intensity`
 and `pulse_strength`; `background` contains `speed`, `zoom` and `brightness`.
-`reactivity` contains `beat_threshold`, `subject_pulse`, `background`, `ring`
-and `spectrum`, `spectrum_gain_db`, `spectrum_balance`. Version 3 omits the last
-two tuning fields. Version 2 also omits `spectrum`; version 1 has no `reactivity` object.
-Older versions are migrated without enabling effects added after their version.
-Version 5's `effects` object contains boolean `glow`, `spectrum`, `waves`,
-`subject`, `background`, `camera` flags, plus numeric `camera_strength` (0–0.05)
-and `camera_threshold` (0–1). Versions 1–4 have no `effects` object.
+Version 6's reactivity contains beat_level_db (-60..0), beat_band (bass/drums/wide),
+subject_pulse, background, ring, spectrum (0..4), spectrum_gain_db and spectrum_balance.
+Its effects object contains boolean glow, spectrum, waves, subject, background and
+camera flags, plus camera_strength (0..0.05). Older versions keep their respective
+schemas: v1 has no reactivity; v2 has no spectrum fields; v3 lacks tuning; v4
+has no effects; v5 has separate normalized beat_threshold/camera_threshold fields.
 
 | Setting | Accepted range |
 | --- | --- |
@@ -447,10 +409,10 @@ and `camera_threshold` (0–1). Versions 1–4 have no `effects` object.
 | Background speed | 0–3 times normal speed |
 | Background zoom | 1.1–1.5 |
 | Background brightness | 0–1.5 |
-| Beat threshold | 0–1 |
+| Hit gate | -60–0 dBFS in the selected band |
 | Subject pulse | 0–0.12; multiplied by audio response, final scale capped at 1.18 |
 | Background / ring reactivity | 0–1 each |
-| Spectrum ring | 0–1 |
+| Spectrum ring | 0–4 |
 | Spectrum gain | −24–24 dB |
 | Spectrum balance | −1–1; bass emphasis to treble emphasis |
 

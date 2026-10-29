@@ -910,7 +910,7 @@ int main(int argc, char* argv[]) {
             refreshPlayback();
             if (!editorState.exportActive) composition.renderPreviewFrame(editorState.timeSeconds, settings,
                 audioClip ? audioClip->reactionAt(editorState.timeSeconds, settings.preset.beatThreshold,
-                    settings.preset.cameraThreshold) : musdesk::AudioReaction{},editorState.previewDisplayedShortEdge);
+                    settings.preset.beatBand) : musdesk::AudioReaction{},editorState.previewDisplayedShortEdge);
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             if (!SDL_GL_SwapWindow(resources.window)) {

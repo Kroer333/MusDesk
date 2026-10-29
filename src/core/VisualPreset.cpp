@@ -32,6 +32,16 @@ VisualPreset sideKickPreset() {
     return preset;
 }
 
+VisualPreset spectrumPulsePreset() {
+    auto preset = beatPulsePreset();
+    preset.name = "Spectrum Pulse";
+    preset.glowEnabled = false;
+    preset.spectrumEnabled = true;
+    preset.subjectEnabled = false;
+    preset.spectrumStrength = 1.5f;
+    return preset;
+}
+
 void validatePreset(const VisualPreset& preset) {
     if (preset.name.empty() || preset.name.size() > 96
         || std::all_of(preset.name.begin(), preset.name.end(), [](char c) { return c == ' '; })
@@ -52,10 +62,10 @@ void validatePreset(const VisualPreset& preset) {
     range(preset.subjectPulse, 0, 0.12f, "reactivity.subject_pulse (0..0.12)");
     range(preset.backgroundReactivity, 0, 1, "reactivity.background (0..1)");
     range(preset.ringReactivity, 0, 1, "reactivity.ring (0..1)");
-    range(preset.spectrumStrength, 0, 1, "reactivity.spectrum (0..1)");
+    range(preset.spectrumStrength, 0, 4, "reactivity.spectrum (0..4)");
     range(preset.spectrumGainDb, -24, 24, "reactivity.spectrum_gain_db (-24..24)");
     range(preset.spectrumBalance, -1, 1, "reactivity.spectrum_balance (-1..1)");
     range(preset.cameraStrength, 0, 0.05f, "effects.camera_strength (0..0.05)");
-    range(preset.cameraThreshold, 0, 1, "effects.camera_threshold (0..1)");
+    range(static_cast<int>(preset.beatBand), 0, 2, "reactivity.beat_band");
 }
 }

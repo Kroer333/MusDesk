@@ -70,7 +70,7 @@ int main(int argc, char* argv[]) {
                 const auto lookupStart = SDL_GetTicksNS();
                 double checksum = 0;
                 for (int query = 0; query < 10000; ++query) {
-                    const auto reaction = audio.reactionAt(audio.durationSeconds()*query/10000,0.55f,0.35f);
+                    const auto reaction = audio.reactionAt(audio.durationSeconds()*query/10000,0.55f,musdesk::BeatBand::Bass);
                     checksum += reaction.beat+reaction.kick;
                 }
                 const double lookupUs = (SDL_GetTicksNS()-lookupStart)/1e7;
@@ -85,8 +85,8 @@ int main(int argc, char* argv[]) {
                     for (int frame = -3; frame < 12; ++frame) {
                         const double time = std::min(audio.durationSeconds()-0.001,begin+std::max(0,frame)/60.0);
                         const auto started = SDL_GetTicksNS();
-                        if (edge >= 720) renderer.renderFrame(time,settings,audio.reactionAt(time,0.55f,0.35f));
-                        else renderer.renderPreviewFrame(time,settings,audio.reactionAt(time,0.55f,0.35f),edge);
+                        if (edge >= 720) renderer.renderFrame(time,settings,audio.reactionAt(time,0.55f,musdesk::BeatBand::Bass));
+                        else renderer.renderPreviewFrame(time,settings,audio.reactionAt(time,0.55f,musdesk::BeatBand::Bass),edge);
                         glFinish();
                         if (frame >= 0) timings.push_back((SDL_GetTicksNS()-started)/1e6);
                     }
@@ -102,12 +102,13 @@ int main(int argc, char* argv[]) {
             }
             return 0;
         }
-        if (argc == 4 && (std::string(argv[1]) == "--layouts" || std::string(argv[1]) == "--framing")) {
+        if (argc == 4 && (std::string(argv[1]) == "--layouts" || std::string(argv[1]) == "--framing" || std::string(argv[1]) == "--styles")) {
             const bool framingGallery = std::string(argv[1]) == "--framing";
+            const bool styleGallery = std::string(argv[1]) == "--styles";
             renderer.setArtwork(musdesk::loadArtwork(argv[2]));
             const auto audio = musdesk::prepareAudio(argv[3], musdesk::detectMediaTools());
             const auto folder = std::filesystem::u8path(SDL_GetBasePath()) / "test-fixtures"
-                / (framingGallery ? "framing-gallery" : "layout-gallery");
+                / (styleGallery ? "style-gallery" : (framingGallery ? "framing-gallery" : "layout-gallery"));
             std::filesystem::create_directories(folder);
             for (int index = 0; index < (framingGallery ? 3 : 5); ++index) {
                 musdesk::CompositionSettings composition;
@@ -115,8 +116,16 @@ int main(int argc, char* argv[]) {
                 composition.artist = "FFT visualizer";
                 composition.durationSeconds = audio.durationSeconds();
                 composition.preset = musdesk::beatPulsePreset();
-                composition.format = framingGallery ? musdesk::CompositionFormat::Landscape
-                    : static_cast<musdesk::CompositionFormat>(index);
+                if (styleGallery) {
+                    if (index == 0) composition.preset = musdesk::softGlowPreset();
+                    if (index == 2) composition.preset = musdesk::sideKickPreset();
+                    if (index >= 3) composition.preset = musdesk::spectrumPulsePreset();
+                    if (index == 4) composition.preset.spectrumStrength = 4;
+                    composition.title = composition.preset.name;
+                    composition.artist = index == 4 ? "Spectrum strength: 4" : "MusDesk";
+                }
+                composition.format = styleGallery ? musdesk::CompositionFormat::Portrait : (framingGallery ? musdesk::CompositionFormat::Landscape
+                    : static_cast<musdesk::CompositionFormat>(index));
                 if (framingGallery && index > 0) {
                     composition.backgroundFraming = {1.4f,0.5f,0.12f};
                     composition.backgroundSoftness = 0;
@@ -143,6 +152,7 @@ int main(int argc, char* argv[]) {
         }
         musdesk::CompositionSettings settings;
         auto fftSettings = settings;
+        fftSettings.preset.spectrumEnabled = true;
         fftSettings.preset.ringReactivity = fftSettings.preset.subjectPulse = fftSettings.preset.backgroundReactivity = 0;
         musdesk::AudioReaction spectrumA, spectrumB;
         spectrumA.spectrum[6] = 1;
@@ -232,6 +242,7 @@ int main(int argc, char* argv[]) {
         require(differsIn(backgroundIdle, renderer.readPixels(), 0, 0, 200, 300), "Bass must move/zoom the artwork background");
         isolated.preset.backgroundReactivity = 0;
         isolated.preset.ringReactivity = 1;
+        isolated.preset.wavesEnabled = true;
         renderer.renderFrame(4, isolated);
         const auto ringIdle = renderer.readPixels();
         renderer.renderFrame(4, isolated, musdesk::AudioReaction{0, 1, 1});

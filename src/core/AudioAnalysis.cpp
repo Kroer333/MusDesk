@@ -52,14 +52,14 @@ AudioSpectrum analyzeSpectrum(std::span<const std::int16_t> samples, int sampleR
             reverse[i] = (reverse[i] << 1) | (bits & 1);
         if (i < roots.size()) roots[i] = std::polar(1.0f, static_cast<float>(-2 * std::numbers::pi * i / size));
     }
-    const auto hop = static_cast<std::size_t>(sampleRate / 25);
+    const auto hop = static_cast<std::size_t>(sampleRate / 50);
     AudioSpectrum result;
     result.stepSeconds = static_cast<double>(hop) / sampleRate;
     result.durationSeconds = static_cast<double>(frameCount) / sampleRate;
     result.frames.reserve((frameCount + hop - 1) / hop + 1);
     SpectrumFrame smoothed{};
-    const auto attack = static_cast<float>(1 - std::exp(-result.stepSeconds / 0.035));
-    const auto release = static_cast<float>(1 - std::exp(-result.stepSeconds / 0.12));
+    const auto attack = static_cast<float>(1 - std::exp(-result.stepSeconds / 0.010));
+    const auto release = static_cast<float>(1 - std::exp(-result.stepSeconds / 0.060));
     for (std::size_t center = 0; center < frameCount + hop; center += hop) {
         if (cancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
         std::array<float, size / 2 + 1> power{};
@@ -137,28 +137,41 @@ struct Biquad {
 };
 }
 
-float AudioRhythm::pulseAt(double timeSeconds, float minimumStrength) const {
+float beatLevelFromDb(double db) {
+    return std::isfinite(db) ? static_cast<float>(std::clamp((db+60)/60,0.0,1.0)) : 0;
+}
+double beatLevelDb(float level) { return std::clamp<double>(level,0,1)*60-60; }
+
+const std::vector<BeatEvent>& AudioRhythm::events(BeatBand band) const {
+    if (band == BeatBand::Drums) return otherBands[0];
+    if (band == BeatBand::Wide) return otherBands[1];
+    return beats;
+}
+
+float AudioRhythm::pulseAt(double timeSeconds, float minimumStrength, BeatBand band) const {
     if (!std::isfinite(timeSeconds) || timeSeconds < 0 || timeSeconds >= bass.durationSeconds
         || !std::isfinite(minimumStrength)) return 0;
     minimumStrength = std::clamp(minimumStrength, 0.0f, 1.0f);
-    auto next = std::upper_bound(beats.begin(), beats.end(), timeSeconds,
+    const auto& selected = events(band);
+    auto next = std::upper_bound(selected.begin(), selected.end(), timeSeconds,
         [](double time, const BeatEvent& beat) { return time < beat.timeSeconds; });
-    while (next != beats.begin()) {
+    while (next != selected.begin()) {
         const auto& beat = *--next;
         if (beat.strength >= minimumStrength)
-            return beat.strength * static_cast<float>(std::exp(-(timeSeconds - beat.timeSeconds) / 0.14));
+            return beat.strength * static_cast<float>(std::exp(-(timeSeconds - beat.timeSeconds) / 0.055));
     }
     return 0;
 }
 
-float AudioRhythm::kickAt(double timeSeconds, float minimumStrength) const {
+float AudioRhythm::kickAt(double timeSeconds, float minimumStrength, BeatBand band) const {
     if (!std::isfinite(timeSeconds) || timeSeconds < 0 || timeSeconds >= bass.durationSeconds
         || !std::isfinite(minimumStrength)) return 0;
-    const auto end = std::upper_bound(beats.begin(), beats.end(), timeSeconds,
+    const auto& selected = events(band);
+    const auto end = std::upper_bound(selected.begin(), selected.end(), timeSeconds,
         [](double time, const BeatEvent& beat) { return time < beat.timeSeconds; });
     const BeatEvent* latest = nullptr;
     std::size_t accepted = 0;
-    for (auto it = beats.begin(); it != end; ++it) {
+    for (auto it = selected.begin(); it != end; ++it) {
         if (it->strength >= std::clamp(minimumStrength, 0.0f, 1.0f)) {
             latest = &*it;
             ++accepted;
@@ -166,7 +179,7 @@ float AudioRhythm::kickAt(double timeSeconds, float minimumStrength) const {
     }
     if (!latest) return 0;
     return (accepted % 2 ? 1 : -1) * latest->strength
-        * static_cast<float>(std::exp(-(timeSeconds - latest->timeSeconds) / 0.09));
+        * static_cast<float>(std::exp(-(timeSeconds - latest->timeSeconds) / 0.045));
 }
 
 AudioRhythm analyzeRhythm(std::span<const std::int16_t> samples, int sampleRate, int channels,
@@ -174,110 +187,98 @@ AudioRhythm analyzeRhythm(std::span<const std::int16_t> samples, int sampleRate,
     if (sampleRate < 1000 || sampleRate > 384000 || channels < 1 || channels > 8
         || samples.empty() || samples.size() % channels != 0)
         throw std::runtime_error("Invalid PCM audio for bass analysis.");
-    const auto frames = samples.size() / channels;
-    if (static_cast<double>(frames) / sampleRate > 1200)
+    const auto frames = samples.size()/channels;
+    if (static_cast<double>(frames)/sampleRate > 1200)
         throw std::runtime_error("Bass analysis supports tracks up to 20 minutes.");
+    const auto window = static_cast<std::size_t>(sampleRate/200);
     AudioRhythm result;
-    const auto window = static_cast<std::size_t>(sampleRate / 100);
-    result.bass.stepSeconds = static_cast<double>(window) / sampleRate;
-    result.bass.durationSeconds = static_cast<double>(frames) / sampleRate;
-    std::vector<std::array<Biquad, 2>> filters;
-    for (int channel = 0; channel < channels; ++channel)
-        filters.push_back({Biquad(35, sampleRate, true), Biquad(180, sampleRate, false)});
-    std::vector<float> energy;
-    float peak = 0.03f;
+    result.bass.stepSeconds = static_cast<double>(window)/sampleRate;
+    result.bass.durationSeconds = static_cast<double>(frames)/sampleRate;
+    std::array<std::vector<std::array<Biquad,4>>,3> filters;
+    const double high = std::min(2500.0,sampleRate*0.45);
+    for (int channel = 0; channel < channels; ++channel) {
+        filters[0].push_back({Biquad(35,sampleRate,true),Biquad(35,sampleRate,true),Biquad(180,sampleRate,false),Biquad(180,sampleRate,false)});
+        filters[1].push_back({Biquad(180,sampleRate,true),Biquad(180,sampleRate,true),Biquad(high,sampleRate,false),Biquad(high,sampleRate,false)});
+        filters[2].push_back({Biquad(35,sampleRate,true),Biquad(35,sampleRate,true),Biquad(high,sampleRate,false),Biquad(high,sampleRate,false)});
+    }
+    std::array<std::vector<float>,3> energy;
+    for (auto& band : energy) band.reserve((frames+window-1)/window);
     for (std::size_t begin = 0; begin < frames; begin += window) {
         if (cancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
-        const auto end = std::min(begin + window, frames);
-        double sum = 0;
-        for (auto frame = begin; frame < end; ++frame) {
-            for (int channel = 0; channel < channels; ++channel) {
-                auto& filter = filters[channel];
-                const double value = filter[1].process(filter[0].process(samples[frame * channels + channel] / 32768.0));
-                sum += value * value;
+        const auto end = std::min(begin+window,frames);
+        std::array<double,3> sum{};
+        for (auto frame = begin; frame < end; ++frame) for (int channel = 0; channel < channels; ++channel) {
+            const double input = samples[frame*channels+channel]/32768.0;
+            for (std::size_t band = 0; band < filters.size(); ++band) {
+                auto& filter = filters[band][channel];
+                double value = input;
+                for (auto& stage : filter) value = stage.process(value);
+                sum[band] += value*value;
             }
         }
-        const auto value = static_cast<float>(std::sqrt(sum / ((end - begin) * channels)));
-        energy.push_back(value);
-        peak = std::max(peak, value);
+        for (std::size_t band = 0; band < energy.size(); ++band)
+            energy[band].push_back(static_cast<float>(sum[band]/((end-begin)*channels)));
     }
-    float onsetLevel = 0;
+    const float peak = std::max(0.03f,std::sqrt(*std::max_element(energy[0].begin(),energy[0].end())));
+    const float attack = static_cast<float>(1-std::exp(-result.bass.stepSeconds/0.015));
+    const float release = static_cast<float>(1-std::exp(-result.bass.stepSeconds/0.10));
     float smoothed = 0;
-    std::vector<float> levels, novelty;
-    levels.reserve(energy.size());
-    novelty.reserve(energy.size());
     result.bass.values.push_back(0);
-    const float attack = static_cast<float>(1 - std::exp(-result.bass.stepSeconds / 0.015));
-    const float release = static_cast<float>(1 - std::exp(-result.bass.stepSeconds / 0.10));
-    const float onsetSmoothing = static_cast<float>(1 - std::exp(-result.bass.stepSeconds / 0.025));
-    for (std::size_t i = 0; i < energy.size(); ++i) {
-        if (cancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
-        const auto value = energy[i];
-        onsetLevel += (value - onsetLevel) * onsetSmoothing;
-        levels.push_back(onsetLevel);
-        novelty.push_back(std::max(0.0f, onsetLevel - (i >= 3 ? levels[i-3] : 0)));
-        const float target = value < 0.0001f ? 0 : std::clamp(value / peak, 0.0f, 1.0f);
-        smoothed += (target - smoothed) * (target > smoothed ? attack : release);
+    for (auto squared : energy[0]) {
+        const float value = std::sqrt(squared);
+        const float target = value < 0.0001f ? 0 : std::clamp(value/peak,0.0f,1.0f);
+        smoothed += (target-smoothed)*(target > smoothed ? attack : release);
         result.bass.values.push_back(smoothed);
     }
-    const auto percentile = [](const std::vector<float>& values, std::size_t first, std::size_t last, double fraction) {
-        std::vector<float> window(values.begin() + first, values.begin() + last);
-        const auto rank = static_cast<std::size_t>((window.size()-1) * fraction);
-        std::nth_element(window.begin(), window.begin() + rank, window.end());
-        return window[rank];
-    };
-    const auto referenceFloor = std::max(0.03f, percentile(energy, 0, energy.size(), 0.95) * 0.6f);
-    float previousNovelty = 0;
-    for (std::size_t i = 1; i + 1 < levels.size(); ++i) {
-        if (cancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
-        const auto rise = novelty[i];
-        if (rise < novelty[i-1] || rise <= novelty[i+1]
-            || rise < 0.006f || rise < levels[i] * 0.22f || levels[i] < 0.015f) continue;
-        const auto shoulders = ((i >= 2 ? novelty[i-2] : 0)
-            + (i+2 < novelty.size() ? novelty[i+2] : 0)) * 0.5f;
-        if (rise < shoulders * 1.15f) continue;
-        const auto localPeak = *std::max_element(energy.begin()+i, energy.begin()+std::min(i+8,energy.size()));
-        const auto precedingLevel = i >= 3 ? levels[i-3] : 0;
-        if (rise < std::max(0.015f, localPeak-precedingLevel) * 0.35f) continue;
-        auto start = i;
-        while (start > 0 && i-start < 4
-            && novelty[start-1] >= std::max(0.006f, levels[start-1] * 0.22f)) --start;
-        const double time = (start + 0.5) * result.bass.stepSeconds;
-        const auto first = i > 100 ? i-100 : 0;
-        const auto last = std::min(i+20, energy.size());
-        const auto levelReference = std::max(referenceFloor, percentile(energy, first, last, 0.90));
-        const auto attackReference = std::max(0.012f, percentile(novelty, first, last, 0.95));
-        const float strength = std::min(1.0f, localPeak / levelReference)
-            * std::sqrt(std::min(1.0f, rise / attackReference));
-        if (!result.beats.empty() && time-result.beats.back().timeSeconds < 0.07) {
-            if (rise <= previousNovelty) continue;
-            result.beats.pop_back();
+    for (std::size_t band = 0; band < energy.size(); ++band) {
+        auto& events = band == 0 ? result.beats : result.otherBands[band-1];
+        std::vector<float> level,novelty;
+        level.reserve(energy[band].size());
+        novelty.reserve(energy[band].size());
+        double rolling = 0;
+        for (std::size_t i = 0; i < energy[band].size(); ++i) {
+            if (cancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
+            rolling += energy[band][i];
+            if (i >= 4) rolling -= energy[band][i-4];
+            level.push_back(static_cast<float>(std::sqrt(std::max(0.0,rolling)/4)));
+            novelty.push_back(std::max(0.0f,level[i]-(i >= 4 ? level[i-4] : 0)));
         }
-        if (time < result.bass.durationSeconds) {
-            result.beats.push_back({time,strength});
-            previousNovelty = rise;
-        }
-    }
-    const auto unconfirmed = result.beats;
-    for (std::size_t first = 0; first < unconfirmed.size(); ++first) {
-        if (cancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
-        if (unconfirmed[first].strength < 0.7f) continue;
-        for (std::size_t last = first+3; last < unconfirmed.size() && last <= first+5; ++last) {
-            const auto span = unconfirmed[last].timeSeconds-unconfirmed[first].timeSeconds;
-            if (span > 0.5) break;
-            if (unconfirmed[last].strength < 0.7f) continue;
-            const auto spacing = span/(last-first);
-            bool regular = true;
-            for (auto event = first+1; event <= last; ++event) {
-                const auto gap = unconfirmed[event].timeSeconds-unconfirmed[event-1].timeSeconds;
-                if (unconfirmed[event].strength < 0.15f || (event < last && unconfirmed[event].strength >= 0.7f)
-                    || gap < 0.07 || gap > 0.17
-                    || std::abs(gap-spacing) > spacing*0.3) { regular = false; break; }
+        float lastAttack = 0, precedingBed = 0;
+        for (std::size_t i = 1; i+1 < level.size(); ++i) {
+            if (cancellation.stop_requested()) throw std::runtime_error("Audio import cancelled.");
+            const float rise = novelty[i];
+            if (rise < novelty[i-1] || rise <= novelty[i+1]
+                || rise < std::max(0.0015f,level[i]*0.18f) || level[i] < 0.003f) continue;
+            const float shoulders = ((i >= 2 ? novelty[i-2] : 0)
+                +(i+2 < novelty.size() ? novelty[i+2] : 0))*0.5f;
+            if (rise < shoulders*1.05f) continue;
+            const auto last = std::min(i+5,level.size());
+            const auto peakAt = static_cast<std::size_t>(std::max_element(level.begin()+i,level.begin()+last)-level.begin());
+            if (peakAt+1 < level.size() && level[peakAt+1] > level[peakAt]*1.03f) continue;
+            auto troughAt = peakAt;
+            while (troughAt > 0 && peakAt-troughAt < 30 && level[troughAt-1] <= level[troughAt]+0.00001f) --troughAt;
+            const float height = level[peakAt]-level[troughAt];
+            if (height < std::max(0.0015f,level[peakAt]*0.18f)) continue;
+            auto start = troughAt, upper = troughAt;
+            while (start < peakAt && level[start] < level[troughAt]+height*0.2f) ++start;
+            while (upper < peakAt && level[upper] < level[troughAt]+height*0.8f) ++upper;
+            if ((upper-start)*result.bass.stepSeconds > 0.04) continue;
+            const double time = start*result.bass.stepSeconds;
+            const float amplitude = *std::max_element(level.begin()+i,level.begin()+last);
+            const float strength = beatLevelFromDb(20*std::log10(std::max(amplitude,1e-6f)));
+            const float bed = start >= 4 ? level[start-4] : 0;
+            const bool replacing = !events.empty() && time-events.back().timeSeconds < 0.04;
+            if (!replacing && !events.empty() && time-events.back().timeSeconds < 0.10
+                && amplitude <= precedingBed*1.5f) continue;
+            if (replacing) {
+                if (rise <= lastAttack) continue;
+                events.pop_back();
             }
-            if (!regular) continue;
-            const auto confidence = 0.65f * std::sqrt(std::min(unconfirmed[first].strength,unconfirmed[last].strength));
-            for (auto event = first+1; event < last; ++event)
-                result.beats[event].strength = std::max(result.beats[event].strength,confidence);
+            if (time < result.bass.durationSeconds) {
+                events.push_back({time,strength});
+                lastAttack = rise;
+                precedingBed = replacing ? std::min(precedingBed,bed) : bed;
+            }
         }
     }
     return result;

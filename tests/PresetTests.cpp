@@ -31,6 +31,14 @@ std::string replace(std::string text, const std::string& from, const std::string
     text.replace(position, from.size(), to);
     return text;
 }
+std::string replaceNumber(std::string text, const std::string& key, const std::string& value) {
+    const auto field = '"'+key+"\": ";
+    const auto found = text.find(field);
+    require(found != std::string::npos,"Preset numeric mutation failed");
+    const auto begin = found+field.size();
+    text.replace(begin,text.find_first_of(",\r\n}",begin)-begin,value);
+    return text;
+}
 }
 
 int main(int argc, char* argv[]) {
@@ -38,6 +46,11 @@ int main(int argc, char* argv[]) {
         const auto soft = musdesk::softGlowPreset();
         const auto beat = musdesk::beatPulsePreset();
         const auto kick = musdesk::sideKickPreset();
+        const auto spectrum = musdesk::spectrumPulsePreset();
+        require(!soft.spectrumEnabled && !soft.wavesEnabled && !beat.spectrumEnabled && !beat.wavesEnabled,
+            "Glow presets must not enable line effects");
+        require(spectrum.spectrumEnabled && !spectrum.glowEnabled,
+            "Spectrum must have its own preset independent of glow");
         require(musdesk::parsePreset(musdesk::serializePreset(kick)) == kick,
             "Side Kick switches and camera settings must round trip");
         musdesk::validatePreset(soft);
@@ -70,13 +83,23 @@ int main(int argc, char* argv[]) {
                 "spectrum":0.65,"spectrum_gain_db":-5,"spectrum_balance":0.2}})");
         require(version4.glowEnabled && version4.spectrumEnabled && !version4.cameraEnabled
             && version4.spectrumGainDb == -5, "Version 4 must keep tuning without enabling camera kicks");
+        const auto version5 = musdesk::parsePreset(R"({"version":5,"name":"Old kick","disc_rpm":8,
+            "glow":{"color":[0.24,0.6,1],"intensity":0.8,"pulse_strength":0.6},
+            "background":{"speed":0.6,"zoom":1.16,"brightness":0.88},
+            "reactivity":{"beat_threshold":0.55,"subject_pulse":0.05,"background":0.65,"ring":0.55,
+                "spectrum":0.65,"spectrum_gain_db":0,"spectrum_balance":0},
+            "effects":{"glow":true,"spectrum":false,"waves":false,"subject":false,"background":true,
+                "camera":true,"camera_strength":0.025,"camera_threshold":0.8}})");
+        require(version5.beatThreshold == 0.8f && version5.beatBand == musdesk::BeatBand::Bass,
+            "Version 5 must merge its two gates using the stricter threshold");
         require(musdesk::parsePreset(json) == soft && musdesk::parsePreset(musdesk::serializePreset(beat)) == beat,
             "Built-in preset round trip must preserve every value");
         if (argc == 2) {
             const auto examples = std::filesystem::u8path(argv[1]);
             require(musdesk::loadPreset(utf8(examples / "soft-glow.json")) == soft
                 && musdesk::loadPreset(utf8(examples / "beat-pulse.json")) == beat
-                && musdesk::loadPreset(utf8(examples / "side-kick.json")) == kick, "Example JSON and built-in presets must agree");
+                && musdesk::loadPreset(utf8(examples / "side-kick.json")) == kick
+                && musdesk::loadPreset(utf8(examples / "spectrum-pulse.json")) == spectrum, "Example JSON and built-in presets must agree");
         }
         auto custom = beat;
         custom.name = "Nocna plaża \"mix\"";
@@ -95,7 +118,7 @@ int main(int argc, char* argv[]) {
         custom.subjectEnabled = custom.spectrumEnabled = false;
         custom.cameraEnabled = true;
         custom.cameraStrength = 0.05f;
-        custom.cameraThreshold = 0.2f;
+        custom.beatBand = musdesk::BeatBand::Drums;
         const auto folder = std::filesystem::u8path(SDL_GetBasePath()) / "test-fixtures";
         std::filesystem::create_directories(folder);
         const auto path = utf8(folder / std::filesystem::path(u8"własny preset.json"));
@@ -112,17 +135,21 @@ int main(int argc, char* argv[]) {
         }
         rejected([&] { (void)musdesk::loadPreset(utf8(folder / "missing-preset.json")); });
         rejected([&] { (void)musdesk::parsePreset("{"); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 5", "\"version\": 6")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 5", "\"version\": 5.0")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 6", "\"version\": 7")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 6", "\"version\": 6.0")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"disc_rpm\": 8.0", "\"disc_rpm\": true")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"disc_rpm\": 8.0", "\"disc_rpm\": 46")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"name\": \"Soft Glow\"", "\"name\": \"\"")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 5", "\"unknown\": 0")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 5", "\"version\": 5, \"version\": 5")); }, "duplicate");
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 6", "\"unknown\": 0")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 6", "\"version\": 6, \"version\": 6")); }, "duplicate");
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"spectrum_gain_db\": 0.0", "\"spectrum_gain_db\": 25")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"camera\": false", "\"camera\": 0")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"camera_strength\": 0.025", "\"camera_strength\": 0.9")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"beat_threshold\": 0.55", "\"beat_threshold\": 2.55")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"beat_band\": \"bass\"", "\"beat_band\": \"invalid\"")); });
+        rejected([&] { (void)musdesk::parsePreset(replaceNumber(json,"beat_level_db","1")); });
+        rejected([&] { (void)musdesk::parsePreset(replaceNumber(json,"beat_level_db","-61")); });
+        rejected([&] { (void)musdesk::parsePreset(replaceNumber(json,"beat_level_db","true")); });
+        rejected([&] { (void)musdesk::parsePreset(replaceNumber(json,"spectrum","4.1")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"subject_pulse\": 0.05", "\"subject_pulse\": -0.05")); });
         rejected([&] { (void)musdesk::parsePreset(std::string(65537, ' ')); });
         rejected([&] { (void)musdesk::parsePreset(std::string(20, '[') + "0" + std::string(20, ']')); }, "deeply");

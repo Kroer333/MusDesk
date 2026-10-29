@@ -24,6 +24,8 @@ void drawPresetControls(EditorUiState& state) {
     ImGui::SameLine();
     if (ImGui::Button("Beat Pulse")) applyVisualPreset(state, beatPulsePreset());
     if (ImGui::Button("Side Kick")) applyVisualPreset(state, sideKickPreset());
+    ImGui::SameLine();
+    if (ImGui::Button("Spectrum Pulse")) applyVisualPreset(state, spectrumPulsePreset());
     ImGui::TextWrapped("%s%s", state.preset.name.c_str(), state.presetDirty ? " (modified)" : "");
     ImGui::SetNextItemWidth(-1);
     bool changed = ImGui::InputTextWithHint("##PresetName", "Preset name", state.presetName.data(), state.presetName.size());
@@ -38,13 +40,20 @@ void drawPresetControls(EditorUiState& state) {
     changed |= ImGui::ColorEdit3("Accent color", preset.glowColor.data(), ImGuiColorEditFlags_NoInputs);
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderFloat("##Pulse", &preset.pulseStrength, 0, 2, "Audio response: %.2f", ImGuiSliderFlags_AlwaysClamp);
-    float thresholdPercent = preset.beatThreshold * 100;
-    float subjectPercent = preset.subjectPulse * 100;
+    int band = static_cast<int>(preset.beatBand);
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##BeatThreshold", &thresholdPercent, 0, 100, "Beat gate: %.0f%%", ImGuiSliderFlags_AlwaysClamp)) {
-        preset.beatThreshold = thresholdPercent / 100;
+    if (ImGui::Combo("##BeatBand", &band, "Bass: 35-180 Hz\0Drums: 180-2500 Hz\0Wide: 35-2500 Hz\0")) {
+        preset.beatBand = static_cast<BeatBand>(band);
         changed = true;
     }
+    float minimumDb = static_cast<float>(beatLevelDb(preset.beatThreshold));
+    float subjectPercent = preset.subjectPulse * 100;
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##BeatThreshold", &minimumDb, -60, 0, "Hit gate: %.1f dBFS", ImGuiSliderFlags_AlwaysClamp)) {
+        preset.beatThreshold = beatLevelFromDb(minimumDb);
+        changed = true;
+    }
+    ImGui::TextWrapped("One level gate for overlay pulse and Side Kick, measured in the selected band. Raise it to reject quieter attacks.");
     ImGui::SeparatorText("Independent effects");
     changed |= ImGui::Checkbox("Glow", &preset.glowEnabled);
     ImGui::BeginDisabled(!preset.glowEnabled);
@@ -74,7 +83,7 @@ void drawPresetControls(EditorUiState& state) {
     changed |= ImGui::Checkbox("Spectrum outline", &preset.spectrumEnabled);
     ImGui::BeginDisabled(!preset.spectrumEnabled);
     ImGui::SetNextItemWidth(-1);
-    changed |= ImGui::SliderFloat("##Spectrum", &preset.spectrumStrength, 0, 1,
+    changed |= ImGui::SliderFloat("##Spectrum", &preset.spectrumStrength, 0, 4,
         "Spectrum ring: %.2f", ImGuiSliderFlags_AlwaysClamp);
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderFloat("##SpectrumGain", &preset.spectrumGainDb, -24, 24,
@@ -90,23 +99,18 @@ void drawPresetControls(EditorUiState& state) {
         preset.spectrumGainDb = preset.spectrumBalance = 0;
         changed = true;
     }
-    ImGui::TextWrapped("Balance: bass (-), treble (+). Spectrum tuning does not change audio volume.");
+    ImGui::TextWrapped("Balance: bass (-), treble (+). Spectrum shows all FFT bands independently of the hit gate.");
     ImGui::EndDisabled();
     changed |= ImGui::Checkbox("Alternating screen kick", &preset.cameraEnabled);
     ImGui::BeginDisabled(!preset.cameraEnabled);
-    float kickPercent = preset.cameraStrength * 100, kickGate = preset.cameraThreshold * 100;
+    float kickPercent = preset.cameraStrength * 100;
     ImGui::SetNextItemWidth(-1);
     if (ImGui::SliderFloat("##CameraStrength", &kickPercent, 0, 5, "Screen kick: %.1f%%", ImGuiSliderFlags_AlwaysClamp)) {
         preset.cameraStrength = kickPercent / 100;
         changed = true;
     }
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##CameraGate", &kickGate, 0, 100, "Kick beat gate: %.0f%%", ImGuiSliderFlags_AlwaysClamp)) {
-        preset.cameraThreshold = kickGate / 100;
-        changed = true;
-    }
     ImGui::EndDisabled();
-    ImGui::TextWrapped("Beat gate selects strong bass hits. Audio response amplifies all reactions; zero disables them.");
+    ImGui::TextWrapped("Audio response amplifies effects after hit selection; it does not change the gate.");
     ImGui::SeparatorText("Motion and lighting");
     ImGui::SetNextItemWidth(-1);
     const double minRpm = -45, maxRpm = 45, minSpeed = 0, maxSpeed = 3;
@@ -204,7 +208,7 @@ void drawWaveform(EditorUiState& state) {
     }
     if (state.rhythm) {
         int previousPixel = -1;
-        for (const auto& beat : state.rhythm->beats) {
+        for (const auto& beat : state.rhythm->events(state.preset.beatBand)) {
             const int pixel = static_cast<int>(beat.timeSeconds / state.durationSeconds * size.x);
             if (pixel == previousPixel) continue;
             previousPixel = pixel;
@@ -340,8 +344,8 @@ void drawControls(EditorUiState& state) {
             ImGui::ProgressBar(state.audioEnergy, ImVec2(-1, 0), "Audio energy");
             if (state.rhythm) {
                 ImGui::ProgressBar(state.rhythm->bass.at(state.timeSeconds), ImVec2(-1, 0), "Bass energy");
-                ImGui::ProgressBar(state.rhythm->pulseAt(state.timeSeconds, state.preset.beatThreshold), ImVec2(-1, 0), "Beat pulse");
-                ImGui::Text("Bass onsets: %zu", state.rhythm->beats.size());
+                ImGui::ProgressBar(state.rhythm->pulseAt(state.timeSeconds, state.preset.beatThreshold,state.preset.beatBand), ImVec2(-1, 0), "Hit pulse");
+                ImGui::Text("Detected attacks: %zu", state.rhythm->events(state.preset.beatBand).size());
             }
             ImGui::TextDisabled("Volume affects monitoring only.");
         }

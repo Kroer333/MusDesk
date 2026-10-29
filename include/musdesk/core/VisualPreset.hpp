@@ -2,6 +2,7 @@
 
 #include <array>
 #include <string>
+#include "musdesk/core/AudioAnalysis.hpp"
 
 namespace musdesk {
 struct VisualPreset {
@@ -21,13 +22,13 @@ struct VisualPreset {
     float spectrumGainDb = 0;
     float spectrumBalance = 0;
     bool glowEnabled = true;
-    bool spectrumEnabled = true;
-    bool wavesEnabled = true;
+    bool spectrumEnabled = false;
+    bool wavesEnabled = false;
     bool subjectEnabled = true;
     bool backgroundEnabled = true;
     bool cameraEnabled = false;
     float cameraStrength = 0.025f;
-    float cameraThreshold = 0.35f;
+    BeatBand beatBand = BeatBand::Bass;
 
     bool operator==(const VisualPreset&) const = default;
 };
@@ -35,5 +36,6 @@ struct VisualPreset {
 VisualPreset softGlowPreset();
 VisualPreset beatPulsePreset();
 VisualPreset sideKickPreset();
+VisualPreset spectrumPulsePreset();
 void validatePreset(const VisualPreset& preset);
 }

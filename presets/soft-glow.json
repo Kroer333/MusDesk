@@ -1,9 +1,38 @@
 {
-  "version": 5,
-  "effects": { "glow": true, "spectrum": true, "waves": true, "subject": true, "background": true, "camera": false, "camera_strength": 0.025, "camera_threshold": 0.35 },
+  "version": 6,
+  "effects": {
+    "glow": true,
+    "spectrum": false,
+    "waves": false,
+    "subject": true,
+    "background": true,
+    "camera": false,
+    "camera_strength": 0.025
+  },
   "name": "Soft Glow",
   "disc_rpm": 8,
-  "glow": { "color": [0.24, 0.6, 1.0], "intensity": 0.8, "pulse_strength": 0.6 },
-  "background": { "speed": 0.6, "zoom": 1.16, "brightness": 0.88 },
-  "reactivity": { "beat_threshold": 0.55, "subject_pulse": 0.05, "background": 0.65, "ring": 0.55, "spectrum": 0.65, "spectrum_gain_db": 0, "spectrum_balance": 0 }
+  "glow": {
+    "color": [
+      0.24,
+      0.6,
+      1
+    ],
+    "intensity": 0.8,
+    "pulse_strength": 0.6
+  },
+  "background": {
+    "speed": 0.6,
+    "zoom": 1.16,
+    "brightness": 0.88
+  },
+  "reactivity": {
+    "subject_pulse": 0.05,
+    "background": 0.65,
+    "ring": 0.55,
+    "spectrum": 0.65,
+    "spectrum_gain_db": 0,
+    "spectrum_balance": 0,
+    "beat_level_db": -27,
+    "beat_band": "bass"
+  }
 }

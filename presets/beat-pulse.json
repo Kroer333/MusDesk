@@ -1,9 +1,38 @@
 {
-  "version": 5,
-  "effects": { "glow": true, "spectrum": true, "waves": true, "subject": true, "background": true, "camera": false, "camera_strength": 0.025, "camera_threshold": 0.35 },
+  "version": 6,
+  "effects": {
+    "glow": true,
+    "spectrum": false,
+    "waves": false,
+    "subject": true,
+    "background": true,
+    "camera": false,
+    "camera_strength": 0.025
+  },
   "name": "Beat Pulse",
   "disc_rpm": 12,
-  "glow": { "color": [0.6, 0.35, 1.0], "intensity": 1.2, "pulse_strength": 1.7 },
-  "background": { "speed": 1.1, "zoom": 1.18, "brightness": 0.88 },
-  "reactivity": { "beat_threshold": 0.55, "subject_pulse": 0.07, "background": 0.9, "ring": 0.9, "spectrum": 0.9, "spectrum_gain_db": 0, "spectrum_balance": 0 }
+  "glow": {
+    "color": [
+      0.6,
+      0.35,
+      1
+    ],
+    "intensity": 1.2,
+    "pulse_strength": 1.7
+  },
+  "background": {
+    "speed": 1.1,
+    "zoom": 1.18,
+    "brightness": 0.88
+  },
+  "reactivity": {
+    "subject_pulse": 0.07,
+    "background": 0.9,
+    "ring": 0.9,
+    "spectrum": 0.9,
+    "spectrum_gain_db": 0,
+    "spectrum_balance": 0,
+    "beat_level_db": -27,
+    "beat_band": "bass"
+  }
 }

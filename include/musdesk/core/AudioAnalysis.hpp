@@ -35,19 +35,24 @@ struct BeatEvent {
     float strength = 0;
     bool operator==(const BeatEvent&) const = default;
 };
+enum class BeatBand { Bass, Drums, Wide };
+float beatLevelFromDb(double db);
+double beatLevelDb(float level);
 
 struct AudioRhythm {
     AudioEnvelope bass;
     std::vector<BeatEvent> beats;
-    float pulseAt(double timeSeconds, float minimumStrength = 0) const;
-    float kickAt(double timeSeconds, float minimumStrength = 0.35f) const;
+    std::array<std::vector<BeatEvent>,2> otherBands;
+    const std::vector<BeatEvent>& events(BeatBand band = BeatBand::Bass) const;
+    float pulseAt(double timeSeconds, float minimumStrength = 0, BeatBand band = BeatBand::Bass) const;
+    float kickAt(double timeSeconds, float minimumStrength = 0.55f, BeatBand band = BeatBand::Bass) const;
 };
 
 using SpectrumFrame = std::array<float, 32>;
 SpectrumFrame spectrumForDisplay(const SpectrumFrame& spectrum, float gainDb, float balance);
 
 struct AudioSpectrum {
-    double stepSeconds = 0.04;
+    double stepSeconds = 0.02;
     double durationSeconds = 0;
     std::vector<SpectrumFrame> frames;
     SpectrumFrame at(double seconds) const;
