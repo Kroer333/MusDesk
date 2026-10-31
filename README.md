@@ -1,13 +1,13 @@
 # MusDesk
 
-**MusDesk** is a desktop tool for turning a music track and cover artwork into a vertical, animated music visualizer video for short-form platforms.
+**MusDesk** is a desktop tool for turning a music track and cover artwork into animated music visualizer videos in portrait, landscape and square formats.
 
-> **Version 0.1.0.** A Windows music visualizer with artwork/audio import, editable presets and 1080 × 1920 / 30 FPS H.264/AAC export. MusDesk's own source code is licensed under MIT. **The application interface currently supports English only.**
+> **Version 0.2.0.** A Windows music visualizer with project saving, audio-reactive effects and H.264/AAC export in five aspect ratios at a 720 or 1080 pixel short edge, 30 FPS. MusDesk's own source code is licensed under MIT. **The application interface currently supports English only.**
 
 ## Download and first run
 
 1. For the owner's personal private release, download
-   `MusDesk-0.1.0-private-windows-x64.zip` from the repository's
+   `MusDesk-0.2.0-private-windows-x64.zip` from the repository's
    [Releases](https://github.com/Kroer333/MusDesk/releases) page. Extract the entire folder;
    FFmpeg and ffprobe are already included beside `MusDesk.exe`.
 2. Start `MusDesk.exe`. The Media panel should report
@@ -19,7 +19,7 @@ see `PRIVATE_PACKAGE.txt` inside that archive. GitHub releases inherit repositor
 access: the repository must actually be private to restrict access to its releases.
 No repository visibility or release is changed by building a ZIP.
 
-The alternative `MusDesk-0.1.0-windows-x64.zip` omits the external tools. For that
+The alternative `MusDesk-0.2.0-windows-x64.zip` omits the external tools. For that
 variant, obtain a Windows x64 FFmpeg build using the Windows links on the official
    [FFmpeg download page](https://ffmpeg.org/download.html). Use a build containing
    `ffmpeg.exe`, `ffprobe.exe`, `libx264` and AAC support. Extract its archive too.
@@ -176,7 +176,7 @@ opening or saving. Volume, mute, loop and preview-only guides/scale remain
 session settings. Project files are ignored by Git by default because they can
 contain personal media references.
 
-These changes belong to the next update; the published 0.1.0 ZIP is unchanged.
+These features are included in 0.2.0; the published 0.1.0 ZIP remains unchanged.
 
 ### Artwork framing (development)
 
@@ -564,7 +564,7 @@ The demonstration is generated from project code, not a supplied private track.
 ![MusDesk 0.1.0 MP4 export controls](screenshots/export.png)
 
 After packaging, check the ZIP file list and checksum with:
-`pwsh -NoProfile -File scripts/TestPackage.ps1 -Archive build/packages/MusDesk-0.1.0-private-windows-x64.zip -AllowPrivateTools`.
+`pwsh -NoProfile -File scripts/TestPackage.ps1 -Archive build/packages/MusDesk-0.2.0-private-windows-x64.zip -AllowPrivateTools`.
 The tools-free variant is validated without that switch.
 
 ### Tests
@@ -655,7 +655,7 @@ The personal private ZIP includes the GPLv3 tools and their build notices;
 private repository visibility does not remove license obligations when sharing
 copies with other people. See `PRIVATE_PACKAGE.txt` in that archive.
 
-## 0.1.0 acceptance checks
+## Release acceptance checks
 
 A full-track export through the native save dialog and complete FFmpeg decoding
 have been checked locally. Listening to the resulting MP4 in an external player,

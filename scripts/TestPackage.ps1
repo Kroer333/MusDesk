@@ -24,13 +24,18 @@ try {
         throw 'Local evaluation packages must not be uploaded as public release assets. Use -AllowLocalTools only for local checks.'
     }
     $prefix = $roots[0] + '/'
+    $packageVersion = [version]($roots[0] -replace '^MusDesk-(\d+\.\d+\.\d+)-.+$', '$1')
     $relative = @($files | ForEach-Object { $_.Substring($prefix.Length) })
     $required = @('MusDesk.exe','SDL3.dll','msvcp140.dll','vcruntime140.dll',
         'assets/Roboto-Medium.ttf','assets/MusDesk.png','README.md','CHANGELOG.md','THIRD_PARTY_NOTICES.md','LICENSE','LICENSE-STATUS.txt','RELEASE_NOTES.md',
-        'presets/soft-glow.json','presets/beat-pulse.json','licenses/SDL.txt','licenses/Dear-ImGui.txt',
+        'presets/soft-glow.json','presets/beat-pulse.json',
+        'licenses/SDL.txt','licenses/Dear-ImGui.txt',
         'licenses/stb.txt','licenses/libwebp.txt','licenses/libwebp-PATENTS.txt','licenses/nlohmann-json.txt',
         'licenses/Roboto-Apache-2.0.txt','licenses/Roboto-NOTICE.txt',
         'screenshots/workspace.png','screenshots/export.png','screenshots/README.md')
+    if ($packageVersion -ge [version]'0.2.0') {
+        $required += @('presets/side-kick.json','presets/spectrum-pulse.json')
+    }
     foreach ($name in $required) {
         if ($relative -notcontains $name) { throw "Missing package file: $name" }
     }

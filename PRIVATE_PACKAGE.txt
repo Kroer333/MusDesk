@@ -1,4 +1,4 @@
-MusDesk 0.1.0 - personal private package
+MusDesk 0.2.0 - personal private package
 
 This archive includes FFmpeg and ffprobe for the owner's personal use and
 backup in a private repository. Extract the entire folder before running it.

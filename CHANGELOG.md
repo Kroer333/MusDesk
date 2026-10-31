@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0 - 2026-10-31
+
 - Rebuilt the spectrum outline from 128 straight segments with faster independent
   vertex movement and more pronounced audio-driven peaks.
 - Distributed spectrum motion around the record with smooth reproducible

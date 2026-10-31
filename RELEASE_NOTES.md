@@ -1,56 +1,67 @@
-# MusDesk 0.1.0
+# MusDesk 0.2.0
 
-First personal private Windows x64 release of MusDesk: turn artwork and a music
-track into an animated vertical video. **The application interface currently
-supports English only; other interface languages are not available yet.**
+A major feature update after 0.1.0 for Windows x64: save compositions, choose
+portrait/landscape/square output and build audio-reactive music videos.
+**The application interface currently supports English only.**
 
 ## Download and setup
 
-- Download **MusDesk-0.1.0-private-windows-x64.zip**, then extract the whole folder.
-- Requires Windows 10/11 x64 and a graphics driver supporting OpenGL 3.3.
-- **FFmpeg and ffprobe are included** beside MusDesk.exe; no separate media-tool
-  installation is needed for this package. Keep the assets, licenses and DLLs together.
-- The alternative tools-free **MusDesk-0.1.0-windows-x64.zip** requires a separate
-  Windows x64 build using the links on the
-  [official FFmpeg download page](https://ffmpeg.org/download.html), extract it,
-  and copy `ffmpeg.exe` and `ffprobe.exe` from its `bin` folder next to
-  `MusDesk.exe`. The build needs `libx264` and AAC support for CPU export.
-- Start or restart MusDesk and check that both media tools report **ready**.
-- The `.zip.sha256` attachment contains the archive's SHA-256 checksum.
-  GitHub's automatic **Source code** downloads contain source files, not the
-  compiled application. Choose the named Windows ZIP to run MusDesk.
+- Download **MusDesk-0.2.0-private-windows-x64.zip** and extract the whole folder.
+- Windows 10/11 x64 and an OpenGL 3.3 graphics driver are required.
+- FFmpeg and ffprobe are included in the personal private package. Keep the
+  assets, presets, licenses and DLLs beside MusDesk.exe; Visual Studio is not required.
+- The optional tools-free **MusDesk-0.2.0-windows-x64.zip** needs independently
+  supplied FFmpeg and ffprobe, including libx264/AAC support for CPU export.
+- The `.zip.sha256` attachment verifies the archive. GitHub's automatic source
+  archives contain source code, not the runnable application.
 
-## Private release scope
+## New since 0.1.0
 
-This full package is prepared for the owner's personal use/backup in a private
-repository. A release does not make a private repository public; only people
-with repository read access can view it. Confirm repository visibility before
-uploading. Bundled tools retain GPLv3; see `PRIVATE_PACKAGE.txt` for the scope
-and the additional requirements before conveying the tools to other people.
+- New/Open/Save/Save As for versioned `.musdesk` projects, relative media paths,
+  missing-media relinking and protection against losing unsaved changes.
+- Per-instance autosave/recovery and Collect project for portable media copies.
+- Audio waveform with click/drag seeking and shared audio/visual preview timing.
+- Five output formats: 9:16, 16:9, 1:1, 3:4 and 4:3; a 720 or 1080 pixel short
+  edge at 30 FPS. Export retains full selected resolution independently of preview.
+- Independent artwork/background framing and background softness.
+- Separate glow, FFT outline, rim waves, overlay pulse, background motion and
+  Side Kick effects; four included presets: Soft Glow, Beat Pulse, Side Kick
+  and Spectrum Pulse.
+- Filtered attack detection with a shared dBFS hit gate for overlay pulse and
+  Side Kick, selectable Bass/Drums/Wide bands and improved rapid-hit handling.
+- 32-band FFT, display gain/balance and an asymmetric 128-vertex spectrum outline
+  with angular peaks and timestamp-based movement.
+- Separate editor sections and preview resolution matched to its screen size.
 
-## Included
+## Projects and presets
 
-- SDL3/OpenGL editor, application icon and a 9:16 composition preview.
-- PNG/JPEG/still WebP artwork, rotating vinyl and a moving background.
-- MP3/WAV/OGG import, playback, seeking, volume, mute and looping in the editor.
-- Deterministic RMS-reactive glow; Soft Glow / Beat Pulse presets and JSON settings.
-- H.264/AAC MP4 export at 1080 × 1920 and 30 FPS, with progress, cancellation,
-  output verification and protection of an existing destination on failure.
-- Automatic hardware encoder trials and CPU export mode. If hardware fails
-  during encoding, select CPU and retry.
-- Audio output failure does not prevent visual seeking or video export.
-- MIT license for MusDesk's own source code and notices for bundled dependencies.
+- Project v3 reads project v1/v2; preset v6 reads presets v1-v5.
+- Keep backups of older projects. MusDesk 0.1.0 cannot read the newer schemas.
+- Old confidence thresholds are starting values for the new dBFS gate and may
+  need readjustment. Older named glow presets migrate with line effects disabled.
+- A normal project references audio/artwork; it does not embed them. Use
+  **Collect project** when moving it to another computer or folder.
+- Exported MP4 files are independent videos; they do not contain an editable project.
 
-## Known limitations
+## Known limitations and checks
 
-- One vertical layout; no project saving, batch export, waveform or FFT display.
-- Audio is held in memory, limited to 20 minutes; decoding has a 120-second timeout.
-- Animated WebP and JPEG EXIF orientation are unsupported.
-- Preview-device buffering can introduce latency. Encoder speed and quality vary.
-- Intel QSV and CPU export have been exercised locally. NVIDIA NVENC, AMD AMF
-  and a clean Windows installation have not been independently verified.
-- Full-track export and complete decoding have been checked. External-player
-  listening and subjective audio/visual synchronization remain manual checks.
+- Windows x64 only; English UI only. No batch export or JPEG EXIF orientation;
+  animated WebP is unsupported.
+- Audio stays in memory, limited to 20 minutes; decoding has a 120-second timeout.
+- Band-based attack detection does not isolate individual instruments. Spectrum
+  detail includes procedural movement driven by spectral energy.
+- Preview device buffering and graphics load can affect perceived synchronization.
+- CPU/Intel QSV have been exercised locally. NVIDIA NVENC, AMD AMF and a clean
+  Windows installation still need physical coverage.
+- Automated tests and full video/audio decoding do not replace external-player
+  listening or subjective assessment of beat selection and synchronization.
 
-Please report issues with your Windows version, graphics device/driver, selected
-encoder and the exact error. Do not include private tracks or artwork in reports.
+## Personal private package
+
+The bundled-tools archive retains the personal private scope of 0.1.0. Read
+`PRIVATE_PACKAGE.txt` and the bundled dependency notices before sharing copies.
+MusDesk's own code is MIT licensed; bundled dependencies retain their licenses.
+This is a pre-release while remaining acceptance checks are open.
+
+Report issues with your Windows version, graphics device/driver, selected encoder
+and exact error. Do not attach private audio or artwork to issue reports.
