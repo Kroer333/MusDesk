@@ -153,6 +153,15 @@ The editor's **Project** section provides **New**, **Open**, **Save** and
 drop a `.musdesk` file or start with `MusDesk.exe --project "path/to/project.musdesk"`.
 The project startup option is exclusive with `--artwork`, `--audio` and `--preset`.
 
+Development builds add **Undo/Redo** in the header: Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z.
+History covers labels, effects/presets, framing, duration without audio, format and
+resolution. A drag or text-edit session is grouped into one step; up to 100 steps
+are kept. New edits discard the redo branch. Returning to the saved composition
+clears its unsaved marker. Saving does not erase history. Native text-field undo
+remains active while typing. Importing media or opening/recovering a project
+starts a new history; file operations, playback and session export ranges are not
+undoable. History is not saved in the project.
+
 Projects are versioned, readable JSON files containing track labels, all visual
 preset values, media references, duration and the saved preview position.
 They reopen paused. Audio samples and artwork are not embedded: media paths
@@ -521,14 +530,23 @@ Choose **Automatic (GPU / CPU)** or **CPU (veryfast)** and a destination in the
 native save dialog. FFmpeg must include the `libx264` and AAC encoders for CPU
 fallback. Both FFmpeg and ffprobe must be available.
 
-Export pauses monitoring and renders the complete track from zero, regardless of
-the preview position, volume, mute or loop. Composition settings and media imports
+Export pauses monitoring and defaults to the complete track from zero, regardless
+of preview position, volume, mute or loop. In the development build, enable
+**Export a selected range** to enter start/end seconds, set boundaries at the
+playhead or choose **5 s from playhead**. Near the end this exports the remaining
+audio; at the end it selects the last five seconds. Selection is session-only,
+resets on audio import/project opening and does not modify the project or source.
+The original track's animation, progress bar and timestamps are retained; only
+the MP4 starts at time zero. Invalid/reversed ranges disable export.
+Composition settings and media imports
 are locked until it finishes; the preview displays frames being exported.
 **Cancel export** stops processing; closing the app also cancels and waits for
 the encoder to stop. Export continues while the window is minimized.
 
-Frames are rendered offscreen at the selected output size, with timestamps `i / 30.0`.
-The frame count rounds decoded audio duration up to the next 1/30 second; the
+Frames are rendered offscreen at the selected output size, with original-track
+timestamps `selectionStart + i / 30.0`. Selection boundaries round to the nearest
+48 kHz PCM sample; audio is resampled before trimming to those boundaries.
+The frame count rounds selected audio duration up to the next 1/30 second; the
 audio tail is padded with silence by less than one frame. FFmpeg reads bottom-up
 RGBA through a pipe, flips the image vertically, encodes H.264 (`yuv420p`)
 and AAC stereo (48 kHz, 192 kbit/s), and writes MP4 with fast-start

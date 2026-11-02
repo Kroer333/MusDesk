@@ -423,9 +423,33 @@ void drawControls(EditorUiState& state) {
         ImGui::BeginDisabled(state.exportBusy);
         ImGui::SetNextItemWidth(-1);
         ImGui::Combo("##ExportEncoder", &state.exportEncoder, "Automatic (GPU / CPU)\0CPU (veryfast)\0");
+        if (ImGui::Checkbox("Export a selected range",&state.exportSelection) && state.exportEnd <= state.exportStart) {
+            state.exportStart = 0;
+            state.exportEnd = state.durationSeconds;
+        }
+        if (state.exportSelection) {
+            ImGui::TextUnformatted("Start (seconds)");
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputDouble("##ExportStart",&state.exportStart,0.1,1,"%.3f");
+            ImGui::TextUnformatted("End (seconds)");
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputDouble("##ExportEnd",&state.exportEnd,0.1,1,"%.3f");
+            if (ImGui::Button("Start at playhead")) state.exportStart = state.timeSeconds;
+            if (ImGui::Button("End at playhead")) state.exportEnd = state.timeSeconds;
+            if (ImGui::Button("5 s from playhead")) {
+                state.exportStart = std::clamp(state.timeSeconds,0.0,state.durationSeconds);
+                if (state.exportStart >= state.durationSeconds) state.exportStart = std::max(0.0,state.durationSeconds-5);
+                state.exportEnd = std::min(state.exportStart+5,state.durationSeconds);
+            }
+        }
         ImGui::EndDisabled();
+        const bool rangeValid = !state.exportSelection || (std::isfinite(state.exportStart) && std::isfinite(state.exportEnd)
+            && state.exportStart >= 0 && state.exportEnd <= state.durationSeconds
+            && state.exportEnd-state.exportStart >= 1.0/48000);
+        if (!rangeValid) ImGui::TextWrapped("Choose 0 <= start < end <= audio duration.");
+        if (rangeValid && state.exportSelection) ImGui::Text("Selected: %.3f s",state.exportEnd-state.exportStart);
         const bool ready = state.exportBlockedReason.empty();
-        ImGui::BeginDisabled(!ready || state.exportBusy || state.audioImportPending || state.artworkDialogPending
+        ImGui::BeginDisabled(!ready || !rangeValid || state.exportBusy || state.audioImportPending || state.artworkDialogPending
             || state.audioDialogPending || state.presetDialogPending || state.projectDialogPending);
         if (ImGui::Button("Export MP4", ImVec2(-1, 0))) state.requestExport = true;
         ImGui::EndDisabled();
@@ -439,7 +463,7 @@ void drawControls(EditorUiState& state) {
         if (!state.exportStatus.empty()) ImGui::TextWrapped("%s", state.exportStatus.c_str());
         if (state.exportError) ImGui::PopStyleColor();
         const auto exportSize = outputSize(state.format, state.shortEdge);
-        ImGui::TextWrapped("H.264 / AAC, %d x %d, 30 FPS. Exports the full track with original audio; preview volume and loop are ignored.", exportSize.width, exportSize.height);
+        ImGui::TextWrapped("H.264 / AAC, %d x %d, 30 FPS. Original audio; preview volume and loop are ignored. Range selection is session-only. Visuals retain original track time.", exportSize.width, exportSize.height);
     }
 }
 
@@ -521,6 +545,17 @@ void drawEditorUi(EditorUiState& state, std::uint32_t compositionTexture) {
         ImGui::TextUnformatted("MusDesk " MUSDESK_VERSION);
         ImGui::SameLine();
         ImGui::TextDisabled("Music visualizer");
+        ImGui::SameLine();
+        ImGui::BeginDisabled(state.historyBlocked || !state.canUndo);
+        if (ImGui::Button("Undo")) state.requestUndo = true;
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Ctrl+Z: labels, effects, framing and output settings. Media imports start a new history.");
+        ImGui::SameLine();
+        ImGui::BeginDisabled(state.historyBlocked || !state.canRedo);
+        if (ImGui::Button("Redo")) state.requestRedo = true;
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Ctrl+Y or Ctrl+Shift+Z");
         ImGui::Separator();
 
         const float em = ImGui::GetFontSize();

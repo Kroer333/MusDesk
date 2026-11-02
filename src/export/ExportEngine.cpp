@@ -27,6 +27,20 @@ std::uint64_t exportFrameCount(std::uint64_t samples) {
     return (samples * 30 + 47999) / 48000;
 }
 double exportFrameTime(std::uint64_t index) { return static_cast<double>(index) / 30.0; }
+ExportSamples exportSamples(std::uint64_t sampleFrames, ExportRange range) {
+    exportFrameCount(sampleFrames);
+    const double duration = static_cast<double>(sampleFrames)/DecodedAudio::sampleRate;
+    if (!std::isfinite(range.startSeconds) || !std::isfinite(range.endSeconds)
+        || range.startSeconds < 0 || range.startSeconds >= duration
+        || range.endSeconds < 0 || range.endSeconds > duration
+        || (range.endSeconds != 0 && range.endSeconds <= range.startSeconds))
+        throw std::runtime_error("Choose a valid export range inside the audio duration.");
+    const auto first = static_cast<std::uint64_t>(std::llround(range.startSeconds*DecodedAudio::sampleRate));
+    const auto end = range.endSeconds == 0 ? sampleFrames
+        : static_cast<std::uint64_t>(std::llround(range.endSeconds*DecodedAudio::sampleRate));
+    if (end <= first) throw std::runtime_error("Export range must contain at least one audio sample.");
+    return {first,end-first};
+}
 void validateExportDestination(const std::string& path, const std::string& audioPath, const std::string& artworkPath) {
     if (path.empty()) throw std::runtime_error("Choose an MP4 destination.");
     const auto output = std::filesystem::absolute(std::filesystem::u8path(path));
@@ -214,6 +228,7 @@ struct ExportEngine::Impl {
     std::deque<std::vector<std::uint8_t>> queue;
     ExportStatus state;
     std::uint64_t submitted = 0;
+    ExportSamples selection{};
     std::atomic<bool> cancelled{false};
     ExportEncoder requestedEncoder;
     const Clock::time_point started = Clock::now();
@@ -221,14 +236,15 @@ struct ExportEngine::Impl {
     std::jthread worker;
 
     Impl(VisualizerRenderer& target, CompositionSettings composition, std::shared_ptr<const DecodedAudio> clip,
-        MediaTools mediaTools, std::string output, ExportEncoder encoder)
+        MediaTools mediaTools, std::string output, ExportEncoder encoder, ExportRange range)
         : renderer(target), settings(std::move(composition)), audio(std::move(clip)),
           tools(std::move(mediaTools)), destination(std::move(output)), requestedEncoder(encoder) {
         if (!audio || audio->samples.empty() || audio->samples.size() % DecodedAudio::channels)
             throw std::runtime_error("Import valid audio before exporting.");
         validatePreset(settings.preset);
         outputSize(settings.format, settings.shortEdge);
-        state.totalFrames = exportFrameCount(audio->samples.size() / DecodedAudio::channels);
+        selection = exportSamples(audio->samples.size()/DecodedAudio::channels,range);
+        state.totalFrames = exportFrameCount(selection.count);
         settings.durationSeconds = audio->durationSeconds();
         validateAudioSource(*audio);
         validateExportDestination(destination, audio->path);
@@ -297,7 +313,9 @@ struct ExportEngine::Impl {
                 "-vf", "vflip,format=" + selected.pixelFormat};
             arguments.insert(arguments.end(), selected.arguments.begin(), selected.arguments.end());
             arguments.insert(arguments.end(), {
-                "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-af", "asetpts=PTS-STARTPTS,apad",
+                "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-af",
+                "aresample=48000,atrim=start_sample=" + std::to_string(selection.first)
+                    + ":end_sample=" + std::to_string(selection.first+selection.count) + ",asetpts=PTS-STARTPTS,apad",
                 "-t", std::to_string(exportFrameTime(count)), "-frames:v", std::to_string(count),
                 "-movflags", "+faststart", temporary.path});
             Process encoder(arguments, true);
@@ -397,8 +415,8 @@ struct ExportEngine::Impl {
 };
 
 ExportEngine::ExportEngine(VisualizerRenderer& renderer, CompositionSettings settings,
-    std::shared_ptr<const DecodedAudio> audio, MediaTools tools, std::string outputPath, ExportEncoder encoder)
-    : impl_(std::make_unique<Impl>(renderer, std::move(settings), std::move(audio), std::move(tools), std::move(outputPath), encoder)) {}
+    std::shared_ptr<const DecodedAudio> audio, MediaTools tools, std::string outputPath, ExportEncoder encoder, ExportRange range)
+    : impl_(std::make_unique<Impl>(renderer, std::move(settings), std::move(audio), std::move(tools), std::move(outputPath), encoder,range)) {}
 ExportEngine::~ExportEngine() = default;
 void ExportEngine::cancel() {
     std::lock_guard lock(impl_->mutex);
@@ -423,7 +441,7 @@ void ExportEngine::update() {
                 || task.submitted >= task.state.totalFrames || task.queue.size() >= 2) return;
         }
         try {
-            const auto time = exportFrameTime(task.submitted);
+            const auto time = static_cast<double>(task.selection.first)/DecodedAudio::sampleRate + exportFrameTime(task.submitted);
             task.renderer.renderFrame(time, task.settings, task.audio->reactionAt(time,task.settings.preset));
             auto pixels = task.renderer.readPixels();
             std::lock_guard lock(task.mutex);

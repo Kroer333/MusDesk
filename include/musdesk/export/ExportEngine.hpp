@@ -10,6 +10,15 @@
 namespace musdesk {
 std::uint64_t exportFrameCount(std::uint64_t sampleFrames);
 double exportFrameTime(std::uint64_t index);
+struct ExportRange {
+    double startSeconds = 0;
+    double endSeconds = 0;
+};
+struct ExportSamples {
+    std::uint64_t first;
+    std::uint64_t count;
+};
+ExportSamples exportSamples(std::uint64_t sampleFrames, ExportRange range);
 void validateExportDestination(const std::string& path, const std::string& audioPath, const std::string& artworkPath = {});
 
 enum class ExportPhase { Preparing, Encoding, Verifying, Completed, Cancelled, Failed };
@@ -30,7 +39,7 @@ class ExportEngine {
 public:
     ExportEngine(VisualizerRenderer& renderer, CompositionSettings settings,
         std::shared_ptr<const DecodedAudio> audio, MediaTools tools, std::string outputPath,
-        ExportEncoder encoder = ExportEncoder::Automatic);
+        ExportEncoder encoder = ExportEncoder::Automatic, ExportRange range = {});
     ~ExportEngine();
     ExportEngine(const ExportEngine&) = delete;
     ExportEngine& operator=(const ExportEngine&) = delete;

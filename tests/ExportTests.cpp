@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 namespace {
@@ -25,19 +26,19 @@ std::string utf8(const std::filesystem::path& path) {
     const auto text = path.u8string();
     return {text.begin(), text.end()};
 }
-void wav(const std::filesystem::path& path) {
+void wav(const std::filesystem::path& path, unsigned rate = 48000) {
     std::ofstream file(path, std::ios::binary);
     const auto integer = [&](std::uint32_t value, unsigned bytes) {
         for (unsigned i = 0; i < bytes; ++i) file.put(static_cast<char>(value >> (i * 8)));
     };
     // Non-integral frame duration exercises rounding and the final padded frame.
-    constexpr unsigned samples = 52801;
+    const unsigned samples = rate*11/10+1;
     file.write("RIFF", 4); integer(36 + samples * 4, 4); file.write("WAVEfmt ", 8);
-    integer(16, 4); integer(1, 2); integer(2, 2); integer(48000, 4); integer(192000, 4);
+    integer(16, 4); integer(1, 2); integer(2, 2); integer(rate, 4); integer(rate*4, 4);
     integer(4, 2); integer(16, 2); file.write("data", 4); integer(samples * 4, 4);
     for (unsigned i = 0; i < samples; ++i) {
-        const double amplitude = (i < 4800 || i >= 24000 && i < 28800) ? 0.6 : 0;
-        const auto sample = static_cast<std::int16_t>(amplitude * 32767 * std::sin(i * 70.0 * 6.283185307179586 / 48000));
+        const double amplitude = (i < rate/10 || i >= rate/2 && i < rate*6/10) ? 0.6 : 0;
+        const auto sample = static_cast<std::int16_t>(amplitude * 32767 * std::sin(i * 70.0 * 6.283185307179586 / rate));
         integer(static_cast<std::uint16_t>(sample), 2); integer(static_cast<std::uint16_t>(sample), 2);
     }
     require(static_cast<bool>(file), "Cannot write export audio fixture");
@@ -99,6 +100,15 @@ int main(int argc, char* argv[]) {
         require(musdesk::exportFrameCount(48001) == 31, "A partial frame must round up");
         require(musdesk::exportFrameCount(48000ULL * 1200) == 36000, "Maximum duration frame count");
         require(musdesk::exportFrameTime(31) == 31 / 30.0, "Timestamp must be i / 30.0");
+        const auto selected = musdesk::exportSamples(48000,{0.25,0.75});
+        require(selected.first == 12000 && selected.count == 24000,"Range must resolve to exact PCM sample boundaries");
+        require(musdesk::exportSamples(48000,{}).count == 48000,"Default export must keep the full track");
+        for (auto range : {musdesk::ExportRange{-1,0.5},{0.8,0.2},{0,1.1},{1,0},{0.2,0.200000001},
+            {std::nan(""),0.8},{0,std::numeric_limits<double>::infinity()}}) {
+            bool rejected = false;
+            try { (void)musdesk::exportSamples(48000,range); } catch (const std::exception&) { rejected = true; }
+            require(rejected,"Invalid export range must be rejected");
+        }
         for (const auto invalid : {0ULL, 48000ULL * 1200 + 1, ~0ULL}) {
             bool rejected = false;
             try { musdesk::exportFrameCount(invalid); } catch (const std::exception&) { rejected = true; }
@@ -272,6 +282,44 @@ int main(int argc, char* argv[]) {
                 require(result.phase == musdesk::ExportPhase::Completed && result.totalFrames == 3,
                     "Each format/resolution must encode and pass ffprobe dimension verification");
             }
+        }
+        {
+            const auto source = folder/"source-44100.wav";
+            wav(source,44100);
+            const auto rangeClip = std::make_shared<musdesk::DecodedAudio>(musdesk::prepareAudio(utf8(source),tools));
+            auto variant = settings;
+            variant.format = musdesk::CompositionFormat::Square;
+            variant.shortEdge = 720;
+            const auto rangeMovie = folder/"range.mp4";
+            musdesk::ExportEngine job(renderer,variant,rangeClip,tools,utf8(rangeMovie),musdesk::ExportEncoder::Cpu,{0.45,0.85});
+            const auto result = finish(job);
+            require(result.phase == musdesk::ExportPhase::Completed && result.totalFrames == 12,
+                "A 0.4-second selection must encode and validate exactly 12 video frames");
+            const auto rangeAudio = folder/"range-decoded.wav";
+            runTool({tools.ffmpegPath,"-v","error","-y","-i",utf8(rangeMovie),"-map","0:a:0","-c:a","pcm_s16le",utf8(rangeAudio)});
+            const auto decodedRange = musdesk::prepareAudio(utf8(rangeAudio),tools);
+            require(std::abs(decodedRange.durationSeconds()-0.4) < 0.04
+                && rmsAt(decodedRange,0.08) > 0.3 && rmsAt(decodedRange,0.25) < 0.005,
+                "Selected audio must trim at the original source time, including 44.1 kHz input");
+            const auto rangePixels = folder/"range-frame.rgba";
+            runTool({tools.ffmpegPath,"-v","error","-y","-i",utf8(rangeMovie),"-vf","vflip",
+                "-frames:v","1","-f","rawvideo","-pix_fmt","rgba",utf8(rangePixels)});
+            std::ifstream rangeFile(rangePixels,std::ios::binary);
+            const std::vector<unsigned char> encoded((std::istreambuf_iterator<char>(rangeFile)),{});
+            variant.durationSeconds = rangeClip->durationSeconds();
+            renderer.renderFrame(0.45,variant,rangeClip->reactionAt(0.45,variant.preset));
+            const auto referenceRange = renderer.readPixels();
+            renderer.renderFrame(0,variant,rangeClip->reactionAt(0,variant.preset));
+            const auto resetRange = renderer.readPixels();
+            require(encoded.size() == referenceRange.size(),"Selected export frame dimensions mismatch");
+            double error = 0, resetError = 0;
+            for (std::size_t i=0; i<encoded.size(); ++i) {
+                if (i%4 == 3) continue;
+                error += std::abs(int(encoded[i])-int(referenceRange[i]));
+                resetError += std::abs(int(encoded[i])-int(resetRange[i]));
+            }
+            require(error/(encoded.size()*0.75) < 8 && error < resetError,
+                "Range visuals must match original-time preview rather than restart the animation");
         }
         const auto guarded = folder / "preserved.mp4";
         { std::ofstream file(guarded); file << "existing destination"; }

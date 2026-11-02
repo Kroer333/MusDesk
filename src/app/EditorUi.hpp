@@ -11,6 +11,11 @@
 namespace musdesk {
 struct EditorUiState {
     int workspacePanel = 2;
+    bool canUndo = false;
+    bool canRedo = false;
+    bool historyBlocked = false;
+    bool requestUndo = false;
+    bool requestRedo = false;
     int previewDisplayedShortEdge = 720;
     CompositionFormat format = CompositionFormat::Portrait;
     int shortEdge = 1080;
@@ -99,6 +104,9 @@ struct EditorUiState {
     std::string exportStatus;
     bool exportError = false;
     int exportEncoder = 0;
+    bool exportSelection = false;
+    double exportStart = 0;
+    double exportEnd = 0;
     std::string exportBlockedReason;
 };
 

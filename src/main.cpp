@@ -9,6 +9,7 @@
 #include "musdesk/projects/ProjectStore.hpp"
 #include "musdesk/projects/RecoveryStore.hpp"
 #include "musdesk/projects/ProjectCollector.hpp"
+#include "musdesk/core/CompositionHistory.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_opengl3.h>
@@ -199,6 +200,7 @@ int main(int argc, char* argv[]) {
         std::unique_ptr<musdesk::ExportEngine> exporter;
         bool exportVsyncDisabled = false;
         Uint64 lastExportUiFrame = 0;
+        bool resetHistory = true;
         auto importPreset = [&](const std::string& path) {
             editorState.presetStatus.clear();
             try {
@@ -254,6 +256,7 @@ int main(int argc, char* argv[]) {
                 const auto slash = path.find_last_of("/\\");
                 editorState.artworkName = path.substr(slash == std::string::npos ? 0 : slash + 1);
                 editorState.importError.clear();
+                resetHistory = true;
                 SDL_Log("Artwork imported: %d x %d", image.width, image.height);
             } catch (const std::exception& error) {
                 // A failed replacement keeps the previously imported image intact.
@@ -336,7 +339,24 @@ int main(int argc, char* argv[]) {
             current.previewTimeSeconds = 0;
             return recoveredProject || current != savedProject;
         };
+        musdesk::CompositionHistory history;
+        auto applyComposition = [&](const musdesk::CompositionSettings& settings) {
+            editorState.title.fill('\0');
+            editorState.artist.fill('\0');
+            std::copy(settings.title.begin(),settings.title.end(),editorState.title.begin());
+            std::copy(settings.artist.begin(),settings.artist.end(),editorState.artist.begin());
+            musdesk::applyVisualPreset(editorState,settings.preset);
+            editorState.durationSeconds = settings.durationSeconds;
+            editorState.format = settings.format;
+            editorState.shortEdge = settings.shortEdge;
+            editorState.backgroundFraming = settings.backgroundFraming;
+            editorState.labelFraming = settings.labelFraming;
+            editorState.backgroundSoftness = settings.backgroundSoftness;
+        };
         auto applyProject = [&](const musdesk::ProjectDocument& project, const std::string& path) {
+            resetHistory = true;
+            editorState.exportSelection = false;
+            editorState.exportStart = editorState.exportEnd = 0;
             clearOwnRecovery();
             recoveredProject = false;
             startupAudio.clear();
@@ -356,17 +376,7 @@ int main(int argc, char* argv[]) {
             editorState.importError.clear();
             editorState.audioReady = editorState.audioPlaying = editorState.audioSeeking = false;
             editorState.audioEnergy = 0;
-            editorState.title.fill('\0');
-            editorState.artist.fill('\0');
-            std::copy(project.composition.title.begin(), project.composition.title.end(), editorState.title.begin());
-            std::copy(project.composition.artist.begin(), project.composition.artist.end(), editorState.artist.begin());
-            musdesk::applyVisualPreset(editorState, project.composition.preset);
-            editorState.durationSeconds = project.composition.durationSeconds;
-            editorState.format = project.composition.format;
-            editorState.shortEdge = project.composition.shortEdge;
-            editorState.backgroundFraming = project.composition.backgroundFraming;
-            editorState.labelFraming = project.composition.labelFraming;
-            editorState.backgroundSoftness = project.composition.backgroundSoftness;
+            applyComposition(project.composition);
             editorState.timeSeconds = project.previewTimeSeconds;
             editorState.animatePreview = false;
             resumeAfterSeek = false;
@@ -522,6 +532,10 @@ int main(int argc, char* argv[]) {
                     const auto slash = audio->path.find_last_of("/\\");
                     editorState.audioName = audio->path.substr(slash == std::string::npos ? 0 : slash + 1);
                     editorState.durationSeconds = audio->durationSeconds();
+                    resetHistory = true;
+                    editorState.exportSelection = false;
+                    editorState.exportStart = 0;
+                    editorState.exportEnd = audio->durationSeconds();
                     editorState.timeSeconds = std::clamp(projectRestoreTime.value_or(0), 0.0, editorState.durationSeconds);
                     projectRestoreTime.reset();
                     editorState.missingAudioPath.clear();
@@ -636,7 +650,9 @@ int main(int argc, char* argv[]) {
                             audioClip->durationSeconds(), editorState.preset, editorState.format, editorState.shortEdge,
                             editorState.backgroundFraming, editorState.labelFraming, editorState.backgroundSoftness};
                         exporter = std::make_unique<musdesk::ExportEngine>(composition, settings, audioClip, mediaTools, path,
-                            editorState.exportEncoder == 0 ? musdesk::ExportEncoder::Automatic : musdesk::ExportEncoder::Cpu);
+                            editorState.exportEncoder == 0 ? musdesk::ExportEncoder::Automatic : musdesk::ExportEncoder::Cpu,
+                            editorState.exportSelection ? musdesk::ExportRange{editorState.exportStart,editorState.exportEnd}
+                                : musdesk::ExportRange{});
                     } catch (const std::exception& error) {
                         editorState.exportStatus = error.what();
                         editorState.exportError = true;
@@ -750,6 +766,17 @@ int main(int argc, char* argv[]) {
             const double beforeUiTime = editorState.timeSeconds;
             const float beforeVolume = editorState.previewVolume;
             const bool beforeMute = editorState.muteAudio;
+            if (resetHistory) {
+                history.reset(currentProject().composition);
+                resetHistory = false;
+            }
+            else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsKeyPressed(ImGuiKey_Tab,false))
+                history.observe(currentProject().composition,false);
+            editorState.canUndo = history.canUndo();
+            editorState.canRedo = history.canRedo();
+            editorState.historyBlocked = editorState.exportBusy || editorState.audioImportPending
+                || editorState.projectDialogPending || editorState.artworkDialogPending || editorState.audioDialogPending
+                || editorState.presetDialogPending || editorState.showUnsavedPrompt || editorState.showRecoveryPrompt;
             musdesk::drawEditorUi(editorState, composition.textureId());
             if (!editorState.exportBusy && !editorState.audioImportPending && !editorState.projectDialogPending
                 && !editorState.artworkDialogPending && !editorState.audioDialogPending && !editorState.presetDialogPending
@@ -758,6 +785,13 @@ int main(int argc, char* argv[]) {
                     if (io.KeyShift) editorState.requestSaveProjectAs = true;
                     else editorState.requestSaveProject = true;
                 }
+                if (!io.WantTextInput && !ImGui::IsAnyItemActive()) {
+                    if (ImGui::IsKeyPressed(ImGuiKey_Z,false)) {
+                        if (io.KeyShift) editorState.requestRedo = true;
+                        else editorState.requestUndo = true;
+                    }
+                    if (ImGui::IsKeyPressed(ImGuiKey_Y,false)) editorState.requestRedo = true;
+                }
                 if (ImGui::IsKeyPressed(ImGuiKey_O, false)) editorState.requestOpenProject = true;
                 if (ImGui::IsKeyPressed(ImGuiKey_N, false)) editorState.requestNewProject = true;
             }
@@ -765,6 +799,18 @@ int main(int argc, char* argv[]) {
                 editorState.cancelProjectAction = false;
                 pendingProjectAction = ProjectAction::None;
             }
+            history.observe(currentProject().composition,ImGui::IsAnyItemActive());
+            if (!editorState.historyBlocked && (editorState.requestUndo || editorState.requestRedo)) {
+                const auto restored = editorState.requestUndo ? history.undo() : history.redo();
+                if (restored) {
+                    applyComposition(*restored);
+                    editorState.presetDirty = true;
+                    editorState.timeSeconds = std::clamp(editorState.timeSeconds,0.0,editorState.durationSeconds);
+                    anchorTime = editorState.timeSeconds;
+                    anchorTicks = SDL_GetTicksNS();
+                }
+            }
+            editorState.requestUndo = editorState.requestRedo = false;
             if (editorState.discardProjectChanges) {
                 editorState.discardProjectChanges = false;
                 continueProjectAction();

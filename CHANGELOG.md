@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added Undo/Redo for labels, effects, framing and output settings, with grouped
+  slider/text edits, a 100-step history and Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z.
+- Added selected-range MP4 export, playhead boundaries and a quick five-second
+  sample; retained original animation time and sample-accurate audio trimming.
 - Independent Spectrum color/brightness/width/gap, 32-256 points, sharpness,
   randomness and motion speed; Glow width/softness/steady light/audio reaction.
 - Additional attack/release smoothing for both effects, deterministic after seeking
