@@ -8,6 +8,42 @@
 #include <stdexcept>
 
 namespace musdesk {
+namespace {
+template<std::size_t N, class Sample>
+std::array<float,N> filteredSample(double seconds, double step, float attackMs, float releaseMs, Sample sample) {
+    attackMs = std::isfinite(attackMs) ? std::clamp(attackMs,0.0f,250.0f) : 0;
+    releaseMs = std::isfinite(releaseMs) ? std::clamp(releaseMs,0.0f,1000.0f) : 0;
+    if ((attackMs == 0 && releaseMs == 0) || !std::isfinite(step) || step <= 0) return sample(seconds);
+    const double index = std::floor(seconds/step);
+    if (!std::isfinite(index)) return sample(seconds);
+    const double history = std::min(300.0,std::ceil(0.006*std::max(attackMs,releaseMs)/step));
+    const int count = static_cast<int>(std::min(index,history));
+    const double first = index-count;
+    auto result = sample(first*step);
+    const auto advance = [&](double time, double dt) {
+        const auto target = sample(time);
+        for (std::size_t band = 0; band < N; ++band) {
+            const float tau = (target[band] > result[band] ? attackMs : releaseMs)*0.001f;
+            const float amount = tau > 0 ? static_cast<float>(1-std::exp(-dt/tau)) : 1;
+            result[band] += (target[band]-result[band])*amount;
+        }
+    };
+    for (int offset = 1; offset <= count; ++offset) advance((first+offset)*step,step);
+    if (seconds > index*step) advance(seconds,seconds-index*step);
+    return result;
+}
+}
+
+SpectrumFrame AudioSpectrum::filteredAt(double seconds, float attackMs, float releaseMs) const {
+    if (!std::isfinite(seconds) || seconds < 0 || seconds >= durationSeconds) return {};
+    return filteredSample<32>(seconds,stepSeconds,attackMs,releaseMs,[&](double t) { return at(t); });
+}
+float AudioEnvelope::filteredAt(double seconds, float attackMs, float releaseMs) const {
+    if (!std::isfinite(seconds) || seconds < 0 || seconds >= durationSeconds) return 0;
+    return filteredSample<1>(seconds,stepSeconds,attackMs,releaseMs,
+        [&](double t) { return std::array<float,1>{at(t)}; })[0];
+}
+
 SpectrumFrame spectrumForDisplay(const SpectrumFrame& spectrum, float gainDb, float balance) {
     gainDb = std::isfinite(gainDb) ? std::clamp(gainDb, -24.0f, 24.0f) : 0;
     balance = std::isfinite(balance) ? std::clamp(balance, -1.0f, 1.0f) : 0;

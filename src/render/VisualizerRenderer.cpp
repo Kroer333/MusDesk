@@ -105,6 +105,11 @@ uniform float spectrum[32];
 uniform float spectrumStrength;
 uniform float spectrumLevel;
 uniform float ringHeadroom;
+uniform vec4 spectrumStyle;
+uniform vec4 spectrumLine;
+uniform vec4 spectrumColor;
+uniform vec4 glowShape;
+uniform float glowEnergy;
 uniform vec2 canvasSize;
 uniform vec4 discGeometry;
 uniform vec4 timelineGeometry;
@@ -139,21 +144,21 @@ float ringNoise(float angle, float time) {
         mix(ringHash(left,cell.y+1.0),ringHash(right,cell.y+1.0),blend.x),blend.y);
 }
 vec2 spectrumVertex(float node) {
-    node = mod(node,128.0);
-    float angle = node/128.0*6.283185307-3.141592654;
-    float irregularity = ringNoise(angle,ringPhase*1.3);
+    node = mod(node,spectrumStyle.x);
+    float angle = node/spectrumStyle.x*6.283185307-3.141592654;
+    float time = ringPhase*spectrumStyle.w;
+    float irregularity = mix(0.5,ringNoise(angle,time*1.3),spectrumStyle.z);
     float bandPosition = acos(clamp(cos(4.0*angle+1.8*(irregularity-0.5)
-        +ringPhase*0.35),-1.0,1.0))/3.141592654*31.0;
+        +time*0.35*spectrumStyle.z),-1.0,1.0))/3.141592654*31.0;
     int band = min(int(bandPosition),30);
     float spectral = mix(spectrum[band],spectrum[band+1],fract(bandPosition));
-    float moment = ringPhase*10.0;
+    float moment = time*10.0;
     float motion = mix(ringHash(node,floor(moment)),ringHash(node,floor(moment)+1.0),
         smoothstep(0.0,1.0,fract(moment)));
+    motion = mix(1.0,motion,spectrumStyle.z);
     float level = spectrumLevel*spectrumLevel;
     spectral = (0.22*level+0.78*spectral*spectral)*(0.8+0.2*irregularity);
-    float wave = 0.5+0.3*sin((angle-discAngle)*18.0+ringPhase)
-        +0.2*sin((angle-discAngle)*31.0-ringPhase*1.3);
-    float radius = 1.055+0.025*ringMotion*wave
+    float radius = 1.0+spectrumLine.y
         +ringHeadroom*(1.0-exp(-spectrumStrength*spectral))*(0.25+0.75*motion);
     return vec2(cos(angle),sin(angle))*radius;
 }
@@ -184,23 +189,31 @@ void main() {
     vec2 material = rotatePoint(discPoint,-discAngle);
     float phi = atan(material.y,material.x);
     vec3 accent = glowSettings.rgb;
-    float pulse = audioEnergy*pulseStrength;
+    float pulse = glowEnergy*pulseStrength*glowShape.z;
     float wave = 0.0;
     if (ringMotion > 0.0) wave = 0.5 + 0.3*sin(phi*18.0+ringPhase) + 0.2*sin(phi*31.0-ringPhase*1.3);
-    float glowDistance = max(0.0,r-0.90);
-    color += accent * glowSettings.a * (1.0+1.3*pulse)
-        * (0.5*exp(-glowDistance*glowDistance*(38.0-10.0*pulse)));
+    float glowDistance = max(0.0,r-0.90)/glowShape.x;
+    color += accent * glowSettings.a * (glowShape.w+1.3*pulse)
+        * (0.5*exp(-pow(glowDistance,2.0/glowShape.y)*max(6.0,38.0-10.0*pulse)));
     float rimRadius = 1.055 + 0.025*ringMotion*wave;
     float rimDistance = abs(r-rimRadius);
+    color += accent * min(1.0,ringMotion) * (0.9*exp(-rimDistance*230.0)+0.12*exp(-rimDistance*65.0));
     if (spectrumStrength > 0.0) {
         rimDistance = 100.0;
-        if (r > 1.0 && r < 1.12+ringHeadroom) {
-            float node = floor((atan(discPoint.y,discPoint.x)+3.141592654)/6.283185307*128.0);
-            rimDistance = segmentDistance(discPoint,spectrumVertex(node),spectrumVertex(node+1.0));
+        if (r > 1.0 && r < 1.0+spectrumLine.y+ringHeadroom+0.12*spectrumLine.x) {
+            float position = (atan(discPoint.y,discPoint.x)+3.141592654)/6.283185307*spectrumStyle.x;
+            float node = floor(position);
+            vec2 a = spectrumVertex(node), b = spectrumVertex(node+1.0);
+            vec2 direction = discPoint/r, edge = b-a;
+            float straightRadius = (a.x*b.y-a.y*b.x)/(direction.x*edge.y-direction.y*edge.x);
+            float roundedRadius = mix(length(a),length(b),smoothstep(0.0,1.0,fract(position)));
+            float radius = mix(roundedRadius,straightRadius,spectrumStyle.y);
+            float slope = abs(direction.x*normalize(edge).y-direction.y*normalize(edge).x);
+            rimDistance = abs(r-radius)*mix(1.0,slope,spectrumStyle.y)/spectrumLine.x;
         }
+        color += spectrumColor.rgb * spectrumLine.z * min(1.0,spectrumStrength)
+            * (0.9*exp(-rimDistance*230.0)+0.12*exp(-rimDistance*65.0));
     }
-    float lineStrength = min(1.0,spectrumStrength+ringMotion);
-    color += accent * lineStrength * (0.9*exp(-rimDistance*230.0)+0.12*exp(-rimDistance*65.0));
     if (r < 1.0) {
         float grooves = 0.009*sin(r*950.0) + 0.006*sin(r*420.0);
         float reflection = pow(abs(cos(phi-0.5)),22.0)*0.10;
@@ -533,6 +546,15 @@ void VisualizerRenderer::renderAtSize(double timeSeconds, const CompositionSetti
     gl.Uniform4f(gl.GetUniformLocation(impl_->sceneProgram, "glowSettings"),
         safe(preset.glowColor[0], 0, 1, 0.24f), safe(preset.glowColor[1], 0, 1, 0.6f),
         safe(preset.glowColor[2], 0, 1, 1), preset.glowEnabled ? safe(preset.glowIntensity, 0, 3, 0.8f) : 0);
+    gl.Uniform4f(gl.GetUniformLocation(impl_->sceneProgram,"glowShape"),
+        safe(preset.glowWidth,0.2f,3,1),safe(preset.glowSoftness,0.25f,3,1),
+        safe(preset.glowReactivity,0,3,1),safe(preset.glowBase,0,1,1));
+    scalar("glowEnergy",safe(audio.glowEnergy < 0 ? audio.energy : audio.glowEnergy,0,1,0));
+    gl.Uniform4f(gl.GetUniformLocation(impl_->sceneProgram,"spectrumStyle"),
+        static_cast<float>(std::clamp(preset.spectrumPoints,32,256)),safe(preset.spectrumSharpness,0,1,1),
+        safe(preset.spectrumRandomness,0,1,1),safe(preset.spectrumSpeed,0,4,1));
+    gl.Uniform4f(gl.GetUniformLocation(impl_->sceneProgram,"spectrumColor"),
+        safe(preset.spectrumColor[0],0,1,0.24f),safe(preset.spectrumColor[1],0,1,0.60f),safe(preset.spectrumColor[2],0,1,1),0);
     scalar("pulseStrength", safe(preset.pulseStrength, 0, 2, 0.6f));
     scalar("spectrumStrength", preset.spectrumEnabled
         ? safe(preset.spectrumStrength, 0, 4, 0) * safe(preset.pulseStrength, 0, 2, 0) : 0);
@@ -543,7 +565,12 @@ void VisualizerRenderer::renderAtSize(double timeSeconds, const CompositionSetti
     const double textDistance = (layout.textX == layout.discX
         ? layout.titleY-layout.discY+topGlyph->yoff
         : layout.textX-layout.textWidth/2-layout.discX)*frame.subjectScale;
-    scalar("ringHeadroom",std::max(0.0,(std::min(edgeDistance,textDistance)-12)/(layout.discRadius*frame.subjectScale)-1.105));
+    const double clearance = (std::min(edgeDistance,textDistance)-12)/(layout.discRadius*frame.subjectScale)-1;
+    const float width = safe(preset.spectrumLineWidth,0.25f,3,1);
+    const double gap = std::min<double>(safe(preset.spectrumGap,0.015f,0.25f,0.055f),std::max(0.015,clearance-0.05*width));
+    scalar("ringHeadroom",std::max(0.0,clearance-gap-0.05*width));
+    gl.Uniform4f(gl.GetUniformLocation(impl_->sceneProgram,"spectrumLine"),width,static_cast<float>(gap),
+        safe(preset.spectrumIntensity,0,3,1),0);
     const auto spectrum = spectrumForDisplay(audio.spectrum, preset.spectrumGainDb, preset.spectrumBalance);
     scalar("spectrumLevel",*std::max_element(spectrum.begin(),spectrum.end()));
     gl.Uniform1fv(gl.GetUniformLocation(impl_->sceneProgram, "spectrum[0]"), static_cast<GLsizei>(spectrum.size()), spectrum.data());

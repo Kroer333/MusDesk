@@ -230,8 +230,8 @@ controlled by the hit gate. Each effect remains independently switchable.
 
 **Spectrum ring** now ranges from 0 to 4. Its larger deformation has a contrast
 curve to emphasize loud sectors and a layout-dependent limit to prevent clipping.
-Spectrum keeps the record size unchanged. Its 128 independently moving vertices
-form straight segments with angular peaks. Timestamp-based variation breaks up
+Spectrum keeps the record size unchanged. Its configurable 32-256 vertices
+form straight or rounded segments. Timestamp-based variation breaks up
 repeated patterns, with a shared audio response around the whole record. Deformation
 stays clear of the track text as well as the frame edges.
 **Spectrum gain** (-24 to +24 dB) and **Spectrum balance** (bass to treble) remain
@@ -242,12 +242,29 @@ FFT uses 2048-sample Hann windows and 32 logarithmic stereo-power bands (40 Hz t
 of the hit gate. Silent cached bands stay zero; gain cannot restore data below
 its -60 dB floor. Playback volume, mute and loop remain monitoring-only settings.
 
-New presets use version 6. Versions 1-5 remain readable, but their old confidence
+Development controls for the next update are in separate **Glow settings** and
+**Spectrum settings** sections. Spectrum has its own color, brightness, line width,
+gap, point count, sharpness, randomness and motion speed. Sharpness 1 gives straight
+edges; 0 rounds the joins. Randomness 0 removes procedural variation; speed 0 freezes
+its pattern while FFT response continues. Glow has width, softness, steady light
+and audio reaction controls in addition to color/intensity. Steady light 0 gives
+audio-only glow. Its color also tints rim waves and the progress accent.
+
+Both effects offer extra attack (0-250 ms) and release (0-1000 ms) smoothing of
+their existing cached response. Zero adds no smoothing. This never reimports audio
+or changes the sound, beat gate or playback clock. Filtering replays at most 300
+cached samples, so seeking and offline export produce the same response. Reset
+buttons restore each effect's controls without resetting the other effect, shared
+audio response or enable switches. The released 0.2.0 ZIP is unchanged.
+
+New development presets use version 7. Versions 1-6 remain readable, but v1-v5 confidence
 thresholds cannot retain identical musical behavior with a measured-level gate;
 review the converted dB value. Version 5's two gates merge using the stricter value.
 Older built-in Soft Glow/Beat Pulse/Side Kick names migrate with line effects off;
 custom names retain their effect switches. New version 6 files preserve explicit
-switch choices. The released 0.1.0 application cannot read newer preset versions.
+switch choices. Version 6 gains neutral controls and a spectrum color matching its
+old accent. MusDesk 0.2.0 cannot read v7 presets or projects saved with embedded v7
+presets; keep backups when opening older projects in a development build.
 
 ### Bass energy and attack candidates (development)
 
@@ -391,10 +408,14 @@ track labels, preview volume, playback position, guides or window settings.
 Loading a preset does not reset audio or its timeline. Preset files store effects;
 use a `.musdesk` project to preserve media references and labels as well.
 
-JSON format version **6** requires exactly these root fields: `version`, `name`,
-`disc_rpm`, `glow`, `background`, `reactivity` and `effects`. `glow` contains `color`, `intensity`
-and `pulse_strength`; `background` contains `speed`, `zoom` and `brightness`.
-Version 6's reactivity contains beat_level_db (-60..0), beat_band (bass/drums/wide),
+JSON format version **7** requires exactly these root fields: `version`, `name`,
+`disc_rpm`, `glow`, `background`, `reactivity`, `effects` and `spectrum_style`.
+`glow` contains `color`, `intensity`, `pulse_strength`, `width`, `softness`,
+`reactivity`, `base`, `attack_ms` and `release_ms`. `spectrum_style` contains
+`color`, `points`, `sharpness`, `randomness`, `speed`, `line_width`, `gap`,
+`intensity`, `attack_ms` and `release_ms`.
+`background` contains `speed`, `zoom` and `brightness`.
+Reactivity retains the v6 fields: beat_level_db (-60..0), beat_band (bass/drums/wide),
 subject_pulse, background, ring, spectrum (0..4), spectrum_gain_db and spectrum_balance.
 Its effects object contains boolean glow, spectrum, waves, subject, background and
 camera flags, plus camera_strength (0..0.05). Older versions keep their respective
@@ -417,6 +438,11 @@ has no effects; v5 has separate normalized beat_threshold/camera_threshold field
 | Spectrum ring | 0–4 |
 | Spectrum gain | −24–24 dB |
 | Spectrum balance | −1–1; bass emphasis to treble emphasis |
+| Spectrum points / sharpness / randomness | Integer 32–256 / 0–1 / 0–1 |
+| Spectrum speed / width / brightness | 0–4 / 0.25–3 / 0–3 |
+| Spectrum gap | 0.015–0.25 record radii, limited by layout clearance |
+| Glow width / softness / reaction / steady light | 0.2–3 / 0.25–3 / 0–3 / 0–1 |
+| Extra attack / release, both effects | 0–250 ms / 0–1000 ms |
 
 The parser rejects wrong types, missing/unknown/duplicate fields, nonfinite or
 out-of-range values, unsupported versions, excessive nesting and files above

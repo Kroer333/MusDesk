@@ -29,10 +29,10 @@ void require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
 bool differsIn(const std::vector<std::uint8_t>& a, const std::vector<std::uint8_t>& b,
-    int x0, int y0, int x1, int y1) {
+    int x0, int y0, int x1, int y1, int width = 1080, int height = 1920) {
     for (int y = y0; y < y1; ++y)
         for (int x = x0; x < x1; ++x) {
-            const auto index = ((1919 - y) * 1080 + x) * 4;
+            const auto index = ((height-1-y)*width+x)*4;
             if (a[index] != b[index] || a[index + 1] != b[index + 1] || a[index + 2] != b[index + 2]) return true;
         }
     return false;
@@ -253,6 +253,52 @@ int main(int argc, char* argv[]) {
         require(angularFrame != renderer.readPixels(), "Spectrum vertices must evolve with playback time");
         renderer.renderFrame(2,angularSettings,broadSpectrum);
         require(angularFrame == renderer.readPixels(), "Angular spectrum must remain reproducible after seek");
+        auto controls = angularSettings;
+        controls.preset.spectrumStrength = 2;
+        musdesk::AudioReaction controlAudio = broadSpectrum;
+        controlAudio.energy = 0.7f;
+        renderer.renderFrame(2,controls,controlAudio);
+        const auto spectrumReference = renderer.readPixels();
+        for (auto change : std::array{
+            +[](musdesk::VisualPreset& p) { p.spectrumPoints = 32; },
+            +[](musdesk::VisualPreset& p) { p.spectrumSharpness = 0; },
+            +[](musdesk::VisualPreset& p) { p.spectrumRandomness = 0; },
+            +[](musdesk::VisualPreset& p) { p.spectrumSpeed = 0; },
+            +[](musdesk::VisualPreset& p) { p.spectrumLineWidth = 2; },
+            +[](musdesk::VisualPreset& p) { p.spectrumGap = 0.16f; },
+            +[](musdesk::VisualPreset& p) { p.spectrumIntensity = 0.3f; },
+            +[](musdesk::VisualPreset& p) { p.spectrumColor = {1,0,0}; }}) {
+            auto adjusted = controls;
+            change(adjusted.preset);
+            renderer.renderFrame(2,adjusted,controlAudio);
+            require(renderer.readPixels() != spectrumReference,"Spectrum style control must affect rendered pixels");
+        }
+        auto adjusted = controls;
+        adjusted.preset.glowColor = {1,0,0};
+        adjusted.preset.glowWidth = 3;
+        renderer.renderFrame(2,adjusted,controlAudio);
+        require(!differsIn(renderer.readPixels(),spectrumReference,60,60,1000,1020,1920,1080),
+            "Disabled glow controls must not recolor or deform spectrum");
+        controls.preset.spectrumEnabled = false;
+        controls.preset.glowEnabled = true;
+        renderer.renderFrame(2,controls,controlAudio);
+        const auto glowReference = renderer.readPixels();
+        for (auto change : std::array{
+            +[](musdesk::VisualPreset& p) { p.glowWidth = 2; },
+            +[](musdesk::VisualPreset& p) { p.glowSoftness = 0.3f; },
+            +[](musdesk::VisualPreset& p) { p.glowBase = 0; },
+            +[](musdesk::VisualPreset& p) { p.glowReactivity = 0; },
+            +[](musdesk::VisualPreset& p) { p.glowIntensity = 0.3f; },
+            +[](musdesk::VisualPreset& p) { p.glowColor = {1,0,0}; }}) {
+            adjusted = controls;
+            change(adjusted.preset);
+            renderer.renderFrame(2,adjusted,controlAudio);
+            require(renderer.readPixels() != glowReference,"Glow style control must affect rendered pixels");
+        }
+        adjusted = controls;
+        adjusted.preset.spectrumColor = {1,0,0};
+        renderer.renderFrame(2,adjusted,controlAudio);
+        require(renderer.readPixels() == glowReference,"Disabled spectrum must not affect glow");
         settings.title = "Deterministic frame";
         renderer.renderFrame(0, settings);
         const auto first = renderer.readPixels();

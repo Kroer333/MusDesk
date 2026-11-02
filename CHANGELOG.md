@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Independent Spectrum color/brightness/width/gap, 32-256 points, sharpness,
+  randomness and motion speed; Glow width/softness/steady light/audio reaction.
+- Additional attack/release smoothing for both effects, deterministic after seeking
+  and in MP4 export, with separate reset controls and preset v7 (v1-v6 readable).
+
 ## 0.2.0 - 2026-10-31
 
 - Rebuilt the spectrum outline from 128 straight segments with faster independent

@@ -18,6 +18,10 @@ void applyVisualPreset(EditorUiState& state, const VisualPreset& preset) {
 }
 
 namespace {
+bool effectSlider(const char* id, float& value, float low, float high, const char* label) {
+    ImGui::SetNextItemWidth(-1);
+    return ImGui::SliderFloat(id,&value,low,high,label,ImGuiSliderFlags_AlwaysClamp);
+}
 void drawPresetControls(EditorUiState& state) {
     ImGui::SeparatorText("Presets");
     if (ImGui::Button("Soft Glow")) applyVisualPreset(state, softGlowPreset());
@@ -37,7 +41,6 @@ void drawPresetControls(EditorUiState& state) {
     ImGui::EndDisabled();
     auto& preset = state.preset;
     ImGui::SeparatorText("Audio response");
-    changed |= ImGui::ColorEdit3("Accent color", preset.glowColor.data(), ImGuiColorEditFlags_NoInputs);
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderFloat("##Pulse", &preset.pulseStrength, 0, 2, "Audio response: %.2f", ImGuiSliderFlags_AlwaysClamp);
     int band = static_cast<int>(preset.beatBand);
@@ -56,10 +59,20 @@ void drawPresetControls(EditorUiState& state) {
     ImGui::TextWrapped("One level gate for overlay pulse and Side Kick, measured in the selected band. Raise it to reject quieter attacks.");
     ImGui::SeparatorText("Independent effects");
     changed |= ImGui::Checkbox("Glow", &preset.glowEnabled);
-    ImGui::BeginDisabled(!preset.glowEnabled);
-    ImGui::SetNextItemWidth(-1);
-    changed |= ImGui::SliderFloat("##Glow", &preset.glowIntensity, 0, 3, "Glow intensity: %.2f", ImGuiSliderFlags_AlwaysClamp);
-    ImGui::EndDisabled();
+    if (ImGui::CollapsingHeader("Glow settings",ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::BeginDisabled(!preset.glowEnabled);
+        changed |= ImGui::ColorEdit3("Glow color",preset.glowColor.data(),ImGuiColorEditFlags_NoInputs);
+        changed |= effectSlider("##Glow",preset.glowIntensity,0,3,"Intensity: %.2f");
+        changed |= effectSlider("##GlowWidth",preset.glowWidth,0.2f,3,"Width: %.2fx");
+        changed |= effectSlider("##GlowSoftness",preset.glowSoftness,0.25f,3,"Softness: %.2f");
+        changed |= effectSlider("##GlowBase",preset.glowBase,0,1,"Steady glow: %.2f");
+        changed |= effectSlider("##GlowReaction",preset.glowReactivity,0,3,"Audio reaction: %.2f");
+        changed |= effectSlider("##GlowAttack",preset.glowAttackMs,0,250,"Extra attack: %.0f ms");
+        changed |= effectSlider("##GlowRelease",preset.glowReleaseMs,0,1000,"Extra release: %.0f ms");
+        if (ImGui::Button("Reset glow")) { resetGlow(preset); changed = true; }
+        ImGui::TextWrapped("Steady glow 0 uses audio only. Extra attack/release soften the existing RMS response. Glow color also tints rim waves and the progress accent.");
+        ImGui::EndDisabled();
+    }
     changed |= ImGui::Checkbox("Overlay pulse", &preset.subjectEnabled);
     ImGui::BeginDisabled(!preset.subjectEnabled);
     ImGui::SetNextItemWidth(-1);
@@ -81,7 +94,19 @@ void drawPresetControls(EditorUiState& state) {
         "Ring waves: %.2f", ImGuiSliderFlags_AlwaysClamp);
     ImGui::EndDisabled();
     changed |= ImGui::Checkbox("Spectrum outline", &preset.spectrumEnabled);
+    if (ImGui::CollapsingHeader("Spectrum settings",ImGuiTreeNodeFlags_DefaultOpen)) {
     ImGui::BeginDisabled(!preset.spectrumEnabled);
+    changed |= ImGui::ColorEdit3("Spectrum color",preset.spectrumColor.data(),ImGuiColorEditFlags_NoInputs);
+    changed |= effectSlider("##SpectrumIntensity",preset.spectrumIntensity,0,3,"Line brightness: %.2f");
+    changed |= effectSlider("##SpectrumWidth",preset.spectrumLineWidth,0.25f,3,"Line width: %.2fx");
+    changed |= effectSlider("##SpectrumGap",preset.spectrumGap,0.015f,0.25f,"Gap: %.3f radii");
+    ImGui::SetNextItemWidth(-1);
+    changed |= ImGui::SliderInt("##SpectrumPoints",&preset.spectrumPoints,32,256,"Points: %d",ImGuiSliderFlags_AlwaysClamp);
+    changed |= effectSlider("##SpectrumSharpness",preset.spectrumSharpness,0,1,"Sharpness: %.2f");
+    changed |= effectSlider("##SpectrumRandomness",preset.spectrumRandomness,0,1,"Randomness: %.2f");
+    changed |= effectSlider("##SpectrumSpeed",preset.spectrumSpeed,0,4,"Motion speed: %.2fx");
+    changed |= effectSlider("##SpectrumAttack",preset.spectrumAttackMs,0,250,"Extra attack: %.0f ms");
+    changed |= effectSlider("##SpectrumRelease",preset.spectrumReleaseMs,0,1000,"Extra release: %.0f ms");
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderFloat("##Spectrum", &preset.spectrumStrength, 0, 4,
         "Spectrum ring: %.2f", ImGuiSliderFlags_AlwaysClamp);
@@ -99,8 +124,11 @@ void drawPresetControls(EditorUiState& state) {
         preset.spectrumGainDb = preset.spectrumBalance = 0;
         changed = true;
     }
+    if (ImGui::Button("Reset spectrum")) { resetSpectrum(preset); changed = true; }
     ImGui::TextWrapped("Balance: bass (-), treble (+). Spectrum shows all FFT bands independently of the hit gate.");
+    ImGui::TextWrapped("Sharpness 0 rounds the points; 1 uses straight edges. Randomness 0 removes procedural motion. Extra attack/release smooth the cached FFT. Gap and deformation are limited by layout clearance.");
     ImGui::EndDisabled();
+    }
     changed |= ImGui::Checkbox("Alternating screen kick", &preset.cameraEnabled);
     ImGui::BeginDisabled(!preset.cameraEnabled);
     float kickPercent = preset.cameraStrength * 100;

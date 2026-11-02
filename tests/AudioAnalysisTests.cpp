@@ -331,6 +331,27 @@ int main() {
         try { (void)musdesk::analyzeRms(samples, rate, 2, cancellation.get_token()); }
         catch (const std::exception&) { cancelled = true; }
         require(cancelled, "Analysis must honor cancellation");
+        musdesk::AudioSpectrum steps;
+        steps.durationSeconds = 2;
+        steps.frames.resize(101);
+        for (std::size_t i = 20; i < 35; ++i) steps.frames[i].fill(1);
+        require(steps.filteredAt(0.44,0,0) == steps.at(0.44), "Neutral smoothing must preserve cached FFT");
+        const auto rise = steps.filteredAt(0.44,100,300);
+        const auto fall = steps.filteredAt(0.8,100,300);
+        require(rise[0] > 0 && rise[0] < steps.at(0.44)[0], "Attack smoothing must slow a rising edge");
+        require(fall[0] > steps.at(0.8)[0], "Release smoothing must retain a decaying tail");
+        (void)steps.filteredAt(1.5,100,300);
+        require(rise == steps.filteredAt(0.44,100,300), "Smoothing must not depend on seek history");
+        require(steps.filteredAt(-1,100,300) == musdesk::SpectrumFrame{}
+            && steps.filteredAt(2,100,300) == musdesk::SpectrumFrame{}, "Smoothing must stay inside audio duration");
+        musdesk::AudioEnvelope glow;
+        glow.durationSeconds = steps.durationSeconds;
+        for (const auto& frame : steps.frames) glow.values.push_back(frame[0]);
+        require(glow.filteredAt(0.44,100,300) == rise[0] && glow.filteredAt(0.8,100,300) == fall[0],
+            "Glow and spectrum must use the same deterministic smoothing");
+        steps.stepSeconds = 1e-300;
+        require(std::isfinite(steps.filteredAt(0.44,100,300)[0]),
+            "Filtering must remain bounded even for an extremely small sample step");
         std::cout << "RMS stereo, silence, smoothing, normalization, cancellation and seek checks passed.\n";
         return 0;
     } catch (const std::exception& error) {

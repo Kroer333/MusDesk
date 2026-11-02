@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "effects": {
     "glow": true,
     "spectrum": false,
@@ -18,7 +18,13 @@
       1
     ],
     "intensity": 1.2,
-    "pulse_strength": 1.7
+    "pulse_strength": 1.7,
+    "width": 1,
+    "softness": 1,
+    "reactivity": 1,
+    "base": 1,
+    "attack_ms": 0,
+    "release_ms": 0
   },
   "background": {
     "speed": 1.1,
@@ -34,5 +40,21 @@
     "spectrum_balance": 0,
     "beat_level_db": -27,
     "beat_band": "bass"
+  },
+  "spectrum_style": {
+    "line_width": 1,
+    "color": [
+      0.6,
+      0.35,
+      1
+    ],
+    "gap": 0.055000000298023224,
+    "randomness": 1,
+    "sharpness": 1,
+    "attack_ms": 0,
+    "intensity": 1,
+    "points": 128,
+    "release_ms": 0,
+    "speed": 1
   }
 }

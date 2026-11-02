@@ -11,6 +11,7 @@ VisualPreset beatPulsePreset() {
     VisualPreset preset;
     preset.name = "Beat Pulse";
     preset.glowColor = {0.60f, 0.35f, 1.0f};
+    preset.spectrumColor = preset.glowColor;
     preset.glowIntensity = 1.2f;
     preset.pulseStrength = 1.7f;
     preset.discRpm = 12;
@@ -52,6 +53,22 @@ void validatePreset(const VisualPreset& preset) {
             throw std::runtime_error(std::string("Preset value out of range: ") + field);
     };
     for (auto component : preset.glowColor) range(component, 0, 1, "glow.color");
+    for (auto component : preset.spectrumColor) range(component, 0, 1, "spectrum_style.color");
+    range(preset.glowWidth, 0.2f, 3, "glow.width");
+    range(preset.glowSoftness, 0.25f, 3, "glow.softness");
+    range(preset.glowReactivity, 0, 3, "glow.reactivity");
+    range(preset.glowBase, 0, 1, "glow.base");
+    range(preset.glowAttackMs, 0, 250, "glow.attack_ms");
+    range(preset.glowReleaseMs, 0, 1000, "glow.release_ms");
+    range(preset.spectrumPoints, 32, 256, "spectrum_style.points");
+    range(preset.spectrumSharpness, 0, 1, "spectrum_style.sharpness");
+    range(preset.spectrumRandomness, 0, 1, "spectrum_style.randomness");
+    range(preset.spectrumSpeed, 0, 4, "spectrum_style.speed");
+    range(preset.spectrumLineWidth, 0.25f, 3, "spectrum_style.line_width");
+    range(preset.spectrumGap, 0.015f, 0.25f, "spectrum_style.gap");
+    range(preset.spectrumIntensity, 0, 3, "spectrum_style.intensity");
+    range(preset.spectrumAttackMs, 0, 250, "spectrum_style.attack_ms");
+    range(preset.spectrumReleaseMs, 0, 1000, "spectrum_style.release_ms");
     range(preset.glowIntensity, 0, 3, "glow.intensity (0..3)");
     range(preset.pulseStrength, 0, 2, "glow.pulse_strength (0..2)");
     range(preset.discRpm, -45, 45, "disc_rpm (-45..45)");
@@ -67,5 +84,23 @@ void validatePreset(const VisualPreset& preset) {
     range(preset.spectrumBalance, -1, 1, "reactivity.spectrum_balance (-1..1)");
     range(preset.cameraStrength, 0, 0.05f, "effects.camera_strength (0..0.05)");
     range(static_cast<int>(preset.beatBand), 0, 2, "reactivity.beat_band");
+}
+void resetGlow(VisualPreset& preset) {
+    const VisualPreset defaults;
+    preset.glowColor = defaults.glowColor;
+    preset.glowIntensity = defaults.glowIntensity;
+    preset.glowWidth = preset.glowSoftness = preset.glowReactivity = preset.glowBase = 1;
+    preset.glowAttackMs = preset.glowReleaseMs = 0;
+}
+void resetSpectrum(VisualPreset& preset) {
+    const VisualPreset defaults;
+    preset.spectrumColor = defaults.spectrumColor;
+    preset.spectrumStrength = defaults.spectrumStrength;
+    preset.spectrumGainDb = preset.spectrumBalance = 0;
+    preset.spectrumPoints = 128;
+    preset.spectrumSharpness = preset.spectrumRandomness = preset.spectrumSpeed = 1;
+    preset.spectrumLineWidth = preset.spectrumIntensity = 1;
+    preset.spectrumGap = defaults.spectrumGap;
+    preset.spectrumAttackMs = preset.spectrumReleaseMs = 0;
 }
 }

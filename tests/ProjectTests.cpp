@@ -139,6 +139,11 @@ int main(int, char*[]) {
             && version2.composition.labelFraming == musdesk::ImageFraming{} && version2.composition.backgroundSoftness == 1,
             "Version 2 projects must preserve centered crops and previous softness");
         project.previewTimeSeconds = 42.25;
+        project.composition.preset.spectrumPoints = 64;
+        project.composition.preset.spectrumSharpness = 0.4f;
+        project.composition.preset.spectrumReleaseMs = 240;
+        project.composition.preset.glowWidth = 1.7f;
+        project.composition.preset.glowReleaseMs = 320;
         const auto json = musdesk::serializeProject(project);
         require(musdesk::parseProject(json) == project, "Complete settings/Unicode/preset round trip failed");
         require(musdesk::isProjectPath("SET.MUSDESK") && !musdesk::isProjectPath("set.json"), "Project extension detection failed");

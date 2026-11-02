@@ -13,6 +13,7 @@ struct AudioEnvelope {
     std::vector<float> values;
 
     float at(double timeSeconds) const;
+    float filteredAt(double seconds, float attackMs, float releaseMs) const;
 };
 
 AudioEnvelope analyzeRms(std::span<const std::int16_t> samples, int sampleRate, int channels,
@@ -56,6 +57,7 @@ struct AudioSpectrum {
     double durationSeconds = 0;
     std::vector<SpectrumFrame> frames;
     SpectrumFrame at(double seconds) const;
+    SpectrumFrame filteredAt(double seconds, float attackMs, float releaseMs) const;
 };
 
 AudioSpectrum analyzeSpectrum(std::span<const std::int16_t> samples, int sampleRate, int channels,
@@ -67,6 +69,7 @@ struct AudioReaction {
     float beat = 0;
     SpectrumFrame spectrum{};
     float kick = 0;
+    float glowEnergy = -1;
 };
 
 AudioRhythm analyzeRhythm(std::span<const std::int16_t> samples, int sampleRate, int channels,

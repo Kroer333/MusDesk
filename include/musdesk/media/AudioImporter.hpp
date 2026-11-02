@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <optional>
 #include "musdesk/core/AudioAnalysis.hpp"
+#include "musdesk/core/VisualPreset.hpp"
 
 namespace musdesk {
 struct MediaTools {
@@ -39,6 +40,12 @@ struct DecodedAudio {
     AudioReaction reactionAt(double seconds, float beatThreshold, BeatBand band = BeatBand::Bass) const {
         return {envelope.at(seconds), rhythm.bass.at(seconds), rhythm.pulseAt(seconds, beatThreshold,band),
             spectrum.at(seconds), rhythm.kickAt(seconds, beatThreshold,band)};
+    }
+    AudioReaction reactionAt(double seconds, const VisualPreset& preset) const {
+        auto result = reactionAt(seconds,preset.beatThreshold,preset.beatBand);
+        result.spectrum = spectrum.filteredAt(seconds,preset.spectrumAttackMs,preset.spectrumReleaseMs);
+        result.glowEnergy = envelope.filteredAt(seconds,preset.glowAttackMs,preset.glowReleaseMs);
+        return result;
     }
 };
 
