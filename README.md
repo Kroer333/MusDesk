@@ -145,8 +145,38 @@ Preview uses the chosen aspect ratio; MP4 uses the chosen pixel dimensions at
 Output size is independent of window size and preview scale. Format/resolution
 changes mark the project unsaved and survive Save, recovery and Collect project.
 New projects default to 1080 × 1920. Version 1 projects reopen at that size;
-new project saves use version 3 with format, short-edge resolution and artwork
-framing. Versions 1 and 2 retain their previous centered crops and softness.
+new development project saves use version 4 with format, short-edge resolution,
+artwork framing and composition design. Versions 1-3 retain the existing vinyl
+design; versions 1 and 2 retain centered crops and default softness.
+
+### Composition design (development)
+
+The **Composition** panel offers four styles, independently of output aspect ratio:
+
+| Style | Foreground |
+| --- | --- |
+| Vinyl | Rotating record, optional circular spectrum and rim waves |
+| Artwork card | Stationary square artwork with rounded corners and optional glow |
+| Spectrum bars | 32 FFT bars using spectrum color, brightness, width, gain and smoothing |
+| Background & titles | Centered labels and optional timeline, with no foreground object |
+
+Choose artwork, gradient or solid-color backgrounds, and freeze artwork motion
+when needed. Bars and title-only scenes with gradient/solid backgrounds can export
+without an imported image; audio is still required. Artwork-card cropping uses
+**Media > Artwork framing > Foreground artwork**.
+
+Title, artist, progress line and timestamps have separate visibility switches.
+**Element placement** adjusts foreground size/offset and the labels/timeline group
+size/offset, with a reset button. Offsets are canvas fractions; positions and pulse
+scaling are bounded by the frame. Elements can intentionally overlap, so adjust
+their positions as needed. **Bars height** controls the bar scene's vertical response.
+Irrelevant effect controls are disabled for the selected scene/background.
+
+Design settings participate in Undo/Redo, Save, autosave/recovery and Collect project,
+and preview/export share the same layout. They belong to the project rather than
+an effect preset. Project v4 reads v1-v3 with the old defaults; older applications
+cannot read newly saved projects. Keep backups when using this development build.
+The published 0.2.0 package remains unchanged.
 
 The editor's **Project** section provides **New**, **Open**, **Save** and
 **Save As**. Shortcuts are Ctrl+N, Ctrl+O, Ctrl+S and Ctrl+Shift+S. You can also

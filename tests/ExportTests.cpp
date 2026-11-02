@@ -355,6 +355,22 @@ int main(int argc, char* argv[]) {
             require(finish(job).phase == musdesk::ExportPhase::Failed, "Verification failure was not reported");
         }
         preserved(guarded);
+        for (auto scene : {musdesk::SceneKind::Cover,musdesk::SceneKind::Bars,musdesk::SceneKind::Titles}) {
+            auto shortClip = std::make_shared<musdesk::DecodedAudio>(*clip);
+            shortClip->samples.resize(4800*2);
+            auto variant = settings;
+            variant.format = musdesk::CompositionFormat::Square;
+            variant.shortEdge = 720;
+            variant.design.scene = scene;
+            variant.design.showProgress = variant.design.showTimestamps = false;
+            if (scene != musdesk::SceneKind::Cover) {
+                renderer.clearArtwork();
+                variant.design.background = musdesk::BackgroundKind::Gradient;
+            }
+            musdesk::ExportEngine job(renderer,variant,shortClip,tools,
+                utf8(folder/("scene-"+std::to_string(static_cast<int>(scene))+".mp4")),musdesk::ExportEncoder::Cpu);
+            require(finish(job).phase == musdesk::ExportPhase::Completed,"New scene types must export valid MP4 without requiring unused artwork");
+        }
         for (const auto& file : std::filesystem::directory_iterator(folder))
             require(file.path().filename().string().find(".tmp-") == std::string::npos, "Export left a partial temporary file");
         require(glGetError() == GL_NO_ERROR, "OpenGL error during export");

@@ -22,6 +22,8 @@ int main() {
         edited.title = "New title";
         edited.labelFraming.zoom = 2;
         edited.preset.spectrumPoints = 64;
+        edited.design.scene = musdesk::SceneKind::Cover;
+        edited.design.showProgress = false;
         history.observe(edited,false);
         require(history.undo() == saved,"Undo must return to the saved composition exactly");
         edited = saved;

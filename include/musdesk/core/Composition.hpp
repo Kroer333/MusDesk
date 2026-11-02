@@ -6,6 +6,22 @@
 
 namespace musdesk {
 enum class CompositionFormat { Portrait, Landscape, Square, PortraitThreeFour, LandscapeFourThree };
+enum class SceneKind { Vinyl, Cover, Bars, Titles };
+enum class BackgroundKind { Artwork, Gradient, Solid };
+struct CompositionDesign {
+    SceneKind scene = SceneKind::Vinyl;
+    BackgroundKind background = BackgroundKind::Artwork;
+    std::array<float,3> backgroundTop{0.085f,0.13f,0.20f};
+    std::array<float,3> backgroundBottom{0.025f,0.04f,0.075f};
+    bool animateBackground = true;
+    bool showTitle = true, showArtist = true, showProgress = true, showTimestamps = true;
+    float foregroundScale = 1, foregroundX = 0, foregroundY = 0;
+    float labelsScale = 1, labelsX = 0, labelsY = 0;
+    float barsHeight = 1;
+    bool operator==(const CompositionDesign&) const = default;
+};
+void validateDesign(const CompositionDesign& design);
+bool needsArtwork(const CompositionDesign& design);
 struct OutputSize {
     int width;
     int height;
@@ -16,6 +32,7 @@ struct CompositionLayout {
     float discX, discY, discRadius;
     float textX, textWidth, titleY, artistY;
     float timelineLeft, timelineRight, timelineY;
+    float textScale = 1;
 };
 struct ImageFraming {
     float zoom = 1;
@@ -44,8 +61,10 @@ struct CompositionSettings {
     ImageFraming backgroundFraming;
     ImageFraming labelFraming;
     float backgroundSoftness = 1;
+    CompositionDesign design;
     bool operator==(const CompositionSettings&) const = default;
 };
+CompositionLayout layoutFor(const CompositionSettings& settings);
 
 struct CompositionFrame {
     double timeSeconds;

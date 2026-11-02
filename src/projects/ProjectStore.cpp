@@ -27,6 +27,7 @@ void text(const std::string& value, std::size_t limit, const char* name) {
 void validate(const ProjectDocument& project) {
     outputSize(project.composition.format, project.composition.shortEdge);
     validatePreset(project.composition.preset);
+    validateDesign(project.composition.design);
     validateImageFraming(project.composition.backgroundFraming);
     validateImageFraming(project.composition.labelFraming);
     if (!std::isfinite(project.composition.backgroundSoftness) || project.composition.backgroundSoftness < 0
@@ -93,12 +94,13 @@ ProjectDocument parseProject(std::string_view source) {
             if (event == Json::parse_event_t::object_end) keys.pop_back();
             return true;
         });
-        if (!json.at("version").is_number_integer() || json.at("version") < 1 || json.at("version") > 3)
-            throw std::runtime_error("Unsupported project version; expected integer 1, 2 or 3.");
+        if (!json.at("version").is_number_integer() || json.at("version") < 1 || json.at("version") > 4)
+            throw std::runtime_error("Unsupported project version; expected integer 1..4.");
         const bool legacy = json.at("version") == 1;
         if (legacy) fields(json, {"version", "format", "title", "artist", "duration_seconds", "preview_time_seconds", "audio", "artwork", "preset"});
         else if (json.at("version") == 2) fields(json, {"version", "format", "short_edge", "title", "artist", "duration_seconds", "preview_time_seconds", "audio", "artwork", "preset"});
-        else fields(json, {"version", "format", "short_edge", "title", "artist", "duration_seconds", "preview_time_seconds", "audio", "artwork", "preset", "framing"});
+        else if (json.at("version") == 3) fields(json, {"version", "format", "short_edge", "title", "artist", "duration_seconds", "preview_time_seconds", "audio", "artwork", "preset", "framing"});
+        else fields(json, {"version", "format", "short_edge", "title", "artist", "duration_seconds", "preview_time_seconds", "audio", "artwork", "preset", "framing", "design"});
         if (legacy && json.at("format") != "9:16") throw std::runtime_error("Version 1 projects require 9:16 format.");
         if (!json.at("duration_seconds").is_number() || !json.at("preview_time_seconds").is_number())
             throw std::runtime_error("Project duration and preview position must be numbers.");
@@ -116,7 +118,7 @@ ProjectDocument parseProject(std::string_view source) {
         project.audioPath = json.at("audio").get<std::string>();
         project.artworkPath = json.at("artwork").get<std::string>();
         project.composition.preset = parsePreset(json.at("preset").dump());
-        if (json.at("version") == 3) {
+        if (json.at("version") >= 3) {
             const auto& framing = json.at("framing");
             fields(framing, {"background", "label", "softness"});
             const auto readFraming = [&](const Json& value) {
@@ -130,6 +132,49 @@ ProjectDocument parseProject(std::string_view source) {
             project.composition.labelFraming = readFraming(framing.at("label"));
             project.composition.backgroundSoftness = framingNumber(framing, "softness", 0, 1);
         }
+        if (json.at("version") == 4) {
+            const auto& value = json.at("design");
+            fields(value,{"scene","background_mode","background_top","background_bottom","animate_background",
+                "show_title","show_artist","show_progress","show_timestamps","foreground_scale","foreground_x",
+                "foreground_y","labels_scale","labels_x","labels_y","bars_height"});
+            auto& design = project.composition.design;
+            const std::string scene = value.at("scene").get<std::string>();
+            if (scene == "vinyl") design.scene = SceneKind::Vinyl;
+            else if (scene == "cover") design.scene = SceneKind::Cover;
+            else if (scene == "bars") design.scene = SceneKind::Bars;
+            else if (scene == "titles") design.scene = SceneKind::Titles;
+            else throw std::runtime_error("Unknown composition scene.");
+            const std::string background = value.at("background_mode").get<std::string>();
+            if (background == "artwork") design.background = BackgroundKind::Artwork;
+            else if (background == "gradient") design.background = BackgroundKind::Gradient;
+            else if (background == "solid") design.background = BackgroundKind::Solid;
+            else throw std::runtime_error("Unknown background mode.");
+            const auto flag = [&](const char* key) {
+                if (!value.at(key).is_boolean()) throw std::runtime_error("Composition visibility flags must be boolean.");
+                return value.at(key).get<bool>();
+            };
+            design.animateBackground = flag("animate_background");
+            design.showTitle = flag("show_title");
+            design.showArtist = flag("show_artist");
+            design.showProgress = flag("show_progress");
+            design.showTimestamps = flag("show_timestamps");
+            for (const auto key : {"background_top","background_bottom"}) {
+                const auto& color = value.at(key);
+                if (!color.is_array() || color.size() != 3) throw std::runtime_error("Background color requires three RGB values.");
+                auto& output = std::string_view(key) == "background_top" ? design.backgroundTop : design.backgroundBottom;
+                for (int i=0; i<3; ++i) {
+                    if (!color[i].is_number()) throw std::runtime_error("Background RGB values must be numeric.");
+                    output[i] = color[i].get<float>();
+                }
+            }
+            design.foregroundScale = framingNumber(value,"foreground_scale",0.5,1.5);
+            design.foregroundX = framingNumber(value,"foreground_x",-0.3f,0.3f);
+            design.foregroundY = framingNumber(value,"foreground_y",-0.3f,0.3f);
+            design.labelsScale = framingNumber(value,"labels_scale",0.5,1.5);
+            design.labelsX = framingNumber(value,"labels_x",-0.3f,0.3f);
+            design.labelsY = framingNumber(value,"labels_y",-0.3f,0.3f);
+            design.barsHeight = framingNumber(value,"bars_height",0.25,1.5);
+        }
         validate(project);
         return project;
     } catch (const Json::exception& error) { throw std::runtime_error(std::string("Invalid project JSON: ") + error.what()); }
@@ -141,7 +186,17 @@ std::string serializeProject(const ProjectDocument& project) {
         const auto cropJson = [](const ImageFraming& crop) {
             return Json{{"zoom", crop.zoom}, {"focus_x", crop.focusX}, {"focus_y", crop.focusY}};
         };
-        const Json json{{"version", 3}, {"format", formatName(project.composition.format)},
+        const auto& design = project.composition.design;
+        const char* scenes[]{"vinyl","cover","bars","titles"};
+        const char* backgrounds[]{"artwork","gradient","solid"};
+        const Json json{{"version", 4}, {"format", formatName(project.composition.format)},
+            {"design", {{"scene",scenes[static_cast<int>(design.scene)]},
+                {"background_mode",backgrounds[static_cast<int>(design.background)]},
+                {"background_top",design.backgroundTop},{"background_bottom",design.backgroundBottom},
+                {"animate_background",design.animateBackground},{"show_title",design.showTitle},{"show_artist",design.showArtist},
+                {"show_progress",design.showProgress},{"show_timestamps",design.showTimestamps},
+                {"foreground_scale",design.foregroundScale},{"foreground_x",design.foregroundX},{"foreground_y",design.foregroundY},
+                {"labels_scale",design.labelsScale},{"labels_x",design.labelsX},{"labels_y",design.labelsY},{"bars_height",design.barsHeight}}},
             {"short_edge", project.composition.shortEdge}, {"title", project.composition.title},
             {"artist", project.composition.artist}, {"duration_seconds", project.composition.durationSeconds},
             {"preview_time_seconds", project.previewTimeSeconds}, {"audio", project.audioPath},

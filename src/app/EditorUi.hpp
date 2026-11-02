@@ -19,6 +19,7 @@ struct EditorUiState {
     int previewDisplayedShortEdge = 720;
     CompositionFormat format = CompositionFormat::Portrait;
     int shortEdge = 1080;
+    CompositionDesign design;
     ImageFraming backgroundFraming;
     ImageFraming labelFraming;
     float backgroundSoftness = 1;

@@ -104,15 +104,16 @@ int main(int argc, char* argv[]) {
             }
             return 0;
         }
-        if (argc == 4 && (std::string(argv[1]) == "--layouts" || std::string(argv[1]) == "--framing" || std::string(argv[1]) == "--styles")) {
+        if (argc == 4 && (std::string(argv[1]) == "--layouts" || std::string(argv[1]) == "--framing" || std::string(argv[1]) == "--styles" || std::string(argv[1]) == "--scenes")) {
             const bool framingGallery = std::string(argv[1]) == "--framing";
             const bool styleGallery = std::string(argv[1]) == "--styles";
+            const bool sceneGallery = std::string(argv[1]) == "--scenes";
             renderer.setArtwork(musdesk::loadArtwork(argv[2]));
             const auto audio = musdesk::prepareAudio(argv[3], musdesk::detectMediaTools());
             const auto folder = std::filesystem::u8path(SDL_GetBasePath()) / "test-fixtures"
-                / (styleGallery ? "style-gallery" : (framingGallery ? "framing-gallery" : "layout-gallery"));
+                / (sceneGallery ? "scene-gallery" : (styleGallery ? "style-gallery" : (framingGallery ? "framing-gallery" : "layout-gallery")));
             std::filesystem::create_directories(folder);
-            for (int index = 0; index < (framingGallery ? 3 : 5); ++index) {
+            for (int index = 0; index < (sceneGallery ? 4 : (framingGallery ? 3 : 5)); ++index) {
                 musdesk::CompositionSettings composition;
                 composition.title = "MusDesk";
                 composition.artist = "FFT visualizer";
@@ -128,6 +129,14 @@ int main(int argc, char* argv[]) {
                 }
                 composition.format = styleGallery ? musdesk::CompositionFormat::Portrait : (framingGallery ? musdesk::CompositionFormat::Landscape
                     : static_cast<musdesk::CompositionFormat>(index));
+                if (sceneGallery) {
+                    const char* names[]{"Vinyl","Artwork card","Spectrum bars","Background & titles"};
+                    composition.title = names[index];
+                    composition.artist = "MusDesk";
+                    composition.format = musdesk::CompositionFormat::Landscape;
+                    composition.design.scene = static_cast<musdesk::SceneKind>(index);
+                    if (index >= 2) composition.design.background = musdesk::BackgroundKind::Gradient;
+                }
                 if (framingGallery && index > 0) {
                     composition.backgroundFraming = {1.4f,0.5f,0.12f};
                     composition.backgroundSoftness = 0;
@@ -433,6 +442,42 @@ int main(int argc, char* argv[]) {
                 require(renderer.textureId() == previewTexture, "Resizing must retain the texture submitted to the preview UI");
             }
         }
+        for (auto format : {musdesk::CompositionFormat::Portrait,musdesk::CompositionFormat::Landscape,
+            musdesk::CompositionFormat::Square,musdesk::CompositionFormat::PortraitThreeFour,musdesk::CompositionFormat::LandscapeFourThree}) {
+            std::vector<std::uint8_t> previous;
+            for (int scene=0; scene<4; ++scene) {
+                musdesk::CompositionSettings variant;
+                variant.format = format;
+                variant.shortEdge = 720;
+                variant.design.scene = static_cast<musdesk::SceneKind>(scene);
+                variant.preset = musdesk::spectrumPulsePreset();
+                renderer.renderFrame(4,variant,controlAudio);
+                const auto pixels = renderer.readPixels();
+                require(pixels != previous,"Different scene types must produce different compositions");
+                renderer.renderFrame(8,variant,controlAudio);
+                renderer.renderFrame(4,variant,controlAudio);
+                require(renderer.readPixels() == pixels,"Every scene must remain repeatable after seek");
+                previous = pixels;
+            }
+        }
+        musdesk::CompositionSettings backgroundOnly;
+        backgroundOnly.format = musdesk::CompositionFormat::Square;
+        backgroundOnly.shortEdge = 720;
+        backgroundOnly.design.scene = musdesk::SceneKind::Titles;
+        backgroundOnly.design.background = musdesk::BackgroundKind::Solid;
+        backgroundOnly.design.showTitle = backgroundOnly.design.showArtist = false;
+        backgroundOnly.design.showProgress = backgroundOnly.design.showTimestamps = false;
+        renderer.renderFrame(4,backgroundOnly,controlAudio);
+        const auto solid = renderer.readPixels();
+        for (std::size_t pixel=0; pixel<solid.size(); pixel+=4)
+            require(std::equal(solid.begin(),solid.begin()+3,solid.begin()+pixel),
+                "Hiding all elements over a solid background must leave only that color");
+        renderer.clearArtwork();
+        renderer.renderFrame(4,backgroundOnly,controlAudio);
+        require(renderer.readPixels() == solid,"Solid title-only scenes must not depend on artwork");
+        backgroundOnly.design.background = musdesk::BackgroundKind::Gradient;
+        renderer.renderFrame(4,backgroundOnly,controlAudio);
+        require(renderer.readPixels() != solid,"Gradient background must differ from solid fill without artwork");
         require(glGetError() == GL_NO_ERROR, "OpenGL reported an error during composition rendering");
         std::cout << "1080x1920 readback, animation, exact seek repeatability, opacity and replacement checks passed.\n";
         return 0;

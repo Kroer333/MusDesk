@@ -110,6 +110,9 @@ uniform vec4 spectrumLine;
 uniform vec4 spectrumColor;
 uniform vec4 glowShape;
 uniform float glowEnergy;
+uniform vec4 sceneOptions;
+uniform vec4 backgroundTop;
+uniform vec4 backgroundBottom;
 uniform vec2 canvasSize;
 uniform vec4 discGeometry;
 uniform vec4 timelineGeometry;
@@ -166,8 +169,9 @@ void main() {
     vec2 topUv = vec2(uv.x, 1.0-uv.y);
     topUv = (topUv-0.5-vec2(cameraPose.x,0.0))/cameraPose.y+0.5;
     vec2 p = topUv * canvasSize;
-    vec3 color = mix(vec3(0.025,0.04,0.075), vec3(0.085,0.13,0.20), 1.0-topUv.y);
-    if (hasArtwork) {
+    vec3 color = sceneOptions.y > 1.5 ? backgroundTop.rgb
+        : mix(backgroundBottom.rgb,backgroundTop.rgb,1.0-topUv.y);
+    if (hasArtwork && sceneOptions.y < 0.5) {
         float aspect = canvasSize.x/canvasSize.y;
         vec2 bg = (topUv-0.5)*vec2(aspect,1.0);
         bg = rotatePoint(bg,backgroundAngle)/backgroundZoom;
@@ -182,7 +186,7 @@ void main() {
     }
     color *= backgroundBrightness;
     float vignette = 1.0 - 0.55*smoothstep(0.15,0.80,length(topUv-0.5));
-    color *= vignette * (1.0-0.26*smoothstep(0.5,0.9,topUv.y));
+    if (sceneOptions.y < 1.5) color *= vignette * (1.0-0.26*smoothstep(0.5,0.9,topUv.y));
 
     vec2 discPoint = (p-discGeometry.xy)/(discGeometry.z*subjectScale);
     float r = length(discPoint);
@@ -192,13 +196,18 @@ void main() {
     float pulse = glowEnergy*pulseStrength*glowShape.z;
     float wave = 0.0;
     if (ringMotion > 0.0) wave = 0.5 + 0.3*sin(phi*18.0+ringPhase) + 0.2*sin(phi*31.0-ringPhase*1.3);
-    float glowDistance = max(0.0,r-0.90)/glowShape.x;
-    color += accent * glowSettings.a * (glowShape.w+1.3*pulse)
+    float shapeDistance = r-0.90;
+    if (sceneOptions.x > 0.5) {
+        vec2 q = abs(discPoint)-vec2(0.90);
+        shapeDistance = length(max(q,vec2(0.0)))+min(max(q.x,q.y),0.0);
+    }
+    float glowDistance = max(0.0,shapeDistance)/glowShape.x;
+    if (sceneOptions.x < 1.5) color += accent * glowSettings.a * (glowShape.w+1.3*pulse)
         * (0.5*exp(-pow(glowDistance,2.0/glowShape.y)*max(6.0,38.0-10.0*pulse)));
     float rimRadius = 1.055 + 0.025*ringMotion*wave;
     float rimDistance = abs(r-rimRadius);
-    color += accent * min(1.0,ringMotion) * (0.9*exp(-rimDistance*230.0)+0.12*exp(-rimDistance*65.0));
-    if (spectrumStrength > 0.0) {
+    if (sceneOptions.x < 0.5) color += accent * min(1.0,ringMotion) * (0.9*exp(-rimDistance*230.0)+0.12*exp(-rimDistance*65.0));
+    if (spectrumStrength > 0.0 && sceneOptions.x < 0.5) {
         rimDistance = 100.0;
         if (r > 1.0 && r < 1.0+spectrumLine.y+ringHeadroom+0.12*spectrumLine.x) {
             float position = (atan(discPoint.y,discPoint.x)+3.141592654)/6.283185307*spectrumStyle.x;
@@ -214,7 +223,7 @@ void main() {
         color += spectrumColor.rgb * spectrumLine.z * min(1.0,spectrumStrength)
             * (0.9*exp(-rimDistance*230.0)+0.12*exp(-rimDistance*65.0));
     }
-    if (r < 1.0) {
+    if (r < 1.0 && sceneOptions.x < 0.5) {
         float grooves = 0.009*sin(r*950.0) + 0.006*sin(r*420.0);
         float reflection = pow(abs(cos(phi-0.5)),22.0)*0.10;
         vec3 vinyl = vec3(0.015,0.021,0.029) + grooves + reflection;
@@ -231,6 +240,22 @@ void main() {
         }
         color = mix(color,vinyl,1.0-smoothstep(0.994,1.0,r));
     }
+    if (sceneOptions.x > 0.5 && sceneOptions.x < 1.5) {
+        vec2 q = abs(discPoint)-vec2(0.94);
+        float boxDistance = length(max(q,vec2(0.0)))+min(max(q.x,q.y),0.0)-0.06;
+        vec4 imageColor = hasArtwork ? texture(artwork,cropPoint(discPoint*0.5+0.5,labelCrop)) : vec4(0.1,0.17,0.25,1.0);
+        color = mix(color,mix(vec3(0.06,0.08,0.12),imageColor.rgb,imageColor.a),1.0-smoothstep(-0.004,0.004,boxDistance));
+    }
+    if (sceneOptions.x > 1.5 && sceneOptions.x < 2.5 && abs(discPoint.x) < 1.0) {
+        float position = (discPoint.x+1.0)*16.0;
+        int band = min(int(position),31);
+        float height = min(1.65,1.5*sceneOptions.w*(1.0-exp(-2.0*spectrumStrength*spectrum[band]*spectrum[band])));
+        float halfWidth = min(0.48,0.38*spectrumLine.x);
+        float bar = 1.0-smoothstep(halfWidth-0.02,halfWidth+0.02,abs(fract(position)-0.5));
+        bar *= smoothstep(0.8-height-0.01,0.8-height+0.01,discPoint.y)*(1.0-smoothstep(0.79,0.81,discPoint.y));
+        color += spectrumColor.rgb*spectrumLine.z*bar*step(0.00001,height);
+    }
+    if (sceneOptions.z > 0.5) {
     vec2 barStart = vec2(timelineGeometry.x,timelineGeometry.z);
     vec2 barEnd = vec2(timelineGeometry.y,timelineGeometry.z);
     vec2 overlayPoint = discGeometry.xy+(p-discGeometry.xy)/subjectScale;
@@ -241,6 +266,7 @@ void main() {
     color += accent*0.18*exp(-fill*0.12);
     color = mix(color,vec3(0.65,0.86,1.0),1.0-smoothstep(3.0,5.0,fill));
     color = mix(color,vec3(0.84,0.94,1.0),1.0-smoothstep(11.0,13.0,length(overlayPoint-marker)));
+    }
     fragColor = vec4(color,1.0);
 }
 )glsl";
@@ -484,7 +510,7 @@ void VisualizerRenderer::renderPreviewFrame(double timeSeconds, const Compositio
 void VisualizerRenderer::renderAtSize(double timeSeconds, const CompositionSettings& settings,
     const AudioReaction& audio, OutputSize size) {
     auto& gl = impl_->gl;
-    auto layout = layoutFor(settings.format);
+    const auto layout = layoutFor(settings);
     if (size.width != impl_->pixelsWidth || size.height != impl_->pixelsHeight) {
         GLint maximum = 0;
         glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maximum);
@@ -514,6 +540,13 @@ void VisualizerRenderer::renderAtSize(double timeSeconds, const CompositionSetti
     auto scalar = [&](const char* name, double value) {
         gl.Uniform1f(gl.GetUniformLocation(impl_->sceneProgram, name), static_cast<float>(value));
     };
+    const auto& design = settings.design;
+    gl.Uniform4f(gl.GetUniformLocation(impl_->sceneProgram,"sceneOptions"),
+        static_cast<float>(design.scene),static_cast<float>(design.background),design.showProgress ? 1.0f : 0.0f,design.barsHeight);
+    gl.Uniform4f(gl.GetUniformLocation(impl_->sceneProgram,"backgroundTop"),
+        design.backgroundTop[0],design.backgroundTop[1],design.backgroundTop[2],0);
+    gl.Uniform4f(gl.GetUniformLocation(impl_->sceneProgram,"backgroundBottom"),
+        design.backgroundBottom[0],design.backgroundBottom[1],design.backgroundBottom[2],0);
     gl.ActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, impl_->artwork);
     gl.Uniform1i(gl.GetUniformLocation(impl_->sceneProgram, "artwork"), 0);
@@ -556,13 +589,13 @@ void VisualizerRenderer::renderAtSize(double timeSeconds, const CompositionSetti
     gl.Uniform4f(gl.GetUniformLocation(impl_->sceneProgram,"spectrumColor"),
         safe(preset.spectrumColor[0],0,1,0.24f),safe(preset.spectrumColor[1],0,1,0.60f),safe(preset.spectrumColor[2],0,1,1),0);
     scalar("pulseStrength", safe(preset.pulseStrength, 0, 2, 0.6f));
-    scalar("spectrumStrength", preset.spectrumEnabled
+    scalar("spectrumStrength", (preset.spectrumEnabled || design.scene == SceneKind::Bars)
         ? safe(preset.spectrumStrength, 0, 4, 0) * safe(preset.pulseStrength, 0, 2, 0) : 0);
     const double edgeDistance = std::min({layout.discX,layout.discY,
         layout.canvas.width-layout.discX,layout.canvas.height-layout.discY});
     const auto topGlyph = std::min_element(impl_->glyphs.begin(),impl_->glyphs.end(),
         [](const auto& a, const auto& b) { return a.yoff < b.yoff; });
-    const double textDistance = (layout.textX == layout.discX
+    const double textDistance = (std::abs(layout.textX-layout.discX) < layout.textWidth/2
         ? layout.titleY-layout.discY+topGlyph->yoff
         : layout.textX-layout.textWidth/2-layout.discX)*frame.subjectScale;
     const double clearance = (std::min(edgeDistance,textDistance)-12)/(layout.discRadius*frame.subjectScale)-1;
@@ -596,20 +629,22 @@ void VisualizerRenderer::renderAtSize(double timeSeconds, const CompositionSetti
     const auto subjectScale = static_cast<float>(frame.subjectScale);
     const auto overlayX = [&](float x) { return layout.discX + (x-layout.discX)*subjectScale; };
     const auto overlayY = [&](float y) { return layout.discY + (y-layout.discY)*subjectScale; };
-    impl_->centeredText(settings.title.empty() ? "Track title" : settings.title,
-        layout.discY + (layout.titleY-layout.discY) * subjectScale, subjectScale, {0.92f,0.95f,1,1},
+    if (design.showTitle) impl_->centeredText(settings.title.empty() ? "Track title" : settings.title,
+        layout.discY + (layout.titleY-layout.discY) * subjectScale, subjectScale*layout.textScale, {0.92f,0.95f,1,1},
         overlayX(layout.textX), layout.textWidth * subjectScale);
-    impl_->centeredText(settings.artist.empty() ? "Artist name" : settings.artist,
-        layout.discY + (layout.artistY-layout.discY) * subjectScale, 0.64f * subjectScale, {0.60f,0.68f,0.80f,1},
+    if (design.showArtist) impl_->centeredText(settings.artist.empty() ? "Artist name" : settings.artist,
+        layout.discY + (layout.artistY-layout.discY) * subjectScale, 0.64f * subjectScale*layout.textScale, {0.60f,0.68f,0.80f,1},
         overlayX(layout.textX), layout.textWidth * subjectScale);
     const double duration = std::isfinite(settings.durationSeconds) && settings.durationSeconds > 0
         ? settings.durationSeconds : 252.0;
     const auto positionLabel = formatTime(static_cast<std::uint64_t>(std::min(frame.timeSeconds, 1.0e12)));
     const auto durationLabel = formatTime(static_cast<std::uint64_t>(std::min(duration, 1.0e12)));
-    impl_->text(positionLabel, overlayX(layout.timelineLeft), overlayY(layout.timelineY + 60),
-        0.54f * subjectScale, {0.66f,0.73f,0.84f,1});
-    impl_->text(durationLabel, overlayX(layout.timelineRight - impl_->textWidth(durationLabel) * 0.54f),
-        overlayY(layout.timelineY + 60), 0.54f * subjectScale, {0.66f,0.73f,0.84f,1});
+    if (design.showTimestamps) {
+        impl_->text(positionLabel,overlayX(layout.timelineLeft),overlayY(layout.timelineY+60*layout.textScale),
+            0.54f*subjectScale*layout.textScale,{0.66f,0.73f,0.84f,1});
+        impl_->text(durationLabel,overlayX(layout.timelineRight-impl_->textWidth(durationLabel)*0.54f*layout.textScale),
+            overlayY(layout.timelineY+60*layout.textScale),0.54f*subjectScale*layout.textScale,{0.66f,0.73f,0.84f,1});
+    }
     gl.BindVertexArray(0);
     gl.BindBuffer(GL_ARRAY_BUFFER, 0);
     gl.UseProgram(0);

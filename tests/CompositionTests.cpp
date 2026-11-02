@@ -127,6 +127,40 @@ int main() {
         const auto invalid = musdesk::compositionAt(std::numeric_limits<double>::quiet_NaN(), settings);
         require(std::isfinite(invalid.progress) && invalid.timeSeconds == 0 && invalid.discAngleRadians == 0,
             "Invalid numeric input must not produce nonfinite frame data");
+        for (auto format : {musdesk::CompositionFormat::Portrait,musdesk::CompositionFormat::Landscape,
+            musdesk::CompositionFormat::Square,musdesk::CompositionFormat::PortraitThreeFour,musdesk::CompositionFormat::LandscapeFourThree}) {
+            for (auto scene : {musdesk::SceneKind::Vinyl,musdesk::SceneKind::Cover,musdesk::SceneKind::Bars,musdesk::SceneKind::Titles}) {
+                for (float scale : {0.5f,1.5f}) for (float offset : {-0.3f,0.3f}) {
+                    musdesk::CompositionSettings variant;
+                    variant.format = format;
+                    variant.design.scene = scene;
+                    variant.design.foregroundScale = variant.design.labelsScale = scale;
+                    variant.design.foregroundX = variant.design.foregroundY = offset;
+                    variant.design.labelsX = variant.design.labelsY = -offset;
+                    const auto layout = musdesk::layoutFor(variant);
+                    musdesk::AudioReaction hit;
+                    hit.beat = 1;
+                    const auto frame = musdesk::compositionAt(1,variant,hit);
+                    require(layout.discX-layout.discRadius >= 11.99 && layout.discY-layout.discRadius >= 11.99
+                        && layout.discX+layout.discRadius <= layout.canvas.width-11.99
+                        && layout.discY+layout.discRadius <= layout.canvas.height-11.99,
+                        "Foreground placement must fit every scene and aspect ratio");
+                    require(std::isfinite(frame.subjectScale) && frame.subjectScale >= 0.9999 && frame.subjectScale <= 1.18,
+                        "Custom positions must not invert or clip the overlay pulse");
+                }
+            }
+        }
+        musdesk::CompositionSettings still;
+        still.design.animateBackground = false;
+        require(musdesk::compositionAt(10,still).backgroundZoom == 1
+            && musdesk::compositionAt(10,still).backgroundAngleRadians == 0,
+            "Static artwork mode must disable local background motion");
+        auto design = still.design;
+        design.scene = musdesk::SceneKind::Bars;
+        design.background = musdesk::BackgroundKind::Solid;
+        require(!musdesk::needsArtwork(design),"Bars with a solid background must not require artwork");
+        design.scene = musdesk::SceneKind::Cover;
+        require(musdesk::needsArtwork(design),"Cover mode still requires artwork");
         std::cout << "Composition timing and seek checks passed.\n";
         return 0;
     } catch (const std::exception& error) {

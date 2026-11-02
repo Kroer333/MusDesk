@@ -6,6 +6,23 @@
 #include <stdexcept>
 
 namespace musdesk {
+bool needsArtwork(const CompositionDesign& design) {
+    return design.background == BackgroundKind::Artwork || design.scene == SceneKind::Vinyl || design.scene == SceneKind::Cover;
+}
+void validateDesign(const CompositionDesign& design) {
+    const auto range = [](double value,double low,double high) {
+        if (!std::isfinite(value) || value < low || value > high)
+            throw std::runtime_error("Composition design value is out of range.");
+    };
+    range(static_cast<int>(design.scene),0,3);
+    range(static_cast<int>(design.background),0,2);
+    for (float value : design.backgroundTop) range(value,0,1);
+    for (float value : design.backgroundBottom) range(value,0,1);
+    range(design.foregroundScale,0.5,1.5);
+    range(design.labelsScale,0.5,1.5);
+    for (float value : {design.foregroundX,design.foregroundY,design.labelsX,design.labelsY}) range(value,-0.3f,0.3f);
+    range(design.barsHeight,0.25,1.5);
+}
 void validateImageFraming(const ImageFraming& framing) {
     if (!std::isfinite(framing.zoom) || framing.zoom < 1 || framing.zoom > 3
         || !std::isfinite(framing.focusX) || framing.focusX < 0 || framing.focusX > 1
@@ -58,6 +75,47 @@ OutputSize outputSize(CompositionFormat format, int shortEdge) {
     return {canvas.width * shortEdge / 1080, canvas.height * shortEdge / 1080};
 }
 
+CompositionLayout layoutFor(const CompositionSettings& settings) {
+    validateDesign(settings.design);
+    auto layout = layoutFor(settings.format);
+    const auto& design = settings.design;
+    if (design.scene == SceneKind::Titles) {
+        layout.discX = layout.textX = layout.canvas.width*0.5f;
+        layout.discY = layout.canvas.height*0.38f;
+        layout.textWidth = layout.canvas.width*0.8f;
+        layout.titleY = layout.canvas.height*0.45f;
+        layout.artistY = layout.titleY+90;
+        layout.timelineLeft = layout.canvas.width*0.15f;
+        layout.timelineRight = layout.canvas.width*0.85f;
+        layout.timelineY = layout.canvas.height*0.70f;
+    }
+    const bool foreground = design.scene != SceneKind::Titles;
+    layout.discRadius = std::min(layout.discRadius*(foreground ? design.foregroundScale : 1),
+        std::min(layout.canvas.width,layout.canvas.height)*0.45f);
+    layout.discX = std::clamp(layout.discX+(foreground ? design.foregroundX*layout.canvas.width : 0),
+        layout.discRadius+12,layout.canvas.width-layout.discRadius-12);
+    layout.discY = std::clamp(layout.discY+(foreground ? design.foregroundY*layout.canvas.height : 0),
+        layout.discRadius+12,layout.canvas.height-layout.discRadius-12);
+    const float width = layout.canvas.width, height = layout.canvas.height;
+    layout.textWidth = std::min(layout.textWidth*design.labelsScale,width-24);
+    layout.textX = std::clamp(layout.textX+design.labelsX*width,layout.textWidth/2+12,width-layout.textWidth/2-12);
+    const float title = layout.titleY;
+    layout.artistY = title+(layout.artistY-title)*design.labelsScale;
+    layout.timelineY = title+(layout.timelineY-title)*design.labelsScale;
+    const float top = title-80*design.labelsScale;
+    const float bottom = layout.timelineY+85*design.labelsScale;
+    const float shift = std::clamp(design.labelsY*height,12-top,height-12-bottom);
+    layout.titleY += shift;
+    layout.artistY += shift;
+    layout.timelineY += shift;
+    const float halfBar = std::min((layout.timelineRight-layout.timelineLeft)*design.labelsScale/2,
+        std::min(layout.textX-12,width-layout.textX-12));
+    layout.timelineLeft = layout.textX-halfBar;
+    layout.timelineRight = layout.textX+halfBar;
+    layout.textScale = design.labelsScale;
+    return layout;
+}
+
 OutputSize previewSize(CompositionFormat format, int displayedShortEdge, int outputShortEdge) {
     outputSize(format,outputShortEdge);
     int edge = 1080;
@@ -98,12 +156,23 @@ CompositionFrame compositionAt(double timeSeconds, const CompositionSettings& se
     const double drive = (0.65 * safe(audio.bass, 1) + 0.35 * beat) * safe(preset.pulseStrength, 2);
     frame.subjectScale = 1 + (preset.subjectEnabled
         ? std::min(0.18, safe(preset.subjectPulse, 0.12) * beat * safe(preset.pulseStrength, 2)) : 0);
-    const auto layout = layoutFor(settings.format);
-    const double right = std::max(layout.timelineRight, layout.textX + layout.textWidth / 2);
-    const double bottom = layout.timelineY + 85;
-    frame.subjectScale = std::min({frame.subjectScale,
-        (layout.canvas.width - 12.0 - layout.discX) / (right - layout.discX),
-        (layout.canvas.height - 12.0 - layout.discY) / (bottom - layout.discY)});
+    const auto layout = layoutFor(settings);
+    const bool foreground = settings.design.scene != SceneKind::Titles;
+    const double left = std::min(layout.timelineLeft,layout.textX-layout.textWidth/2);
+    const double right = std::max(layout.timelineRight,layout.textX+layout.textWidth/2);
+    const double top = layout.titleY-80*layout.textScale;
+    const double bottom = layout.timelineY+85*layout.textScale;
+    const auto fit = [&](double value,double origin,double size) {
+        if (value > origin) return (size-12-origin)/(value-origin);
+        if (value < origin) return (origin-12)/(origin-value);
+        return 2.0;
+    };
+    frame.subjectScale = std::min({frame.subjectScale,fit(left,layout.discX,layout.canvas.width),
+        fit(right,layout.discX,layout.canvas.width),fit(top,layout.discY,layout.canvas.height),
+        fit(bottom,layout.discY,layout.canvas.height),foreground ? fit(layout.discX-layout.discRadius,layout.discX,layout.canvas.width) : 2.0,
+        foreground ? fit(layout.discX+layout.discRadius,layout.discX,layout.canvas.width) : 2.0,
+        foreground ? fit(layout.discY-layout.discRadius,layout.discY,layout.canvas.height) : 2.0,
+        foreground ? fit(layout.discY+layout.discRadius,layout.discY,layout.canvas.height) : 2.0});
     frame.ringMotion = preset.wavesEnabled ? drive * safe(preset.ringReactivity, 1) : 0;
     if (preset.cameraEnabled) {
         const double kick = std::isfinite(audio.kick) ? std::clamp<double>(audio.kick, -1, 1) : 0;
@@ -116,6 +185,10 @@ CompositionFrame compositionAt(double timeSeconds, const CompositionSettings& se
         frame.backgroundAngleRadians += 0.012 * motion * std::sin(backgroundTime * 1.1);
         frame.backgroundOffsetX += 0.008 * motion * std::sin(backgroundTime * 1.7);
         frame.backgroundOffsetY += 0.006 * motion * std::cos(backgroundTime * 1.3);
+    }
+    if (!settings.design.animateBackground) {
+        frame.backgroundAngleRadians = frame.backgroundOffsetX = frame.backgroundOffsetY = 0;
+        frame.backgroundZoom = 1;
     }
     return frame;
 }

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added Vinyl, Artwork card, Spectrum bars and Background & titles compositions.
+- Added artwork/gradient/solid backgrounds, visibility switches and foreground/label
+  placement controls, integrated with Undo/Redo and preview/MP4 rendering.
+- Added project v4 design persistence with v1-v3 migration; bars/title-only gradient
+  designs can export without artwork.
 - Added Undo/Redo for labels, effects, framing and output settings, with grouped
   slider/text edits, a 100-step history and Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z.
 - Added selected-range MP4 export, playhead boundaries and a quick five-second

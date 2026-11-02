@@ -58,6 +58,8 @@ void drawPresetControls(EditorUiState& state) {
     }
     ImGui::TextWrapped("One level gate for overlay pulse and Side Kick, measured in the selected band. Raise it to reject quieter attacks.");
     ImGui::SeparatorText("Independent effects");
+    const bool hasHalo = state.design.scene == SceneKind::Vinyl || state.design.scene == SceneKind::Cover;
+    ImGui::BeginDisabled(!hasHalo);
     changed |= ImGui::Checkbox("Glow", &preset.glowEnabled);
     if (ImGui::CollapsingHeader("Glow settings",ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::BeginDisabled(!preset.glowEnabled);
@@ -73,38 +75,50 @@ void drawPresetControls(EditorUiState& state) {
         ImGui::TextWrapped("Steady glow 0 uses audio only. Extra attack/release soften the existing RMS response. Glow color also tints rim waves and the progress accent.");
         ImGui::EndDisabled();
     }
+    ImGui::EndDisabled();
     changed |= ImGui::Checkbox("Overlay pulse", &preset.subjectEnabled);
     ImGui::BeginDisabled(!preset.subjectEnabled);
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##SubjectPulse", &subjectPercent, 0, 12, "Vinyl + text + timeline: %.1f%%", ImGuiSliderFlags_AlwaysClamp)) {
+    if (ImGui::SliderFloat("##SubjectPulse", &subjectPercent, 0, 12, "Overlay size pulse: %.1f%%", ImGuiSliderFlags_AlwaysClamp)) {
         preset.subjectPulse = subjectPercent / 100;
         changed = true;
     }
     ImGui::EndDisabled();
+    const bool movingArtwork = state.design.background == BackgroundKind::Artwork && state.design.animateBackground;
+    ImGui::BeginDisabled(!movingArtwork);
     changed |= ImGui::Checkbox("Reactive background", &preset.backgroundEnabled);
     ImGui::BeginDisabled(!preset.backgroundEnabled);
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderFloat("##BackgroundReaction", &preset.backgroundReactivity, 0, 1,
         "Background reaction: %.2f", ImGuiSliderFlags_AlwaysClamp);
     ImGui::EndDisabled();
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(state.design.scene != SceneKind::Vinyl);
     changed |= ImGui::Checkbox("Rim waves", &preset.wavesEnabled);
     ImGui::BeginDisabled(!preset.wavesEnabled);
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderFloat("##RingReaction", &preset.ringReactivity, 0, 1,
         "Ring waves: %.2f", ImGuiSliderFlags_AlwaysClamp);
     ImGui::EndDisabled();
+    ImGui::EndDisabled();
+    const bool bars = state.design.scene == SceneKind::Bars;
+    ImGui::BeginDisabled(state.design.scene != SceneKind::Vinyl);
     changed |= ImGui::Checkbox("Spectrum outline", &preset.spectrumEnabled);
+    ImGui::EndDisabled();
+    if (bars) ImGui::TextWrapped("This composition uses spectrum bars. Color, brightness, width, gain and smoothing below control them.");
     if (ImGui::CollapsingHeader("Spectrum settings",ImGuiTreeNodeFlags_DefaultOpen)) {
-    ImGui::BeginDisabled(!preset.spectrumEnabled);
+    ImGui::BeginDisabled(!bars && (state.design.scene != SceneKind::Vinyl || !preset.spectrumEnabled));
     changed |= ImGui::ColorEdit3("Spectrum color",preset.spectrumColor.data(),ImGuiColorEditFlags_NoInputs);
     changed |= effectSlider("##SpectrumIntensity",preset.spectrumIntensity,0,3,"Line brightness: %.2f");
     changed |= effectSlider("##SpectrumWidth",preset.spectrumLineWidth,0.25f,3,"Line width: %.2fx");
+    ImGui::BeginDisabled(bars);
     changed |= effectSlider("##SpectrumGap",preset.spectrumGap,0.015f,0.25f,"Gap: %.3f radii");
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderInt("##SpectrumPoints",&preset.spectrumPoints,32,256,"Points: %d",ImGuiSliderFlags_AlwaysClamp);
     changed |= effectSlider("##SpectrumSharpness",preset.spectrumSharpness,0,1,"Sharpness: %.2f");
     changed |= effectSlider("##SpectrumRandomness",preset.spectrumRandomness,0,1,"Randomness: %.2f");
     changed |= effectSlider("##SpectrumSpeed",preset.spectrumSpeed,0,4,"Motion speed: %.2fx");
+    ImGui::EndDisabled();
     changed |= effectSlider("##SpectrumAttack",preset.spectrumAttackMs,0,250,"Extra attack: %.0f ms");
     changed |= effectSlider("##SpectrumRelease",preset.spectrumReleaseMs,0,1000,"Extra release: %.0f ms");
     ImGui::SetNextItemWidth(-1);
@@ -142,13 +156,17 @@ void drawPresetControls(EditorUiState& state) {
     ImGui::SeparatorText("Motion and lighting");
     ImGui::SetNextItemWidth(-1);
     const double minRpm = -45, maxRpm = 45, minSpeed = 0, maxSpeed = 3;
+    ImGui::BeginDisabled(state.design.scene != SceneKind::Vinyl);
     changed |= ImGui::SliderScalar("##Rotation", ImGuiDataType_Double, &preset.discRpm,
         &minRpm, &maxRpm, "Rotation: %.1f RPM", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(!movingArtwork);
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderScalar("##BackgroundSpeed", ImGuiDataType_Double, &preset.backgroundSpeed,
         &minSpeed, &maxSpeed, "Background speed: %.2fx", ImGuiSliderFlags_AlwaysClamp);
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderFloat("##BackgroundZoom", &preset.backgroundZoom, 1.1f, 1.5f, "Background zoom: %.2fx", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::EndDisabled();
     ImGui::SetNextItemWidth(-1);
     changed |= ImGui::SliderFloat("##BackgroundBrightness", &preset.backgroundBrightness, 0, 1.5f,
         "Background light: %.2f", ImGuiSliderFlags_AlwaysClamp);
@@ -165,11 +183,62 @@ void drawPresetControls(EditorUiState& state) {
     ImGui::Spacing();
 }
 
+void drawDesignControls(EditorUiState& state) {
+    auto& design = state.design;
+    ImGui::SeparatorText("Composition style");
+    int scene = static_cast<int>(design.scene);
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::Combo("##SceneKind",&scene,"Vinyl\0Artwork card\0Spectrum bars\0Background & titles\0"))
+        design.scene = static_cast<SceneKind>(scene);
+    if (design.scene == SceneKind::Cover) ImGui::TextWrapped("A stationary artwork card. Crop it with Foreground artwork framing in Media.");
+    if (design.scene == SceneKind::Bars) {
+        effectSlider("##BarsHeight",design.barsHeight,0.25f,1.5f,"Bars height: %.2fx");
+        ImGui::TextWrapped("32 audio bands. Adjust color, width, gain and smoothing in Effects > Spectrum settings.");
+    }
+    if (ImGui::CollapsingHeader("Visible elements",ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox("Track title",&design.showTitle);
+        ImGui::Checkbox("Artist",&design.showArtist);
+        ImGui::Checkbox("Progress line",&design.showProgress);
+        ImGui::Checkbox("Time labels",&design.showTimestamps);
+    }
+    if (ImGui::CollapsingHeader("Element placement")) {
+        ImGui::BeginDisabled(design.scene == SceneKind::Titles);
+        effectSlider("##ForegroundScale",design.foregroundScale,0.5f,1.5f,"Foreground size: %.2fx");
+        effectSlider("##ForegroundX",design.foregroundX,-0.3f,0.3f,"Foreground X: %+.2f");
+        effectSlider("##ForegroundY",design.foregroundY,-0.3f,0.3f,"Foreground Y: %+.2f");
+        ImGui::EndDisabled();
+        effectSlider("##LabelsScale",design.labelsScale,0.5f,1.5f,"Labels + timeline size: %.2fx");
+        effectSlider("##LabelsX",design.labelsX,-0.3f,0.3f,"Labels X: %+.2f");
+        effectSlider("##LabelsY",design.labelsY,-0.3f,0.3f,"Labels Y: %+.2f");
+        if (ImGui::Button("Reset placement")) {
+            design.foregroundScale = design.labelsScale = 1;
+            design.foregroundX = design.foregroundY = design.labelsX = design.labelsY = 0;
+        }
+        ImGui::TextWrapped("Offsets are fractions of the canvas. Placement stays inside the frame; adjust overlapping elements as needed.");
+    }
+    if (ImGui::CollapsingHeader("Background design")) {
+        int background = static_cast<int>(design.background);
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::Combo("##BackgroundKind",&background,"Artwork\0Gradient\0Solid color\0"))
+            design.background = static_cast<BackgroundKind>(background);
+        if (design.background != BackgroundKind::Artwork) {
+            ImGui::ColorEdit3(design.background == BackgroundKind::Solid ? "Background color" : "Top color",
+                design.backgroundTop.data(),ImGuiColorEditFlags_NoInputs);
+            if (design.background == BackgroundKind::Gradient)
+                ImGui::ColorEdit3("Bottom color",design.backgroundBottom.data(),ImGuiColorEditFlags_NoInputs);
+        }
+        ImGui::BeginDisabled(design.background != BackgroundKind::Artwork);
+        ImGui::Checkbox("Animate background artwork",&design.animateBackground);
+        ImGui::EndDisabled();
+        if (!needsArtwork(design)) ImGui::TextWrapped("This design can export without artwork; audio is still required.");
+    }
+}
+
 void drawFramingControls(EditorUiState& state) {
     if (!ImGui::CollapsingHeader("Artwork framing")) return;
     ImGui::BeginDisabled(state.artworkPath.empty());
     ImGui::SetNextItemWidth(-1);
-    ImGui::Combo("##FramingTarget", &state.framingTarget, "Background\0" "Vinyl label\0");
+    ImGui::Combo("##FramingTarget", &state.framingTarget, "Background\0" "Foreground artwork\0");
     auto& framing = state.framingTarget == 0 ? state.backgroundFraming : state.labelFraming;
     ImGui::SetNextItemWidth(-1);
     ImGui::SliderFloat("##ArtworkZoom", &framing.zoom, 1, 3, "Crop zoom: %.2fx", ImGuiSliderFlags_AlwaysClamp);
@@ -290,6 +359,7 @@ void drawControls(EditorUiState& state) {
         ImGui::Spacing();
     }
     if (state.workspacePanel == 1) {
+        drawDesignControls(state);
         ImGui::SeparatorText("Output format");
         int selectedFormat = static_cast<int>(state.format);
         ImGui::SetNextItemWidth(-1);

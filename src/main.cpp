@@ -328,7 +328,7 @@ int main(int argc, char* argv[]) {
             musdesk::ProjectDocument project;
             project.composition = {editorState.title.data(), editorState.artist.data(), editorState.durationSeconds,
                 editorState.preset, editorState.format, editorState.shortEdge,
-                editorState.backgroundFraming, editorState.labelFraming, editorState.backgroundSoftness};
+                editorState.backgroundFraming, editorState.labelFraming, editorState.backgroundSoftness, editorState.design};
             project.audioPath = editorState.missingAudioPath.empty() ? editorState.audioPath : editorState.missingAudioPath;
             project.artworkPath = editorState.missingArtworkPath.empty() ? editorState.artworkPath : editorState.missingArtworkPath;
             project.previewTimeSeconds = editorState.timeSeconds;
@@ -352,6 +352,7 @@ int main(int argc, char* argv[]) {
             editorState.backgroundFraming = settings.backgroundFraming;
             editorState.labelFraming = settings.labelFraming;
             editorState.backgroundSoftness = settings.backgroundSoftness;
+            editorState.design = settings.design;
         };
         auto applyProject = [&](const musdesk::ProjectDocument& project, const std::string& path) {
             resetHistory = true;
@@ -637,7 +638,8 @@ int main(int argc, char* argv[]) {
                         const auto slash = path.find_last_of("/\\");
                         const auto dot = path.find_last_of('.');
                         if (dot == std::string::npos || (slash != std::string::npos && dot < slash)) path += ".mp4";
-                        if (!audioClip || editorState.artworkName.empty()) throw std::runtime_error("Import artwork and audio before exporting.");
+                        if (!audioClip || (musdesk::needsArtwork(editorState.design) && editorState.artworkName.empty()))
+                            throw std::runtime_error("Import audio and the artwork required by this composition before exporting.");
                         musdesk::validateExportDestination(path, audioClip->path, editorState.artworkPath);
                         if (editorState.audioReady) {
                             try { audioPlayer.pause(); }
@@ -648,7 +650,7 @@ int main(int argc, char* argv[]) {
                         resumeAfterSeek = false;
                         const musdesk::CompositionSettings settings{editorState.title.data(), editorState.artist.data(),
                             audioClip->durationSeconds(), editorState.preset, editorState.format, editorState.shortEdge,
-                            editorState.backgroundFraming, editorState.labelFraming, editorState.backgroundSoftness};
+                            editorState.backgroundFraming, editorState.labelFraming, editorState.backgroundSoftness, editorState.design};
                         exporter = std::make_unique<musdesk::ExportEngine>(composition, settings, audioClip, mediaTools, path,
                             editorState.exportEncoder == 0 ? musdesk::ExportEncoder::Automatic : musdesk::ExportEncoder::Cpu,
                             editorState.exportSelection ? musdesk::ExportRange{editorState.exportStart,editorState.exportEnd}
@@ -699,7 +701,7 @@ int main(int argc, char* argv[]) {
             editorState.exportBlockedReason = !editorState.toolsChecked ? "Checking FFmpeg and ffprobe..."
                 : !editorState.ffmpegReady || !editorState.ffprobeReady ? "Install FFmpeg and ffprobe, then restart MusDesk."
                 : editorState.audioImportPending ? "Wait for audio preparation to finish."
-                : editorState.artworkName.empty() ? "Import artwork before exporting."
+                : musdesk::needsArtwork(editorState.design) && editorState.artworkName.empty() ? "This composition needs artwork before exporting."
                 : !audioClip ? "Import audio before exporting."
                 : sourceError;
             if (editorState.exportBlockedReason.empty()) {
@@ -950,7 +952,7 @@ int main(int argc, char* argv[]) {
             }
             const musdesk::CompositionSettings settings{editorState.title.data(), editorState.artist.data(),
                 editorState.durationSeconds, editorState.preset, editorState.format, editorState.shortEdge,
-                editorState.backgroundFraming, editorState.labelFraming, editorState.backgroundSoftness};
+                editorState.backgroundFraming, editorState.labelFraming, editorState.backgroundSoftness, editorState.design};
             // Drain the previous GPU frame before sampling the current audio position.
             if (editorState.audioPlaying && !editorState.exportActive) glFinish();
             refreshPlayback();

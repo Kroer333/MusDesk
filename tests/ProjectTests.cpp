@@ -144,6 +144,28 @@ int main(int, char*[]) {
         project.composition.preset.spectrumReleaseMs = 240;
         project.composition.preset.glowWidth = 1.7f;
         project.composition.preset.glowReleaseMs = 320;
+        const auto version3 = musdesk::parseProject(R"({"version":3,"format":"1:1","short_edge":720,
+            "title":"Previous project","artist":"Artist","duration_seconds":12,"preview_time_seconds":4,
+            "audio":"","artwork":"","preset":{"version":1,"name":"Old","disc_rpm":8,
+            "glow":{"color":[0.24,0.6,1],"intensity":0.8,"pulse_strength":0.6},
+            "background":{"speed":0.6,"zoom":1.16,"brightness":0.88}},
+            "framing":{"background":{"zoom":1,"focus_x":0.5,"focus_y":0.5},
+                "label":{"zoom":1,"focus_x":0.5,"focus_y":0.5},"softness":1}})");
+        require(version3.composition.design == musdesk::CompositionDesign{},
+            "Version 3 projects must retain the existing vinyl composition");
+        project.composition.design.scene = musdesk::SceneKind::Cover;
+        project.composition.design.background = musdesk::BackgroundKind::Gradient;
+        project.composition.design.backgroundTop = {0.3f,0.5f,0.8f};
+        project.composition.design.backgroundBottom = {0.05f,0.1f,0.15f};
+        project.composition.design.animateBackground = false;
+        project.composition.design.showArtist = project.composition.design.showTimestamps = false;
+        project.composition.design.foregroundScale = 1.2f;
+        project.composition.design.foregroundX = 0.12f;
+        project.composition.design.foregroundY = -0.08f;
+        project.composition.design.labelsScale = 0.8f;
+        project.composition.design.labelsX = -0.1f;
+        project.composition.design.labelsY = 0.1f;
+        project.composition.design.barsHeight = 1.25f;
         const auto json = musdesk::serializeProject(project);
         require(musdesk::parseProject(json) == project, "Complete settings/Unicode/preset round trip failed");
         require(musdesk::isProjectPath("SET.MUSDESK") && !musdesk::isProjectPath("set.json"), "Project extension detection failed");
@@ -187,9 +209,13 @@ int main(int, char*[]) {
         rejected([&] { musdesk::saveProject(utf8(path), self); });
         require(musdesk::loadProject(utf8(path)) == project, "Media-overwrite protection destroyed the project");
         rejected([&] { (void)musdesk::parseProject("{"); });
-        rejected([&] { (void)musdesk::parseProject(replace(json, "\n  \"version\": 3", "\n  \"version\": 4")); });
-        rejected([&] { (void)musdesk::parseProject(replace(json, "\n  \"version\": 3", "\n  \"version\": 3.0")); });
-        rejected([&] { (void)musdesk::parseProject(replace(json, "\n  \"version\": 3", "\n  \"version\": 3, \"version\": 3")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json, "\n  \"version\": 4", "\n  \"version\": 5")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json, "\n  \"version\": 4", "\n  \"version\": 4.0")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json, "\n  \"version\": 4", "\n  \"version\": 4, \"version\": 4")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json,"\"scene\": \"cover\"","\"scene\": \"unknown\"")); });
+        rejected([&] { (void)musdesk::parseProject(replace(json,"\"show_artist\": false","\"show_artist\": 0")); });
+        const auto invalidHeight = replace(json,"\"bars_height\": 1.25","\"bars_height\": 9.25");
+        rejected([&] { (void)musdesk::parseProject(invalidHeight); });
         rejected([&] { (void)musdesk::parseProject(replace(json, "\"focus_x\": 0.25", "\"focus_x\": 1.00000001")); });
         rejected([&] { (void)musdesk::parseProject(replace(json, "\"focus_x\": 0.25", "\"focus_x\": true")); });
         rejected([&] { (void)musdesk::parseProject(replace(json, "\"format\": \"9:16\"", "\"format\": \"5:4\"")); });

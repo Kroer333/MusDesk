@@ -242,6 +242,7 @@ struct ExportEngine::Impl {
         if (!audio || audio->samples.empty() || audio->samples.size() % DecodedAudio::channels)
             throw std::runtime_error("Import valid audio before exporting.");
         validatePreset(settings.preset);
+        validateDesign(settings.design);
         outputSize(settings.format, settings.shortEdge);
         selection = exportSamples(audio->samples.size()/DecodedAudio::channels,range);
         state.totalFrames = exportFrameCount(selection.count);
