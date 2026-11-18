@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Added preview selection and dragging for foreground and labels/timeline, with grouped Undo/Redo and Escape cancellation.
+- Fixed hidden/moved captions restricting spectrum deformation and outdated FFmpeg restart guidance.
+
 ## 0.3.0 — pre-release
 
 - Added FFmpeg setup guidance and detection retry without restarting the app.

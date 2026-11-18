@@ -1,4 +1,5 @@
 #include "musdesk/core/Composition.hpp"
+#include "musdesk/core/CompositionEditing.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -7,31 +8,6 @@
 #include <stdexcept>
 
 namespace musdesk {
-namespace {
-struct OverlayBounds { float left, right, top, bottom; };
-std::optional<OverlayBounds> visibleLabels(const CompositionLayout& layout, const CompositionDesign& design) {
-    std::optional<OverlayBounds> bounds;
-    const auto include = [&](float left, float right, float top, float bottom) {
-        if (!bounds) bounds = OverlayBounds{left,right,top,bottom};
-        else {
-            bounds->left = std::min(bounds->left,left);
-            bounds->right = std::max(bounds->right,right);
-            bounds->top = std::min(bounds->top,top);
-            bounds->bottom = std::max(bounds->bottom,bottom);
-        }
-    };
-    const float scale = layout.textScale;
-    if (design.showTitle) include(layout.textX-layout.textWidth/2,layout.textX+layout.textWidth/2,
-        layout.titleY-80*scale,layout.titleY+20*scale);
-    if (design.showArtist) include(layout.textX-layout.textWidth/2,layout.textX+layout.textWidth/2,
-        layout.artistY-60*scale,layout.artistY+20*scale);
-    if (design.showProgress) include(layout.timelineLeft-13,layout.timelineRight+13,
-        layout.timelineY-13,layout.timelineY+13);
-    if (design.showTimestamps) include(layout.timelineLeft,layout.timelineRight,
-        layout.timelineY+20*scale,layout.timelineY+85*scale);
-    return bounds;
-}
-}
 bool needsArtwork(const CompositionDesign& design) {
     return design.background == BackgroundKind::Artwork || design.scene == SceneKind::Vinyl || design.scene == SceneKind::Cover;
 }
@@ -129,7 +105,7 @@ CompositionLayout layoutFor(const CompositionSettings& settings) {
     layout.artistY = title+(layout.artistY-title)*design.labelsScale;
     layout.timelineY = title+(layout.timelineY-title)*design.labelsScale;
     layout.textScale = design.labelsScale;
-    const auto labels = visibleLabels(layout,design);
+    const auto labels = visibleLabelBounds(layout,design);
     const float shift = labels ? std::clamp(design.labelsY*height,12-labels->top,height-12-labels->bottom)
         : design.labelsY*height;
     layout.titleY += shift;
@@ -185,7 +161,7 @@ CompositionFrame compositionAt(double timeSeconds, const CompositionSettings& se
         ? std::min(0.18, safe(preset.subjectPulse, 0.12) * beat * safe(preset.pulseStrength, 2)) : 0);
     const auto layout = layoutFor(settings);
     const bool foreground = settings.design.scene != SceneKind::Titles;
-    const auto labels = visibleLabels(layout,settings.design);
+    const auto labels = visibleLabelBounds(layout,settings.design);
     const auto fit = [&](double value,double origin,double size) {
         if (value > origin) return (size-12-origin)/(value-origin);
         if (value < origin) return (origin-12)/(origin-value);

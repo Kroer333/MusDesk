@@ -75,6 +75,7 @@ target_link_libraries(musdesk_imgui PRIVATE SDL3::SDL3 OpenGL::GL)
 add_library(musdesk_core STATIC
     src/core/TimeFormat.cpp
     src/core/Composition.cpp
+    src/core/CompositionEditing.cpp
     src/core/AudioAnalysis.cpp
     src/core/VisualPreset.cpp
 )
@@ -151,6 +152,9 @@ musdesk_stage_media_tools(MusDesk)
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(MusDeskEditingTests tests/CompositionEditingTests.cpp)
+    target_link_libraries(MusDeskEditingTests PRIVATE musdesk_core)
+    add_test(NAME MusDeskEditingTests COMMAND MusDeskEditingTests)
     add_executable(MusDeskHistoryTests tests/CompositionHistoryTests.cpp)
     target_link_libraries(MusDeskHistoryTests PRIVATE musdesk_core)
     add_test(NAME MusDeskHistoryTests COMMAND MusDeskHistoryTests)

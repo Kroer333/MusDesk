@@ -27,6 +27,9 @@ beside `MusDesk.exe`. CPU export needs libx264 and AAC support.
 titles scenes; gradient/solid backgrounds, placement/visibility controls, expanded
 Glow/Spectrum settings, Undo/Redo and selected-range export.
 
+**In development:** drag the foreground or labels/timeline directly in preview.
+Selection pauses playback; Esc cancels a move and Undo/Redo handles each drag.
+
 Projects reference media rather than embedding it: use **Collect project** to move
 everything together. Version 0.3.0 saves use project v4 / preset v7 and read older
 versions; MusDesk 0.2.0 cannot open these new saves. Keep backups.

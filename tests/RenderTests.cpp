@@ -268,6 +268,17 @@ int main(int argc, char* argv[]) {
         controlAudio.energy = 0.7f;
         renderer.renderFrame(2,controls,controlAudio);
         const auto spectrumReference = renderer.readPixels();
+        auto hiddenCaptions = controls;
+        hiddenCaptions.design.showTitle = hiddenCaptions.design.showArtist = false;
+        hiddenCaptions.design.showProgress = hiddenCaptions.design.showTimestamps = false;
+        hiddenCaptions.preset.subjectEnabled = hiddenCaptions.preset.cameraEnabled = false;
+        hiddenCaptions.design.labelsX = 0.3f;
+        renderer.renderFrame(2,hiddenCaptions,controlAudio);
+        const auto withoutCaptions = renderer.readPixels();
+        hiddenCaptions.design.labelsX = -0.3f;
+        renderer.renderFrame(2,hiddenCaptions,controlAudio);
+        require(renderer.readPixels() == withoutCaptions,
+            "Hidden caption positions must not restrict spectrum deformation");
         for (auto change : std::array{
             +[](musdesk::VisualPreset& p) { p.spectrumPoints = 32; },
             +[](musdesk::VisualPreset& p) { p.spectrumSharpness = 0; },

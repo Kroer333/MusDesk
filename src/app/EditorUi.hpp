@@ -6,6 +6,7 @@
 #include "musdesk/core/VisualPreset.hpp"
 #include "musdesk/core/AudioAnalysis.hpp"
 #include "musdesk/core/Composition.hpp"
+#include "musdesk/core/CompositionEditing.hpp"
 #include "musdesk/projects/RecoveryStore.hpp"
 
 namespace musdesk {
@@ -17,6 +18,14 @@ struct EditorUiState {
     bool requestUndo = false;
     bool requestRedo = false;
     int previewDisplayedShortEdge = 720;
+    CompositionFrame previewFrame{};
+    CompositionElement previewSelection = CompositionElement::None;
+    bool previewDragging = false;
+    bool previewDragMoved = false;
+    bool requestPausePreview = false;
+    CanvasPoint previewDragStart{};
+    CompositionSettings previewDragSettings;
+    CompositionFrame previewDragFrame{};
     CompositionFormat format = CompositionFormat::Portrait;
     int shortEdge = 1080;
     CompositionDesign design;

@@ -546,6 +546,7 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
     ImGui::TextUnformatted("Preview");
     ImGui::SameLine();
     ImGui::TextDisabled("%s", formatName(state.format));
+    ImGui::TextDisabled("Drag an element to move it. Selection pauses preview; Esc cancels a move.");
     ImGui::Separator();
 
     const ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -578,6 +579,62 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
             IM_COL32(100, 210, 190, 150));
     }
 
+    CompositionSettings settings{state.title.data(),state.artist.data(),state.durationSeconds,state.preset,
+        state.format,state.shortEdge,state.backgroundFraming,state.labelFraming,state.backgroundSoftness,state.design};
+    const auto layout = layoutFor(settings);
+    const auto mouse = ImGui::GetMousePos();
+    const CanvasPoint normalized{(mouse.x-topLeft.x)/width,(mouse.y-topLeft.y)/height};
+    const auto hovered = hitComposition(settings,state.previewFrame,normalized,
+        5*layout.canvas.width/width/static_cast<float>(state.previewFrame.cameraZoom*state.previewFrame.subjectScale));
+    ImGui::SetCursorScreenPos(topLeft);
+    ImGui::InvisibleButton("##MoveComposition",ImVec2(width,height));
+    if (!state.historyBlocked && (ImGui::IsItemActivated() || ImGui::IsItemClicked(ImGuiMouseButton_Left))) {
+        const auto clicked = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
+        const CanvasPoint start{(clicked.x-topLeft.x)/width,(clicked.y-topLeft.y)/height};
+        state.previewSelection = hitComposition(settings,state.previewFrame,start);
+        state.previewDragging = state.previewSelection != CompositionElement::None;
+        state.previewDragMoved = false;
+        if (state.previewDragging) {
+            state.previewDragSettings = settings;
+            state.previewDragFrame = state.previewFrame;
+            state.previewDragStart = previewToCanvas(start,layout,state.previewDragFrame);
+            state.requestPausePreview = true;
+        }
+    }
+    if (state.historyBlocked) state.previewDragging = false;
+    if (state.previewDragging) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape,false)) {
+            state.design = state.previewDragSettings.design;
+            state.previewDragging = false;
+        } else {
+            const auto clicked = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
+            state.previewDragMoved |= std::hypot(mouse.x-clicked.x,mouse.y-clicked.y) >= ImGui::GetIO().MouseDragThreshold;
+            if (state.previewDragMoved) {
+                const auto startLayout = layoutFor(state.previewDragSettings);
+                const auto current = previewToCanvas(normalized,startLayout,state.previewDragFrame);
+                const float scale = state.previewSelection == CompositionElement::Labels
+                    ? static_cast<float>(state.previewDragFrame.subjectScale) : 1;
+                state.design = moveCompositionElement(state.previewDragSettings,state.previewSelection,
+                    {(current.x-state.previewDragStart.x)/scale,(current.y-state.previewDragStart.y)/scale});
+            }
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) || !ImGui::IsItemActive()) state.previewDragging = false;
+        }
+    }
+    if (!state.historyBlocked && (state.previewDragging || (ImGui::IsItemHovered() && hovered != CompositionElement::None)))
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    settings.design = state.design;
+    if (!state.historyBlocked) {
+        if (const auto bounds = elementBounds(settings,state.previewSelection)) {
+            const auto updatedLayout = layoutFor(settings);
+            const auto a = canvasToPreview({bounds->left,bounds->top},updatedLayout,state.previewFrame);
+            const auto b = canvasToPreview({bounds->right,bounds->bottom},updatedLayout,state.previewFrame);
+            drawList->PushClipRect(topLeft,bottomRight,true);
+            drawList->AddRect(ImVec2(topLeft.x+a.x*width,topLeft.y+a.y*height),
+                ImVec2(topLeft.x+b.x*width,topLeft.y+b.y*height),IM_COL32(100,230,205,230),0,0,1.5f);
+            drawList->PopClipRect();
+        }
+    }
+    ImGui::SetCursorScreenPos(origin);
     ImGui::Dummy(available);
 }
 }

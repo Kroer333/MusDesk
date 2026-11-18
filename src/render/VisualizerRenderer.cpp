@@ -593,12 +593,22 @@ void VisualizerRenderer::renderAtSize(double timeSeconds, const CompositionSetti
         ? safe(preset.spectrumStrength, 0, 4, 0) * safe(preset.pulseStrength, 0, 2, 0) : 0);
     const double edgeDistance = std::min({layout.discX,layout.discY,
         layout.canvas.width-layout.discX,layout.canvas.height-layout.discY});
+    double clearanceDistance = edgeDistance;
     const auto topGlyph = std::min_element(impl_->glyphs.begin(),impl_->glyphs.end(),
         [](const auto& a, const auto& b) { return a.yoff < b.yoff; });
-    const double textDistance = (std::abs(layout.textX-layout.discX) < layout.textWidth/2
-        ? layout.titleY-layout.discY+topGlyph->yoff
-        : layout.textX-layout.textWidth/2-layout.discX)*frame.subjectScale;
-    const double clearance = (std::min(edgeDistance,textDistance)-12)/(layout.discRadius*frame.subjectScale)-1;
+    const auto avoid = [&](double left,double right,double top,double bottom) {
+        const double dx = std::max({left-layout.discX,0.0,layout.discX-right});
+        const double dy = std::max({top-layout.discY,0.0,layout.discY-bottom});
+        clearanceDistance = std::min(clearanceDistance,std::hypot(dx,dy)*frame.subjectScale);
+    };
+    if (design.showTitle) avoid(layout.textX-layout.textWidth/2,layout.textX+layout.textWidth/2,
+        layout.titleY+topGlyph->yoff*layout.textScale,layout.titleY+20*layout.textScale);
+    if (design.showArtist) avoid(layout.textX-layout.textWidth/2,layout.textX+layout.textWidth/2,
+        layout.artistY+topGlyph->yoff*0.64*layout.textScale,layout.artistY+20*layout.textScale);
+    if (design.showProgress) avoid(layout.timelineLeft-13,layout.timelineRight+13,layout.timelineY-13,layout.timelineY+13);
+    if (design.showTimestamps) avoid(layout.timelineLeft,layout.timelineRight,
+        layout.timelineY+(60+topGlyph->yoff*0.54)*layout.textScale,layout.timelineY+85*layout.textScale);
+    const double clearance = (clearanceDistance-12)/(layout.discRadius*frame.subjectScale)-1;
     const float width = safe(preset.spectrumLineWidth,0.25f,3,1);
     const double gap = std::min<double>(safe(preset.spectrumGap,0.015f,0.25f,0.055f),std::max(0.015,clearance-0.05*width));
     scalar("ringHeadroom",std::max(0.0,clearance-gap-0.05*width));

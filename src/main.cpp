@@ -715,7 +715,7 @@ int main(int argc, char* argv[]) {
                 catch (const std::exception& error) { sourceError = error.what(); }
             }
             editorState.exportBlockedReason = !editorState.toolsChecked ? "Checking FFmpeg and ffprobe..."
-                : !editorState.ffmpegReady || !editorState.ffprobeReady ? "Install FFmpeg and ffprobe, then restart MusDesk."
+                : !editorState.ffmpegReady || !editorState.ffprobeReady ? "Install FFmpeg and ffprobe, then use Check tools again in Media."
                 : editorState.audioImportPending ? "Wait for audio preparation to finish."
                 : musdesk::needsArtwork(editorState.design) && editorState.artworkName.empty() ? "This composition needs artwork before exporting."
                 : !audioClip ? "Import audio before exporting."
@@ -786,9 +786,11 @@ int main(int argc, char* argv[]) {
             const bool beforeMute = editorState.muteAudio;
             if (resetHistory) {
                 history.reset(currentProject().composition);
+                editorState.previewSelection = musdesk::CompositionElement::None;
+                editorState.previewDragging = false;
                 resetHistory = false;
             }
-            else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsKeyPressed(ImGuiKey_Tab,false))
+            else if (!editorState.previewDragging && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsKeyPressed(ImGuiKey_Tab,false)))
                 history.observe(currentProject().composition,false);
             editorState.canUndo = history.canUndo();
             editorState.canRedo = history.canRedo();
@@ -798,7 +800,8 @@ int main(int argc, char* argv[]) {
             musdesk::drawEditorUi(editorState, composition.textureId());
             if (!editorState.exportBusy && !editorState.audioImportPending && !editorState.projectDialogPending
                 && !editorState.artworkDialogPending && !editorState.audioDialogPending && !editorState.presetDialogPending
-                && !editorState.showUnsavedPrompt && !editorState.showRecoveryPrompt && editorState.toolsChecked && io.KeyCtrl) {
+                && !editorState.showUnsavedPrompt && !editorState.showRecoveryPrompt && !editorState.previewDragging
+                && editorState.toolsChecked && io.KeyCtrl) {
                 if (ImGui::IsKeyPressed(ImGuiKey_S, false)) {
                     if (io.KeyShift) editorState.requestSaveProjectAs = true;
                     else editorState.requestSaveProject = true;
@@ -817,7 +820,7 @@ int main(int argc, char* argv[]) {
                 editorState.cancelProjectAction = false;
                 pendingProjectAction = ProjectAction::None;
             }
-            history.observe(currentProject().composition,ImGui::IsAnyItemActive());
+            history.observe(currentProject().composition,ImGui::IsAnyItemActive() || editorState.previewDragging);
             if (!editorState.historyBlocked && (editorState.requestUndo || editorState.requestRedo)) {
                 const auto restored = editorState.requestUndo ? history.undo() : history.redo();
                 if (restored) {
@@ -884,7 +887,7 @@ int main(int argc, char* argv[]) {
             }
             editorState.projectDialogPending = projectOpenDialog.pending() || projectSaveDialog.pending()
                 || projectCollectDialog.pending() || editorState.collectingProject;
-            if (audioClip && !editorState.exportBusy && !io.WantCaptureKeyboard) {
+            if (audioClip && !editorState.exportBusy && !editorState.previewDragging && !io.WantCaptureKeyboard) {
                 if (editorState.audioReady && ImGui::IsKeyPressed(ImGuiKey_Space, false)) editorState.requestPlayPause = true;
                 const double shift = (ImGui::IsKeyPressed(ImGuiKey_RightArrow) ? 5.0 : 0)
                     - (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) ? 5.0 : 0);
@@ -898,6 +901,13 @@ int main(int argc, char* argv[]) {
                 audioCancellation.request_stop();
             }
             try {
+                if (editorState.requestPausePreview) {
+                    editorState.requestPausePreview = false;
+                    editorState.audioPlaying = false;
+                    editorState.animatePreview = false;
+                    resumeAfterSeek = false;
+                    audioPlayer.pause();
+                }
                 if (editorState.requestRetryPreview && audioClip) preparePlayback();
                 editorState.requestRetryPreview = false;
                 if (beforeVolume != editorState.previewVolume || beforeMute != editorState.muteAudio)
@@ -972,9 +982,12 @@ int main(int argc, char* argv[]) {
             // Drain the previous GPU frame before sampling the current audio position.
             if (editorState.audioPlaying && !editorState.exportActive) glFinish();
             refreshPlayback();
-            if (!editorState.exportActive) composition.renderPreviewFrame(editorState.timeSeconds, settings,
-                audioClip ? audioClip->reactionAt(editorState.timeSeconds, settings.preset)
-                    : musdesk::AudioReaction{},editorState.previewDisplayedShortEdge);
+            if (!editorState.exportActive) {
+                const auto reaction = audioClip ? audioClip->reactionAt(editorState.timeSeconds, settings.preset)
+                    : musdesk::AudioReaction{};
+                composition.renderPreviewFrame(editorState.timeSeconds, settings, reaction,editorState.previewDisplayedShortEdge);
+                editorState.previewFrame = musdesk::compositionAt(editorState.timeSeconds,settings,reaction);
+            }
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             if (!SDL_GL_SwapWindow(resources.window)) {
