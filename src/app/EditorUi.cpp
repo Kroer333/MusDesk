@@ -546,7 +546,14 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
     ImGui::TextUnformatted("Preview");
     ImGui::SameLine();
     ImGui::TextDisabled("%s", formatName(state.format));
-    ImGui::TextDisabled("Drag an element to move it. Selection pauses preview; Esc cancels a move.");
+    ImGui::SameLine();
+    ImGui::BeginDisabled(state.historyBlocked || state.previewDragging);
+    ImGui::Checkbox("Snap",&state.previewSnapping);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Align the composition to center axes and 10%% margins before pulse/camera effects. Alt bypasses snapping.");
+    ImGui::SameLine();
+    ImGui::Checkbox("Guides",&state.showAlignmentGuides);
+    ImGui::EndDisabled();
+    ImGui::TextDisabled("Drag: move. Corners: resize. Alt: no snap. Esc: cancel.");
     ImGui::Separator();
 
     const ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -586,12 +593,30 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
     const CanvasPoint normalized{(mouse.x-topLeft.x)/width,(mouse.y-topLeft.y)/height};
     const auto hovered = hitComposition(settings,state.previewFrame,normalized,
         5*layout.canvas.width/width/static_cast<float>(state.previewFrame.cameraZoom*state.previewFrame.subjectScale));
+    const float handleSize = ImGui::GetFontSize()*0.28f;
+    const auto handleAt = [&](ImVec2 position) {
+        if (const auto bounds = elementBounds(settings,state.previewSelection)) {
+            const auto corners = boundsCorners(*bounds);
+            for (int i=0; i<4; ++i) {
+                const auto point = canvasToPreview(corners[i],layout,state.previewFrame);
+                if (std::abs(position.x-(topLeft.x+point.x*width)) <= handleSize*2
+                    && std::abs(position.y-(topLeft.y+point.y*height)) <= handleSize*2)
+                    return static_cast<ResizeCorner>(i);
+            }
+        }
+        return ResizeCorner::None;
+    };
+    const auto hoveredHandle = handleAt(mouse);
+    state.previewGuideX.reset();
+    state.previewGuideY.reset();
     ImGui::SetCursorScreenPos(topLeft);
     ImGui::InvisibleButton("##MoveComposition",ImVec2(width,height));
     if (!state.historyBlocked && (ImGui::IsItemActivated() || ImGui::IsItemClicked(ImGuiMouseButton_Left))) {
         const auto clicked = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
         const CanvasPoint start{(clicked.x-topLeft.x)/width,(clicked.y-topLeft.y)/height};
-        state.previewSelection = hitComposition(settings,state.previewFrame,start);
+        state.previewResizeCorner = handleAt(clicked);
+        if (state.previewResizeCorner == ResizeCorner::None)
+            state.previewSelection = hitComposition(settings,state.previewFrame,start);
         state.previewDragging = state.previewSelection != CompositionElement::None;
         state.previewDragMoved = false;
         if (state.previewDragging) {
@@ -612,16 +637,35 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
             if (state.previewDragMoved) {
                 const auto startLayout = layoutFor(state.previewDragSettings);
                 const auto current = previewToCanvas(normalized,startLayout,state.previewDragFrame);
-                const float scale = state.previewSelection == CompositionElement::Labels
+                const bool resizing = state.previewResizeCorner != ResizeCorner::None;
+                const float scale = resizing || state.previewSelection == CompositionElement::Labels
                     ? static_cast<float>(state.previewDragFrame.subjectScale) : 1;
-                state.design = moveCompositionElement(state.previewDragSettings,state.previewSelection,
-                    {(current.x-state.previewDragStart.x)/scale,(current.y-state.previewDragStart.y)/scale});
+                const CanvasPoint delta{(current.x-state.previewDragStart.x)/scale,(current.y-state.previewDragStart.y)/scale};
+                if (resizing) state.design = resizeCompositionElement(state.previewDragSettings,state.previewSelection,
+                    state.previewResizeCorner,delta);
+                else {
+                    state.design = moveCompositionElement(state.previewDragSettings,state.previewSelection,delta);
+                    if (state.previewSnapping && !ImGui::GetIO().KeyAlt) {
+                        auto moved = state.previewDragSettings;
+                        moved.design = state.design;
+                        const float zoom = static_cast<float>(state.previewDragFrame.cameraZoom*state.previewDragFrame.subjectScale);
+                        const auto aligned = snapCompositionElement(moved,state.previewSelection,
+                            {7*layout.canvas.width/width/zoom,7*layout.canvas.height/height/zoom});
+                        state.design = aligned.design;
+                        state.previewGuideX = aligned.guideX;
+                        state.previewGuideY = aligned.guideY;
+                    }
+                }
             }
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) || !ImGui::IsItemActive()) state.previewDragging = false;
         }
     }
-    if (!state.historyBlocked && (state.previewDragging || (ImGui::IsItemHovered() && hovered != CompositionElement::None)))
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    if (!state.historyBlocked && (state.previewDragging || ImGui::IsItemHovered())) {
+        const auto corner = state.previewDragging ? state.previewResizeCorner : hoveredHandle;
+        if (corner != ResizeCorner::None) ImGui::SetMouseCursor(corner == ResizeCorner::TopLeft || corner == ResizeCorner::BottomRight
+            ? ImGuiMouseCursor_ResizeNWSE : ImGuiMouseCursor_ResizeNESW);
+        else if (state.previewDragging || hovered != CompositionElement::None) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    }
     settings.design = state.design;
     if (!state.historyBlocked) {
         if (const auto bounds = elementBounds(settings,state.previewSelection)) {
@@ -629,8 +673,28 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
             const auto a = canvasToPreview({bounds->left,bounds->top},updatedLayout,state.previewFrame);
             const auto b = canvasToPreview({bounds->right,bounds->bottom},updatedLayout,state.previewFrame);
             drawList->PushClipRect(topLeft,bottomRight,true);
+            if (state.showAlignmentGuides) {
+                const auto line = [&](CanvasPoint from,CanvasPoint to,bool active) {
+                    const auto p = canvasToPreview(from,updatedLayout,state.previewFrame);
+                    const auto q = canvasToPreview(to,updatedLayout,state.previewFrame);
+                    drawList->AddLine(ImVec2(topLeft.x+p.x*width,topLeft.y+p.y*height),
+                        ImVec2(topLeft.x+q.x*width,topLeft.y+q.y*height),
+                        active ? IM_COL32(255,208,100,240) : IM_COL32(100,210,190,70),active ? 1.8f : 1.0f);
+                };
+                for (float fraction : {0.1f,0.5f,0.9f}) {
+                    const float x = fraction*updatedLayout.canvas.width, y = fraction*updatedLayout.canvas.height;
+                    line({x,0},{x,float(updatedLayout.canvas.height)},state.previewGuideX && std::abs(*state.previewGuideX-x)<0.01f);
+                    line({0,y},{float(updatedLayout.canvas.width),y},state.previewGuideY && std::abs(*state.previewGuideY-y)<0.01f);
+                }
+            }
             drawList->AddRect(ImVec2(topLeft.x+a.x*width,topLeft.y+a.y*height),
                 ImVec2(topLeft.x+b.x*width,topLeft.y+b.y*height),IM_COL32(100,230,205,230),0,0,1.5f);
+            for (const auto& corner : boundsCorners(*bounds)) {
+                const auto p = canvasToPreview(corner,updatedLayout,state.previewFrame);
+                const ImVec2 center(topLeft.x+p.x*width,topLeft.y+p.y*height);
+                drawList->AddRectFilled(ImVec2(center.x-handleSize,center.y-handleSize),
+                    ImVec2(center.x+handleSize,center.y+handleSize),IM_COL32(100,230,205,255),1);
+            }
             drawList->PopClipRect();
         }
     }

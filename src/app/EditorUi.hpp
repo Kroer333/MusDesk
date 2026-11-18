@@ -22,6 +22,10 @@ struct EditorUiState {
     CompositionElement previewSelection = CompositionElement::None;
     bool previewDragging = false;
     bool previewDragMoved = false;
+    ResizeCorner previewResizeCorner = ResizeCorner::None;
+    bool previewSnapping = true;
+    bool showAlignmentGuides = true;
+    std::optional<float> previewGuideX, previewGuideY;
     bool requestPausePreview = false;
     CanvasPoint previewDragStart{};
     CompositionSettings previewDragSettings;

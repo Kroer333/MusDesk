@@ -55,6 +55,31 @@ int main() {
                     if (bounds) require(bounds->left >= 11.99f && bounds->top >= 11.99f
                         && bounds->right <= layout.canvas.width-11.99f && bounds->bottom <= layout.canvas.height-11.99f,
                         "Dragging outside preview must keep elements inside canvas and supported ranges");
+                    const auto originalBounds = elementBounds(settings,element);
+                    if (!originalBounds) continue;
+                    const CanvasPoint center{(originalBounds->left+originalBounds->right)/2,
+                        (originalBounds->top+originalBounds->bottom)/2};
+                    for (int i=0; i<4; ++i) {
+                        const auto corner = boundsCorners(*originalBounds)[i];
+                        moved.design = resizeCompositionElement(settings,element,static_cast<ResizeCorner>(i),
+                            {(corner.x-center.x)*0.1f,(corner.y-center.y)*0.1f});
+                        const auto resized = elementBounds(moved,element);
+                        require(resized && resized->right-resized->left > originalBounds->right-originalBounds->left,
+                            "Every corner must enlarge either element proportionally");
+                        require(near((resized->left+resized->right)/2,center.x)
+                            && near((resized->top+resized->bottom)/2,center.y),
+                            "Resize must preserve selection center when frame limits allow it");
+                        for (CanvasPoint delta : {CanvasPoint{100000,100000},{-100000,-100000}}) {
+                            moved.design = resizeCompositionElement(settings,element,static_cast<ResizeCorner>(i),delta);
+                            validateDesign(moved.design);
+                            const auto bounded = elementBounds(moved,element);
+                            require(bounded && bounded->left >= 11.99f && bounded->top >= 11.99f
+                                && bounded->right <= layout.canvas.width-11.99f && bounded->bottom <= layout.canvas.height-11.99f,
+                                "Extreme resize gestures must stay within the frame without inversion");
+                        }
+                    }
+                    moved.design = resizeCompositionElement(settings,element,ResizeCorner::BottomRight,{0,0});
+                    require(moved == settings,"A handle click without movement must not change settings");
                 }
             }
         }
@@ -91,6 +116,40 @@ int main() {
         history.observe(moved,true);
         history.observe(settings,false);
         require(!history.canUndo(),"Cancelling a drag must not add an undo step");
+        settings = {};
+        settings.format = CompositionFormat::Landscape;
+        moved = settings;
+        moved.design = moveCompositionElement(settings,CompositionElement::Foreground,{429,0});
+        const auto centered = snapCompositionElement(moved,CompositionElement::Foreground,{12,12});
+        moved.design = centered.design;
+        require(centered.guideX && near(*centered.guideX,960) && near(layoutFor(moved).discX,960),
+            "Movement near the canvas center must snap exactly and identify its guide");
+        moved = settings;
+        const auto margin = snapCompositionElement(moved,CompositionElement::Foreground,{12,12});
+        moved.design = margin.design;
+        const auto marginBounds = elementBounds(moved,CompositionElement::Foreground);
+        require(margin.guideX && near(*margin.guideX,192) && near(marginBounds->left,192),
+            "The element edge must snap to the ten-percent safe margin");
+        moved.design = moveCompositionElement(settings,CompositionElement::Foreground,{-80,70});
+        const auto unsnapped = snapCompositionElement(moved,CompositionElement::Foreground,{2,2});
+        require(unsnapped.design == moved.design && !unsnapped.guideX && !unsnapped.guideY,
+            "Movement far from guides must remain free");
+        require(snapCompositionElement(settings,CompositionElement::Foreground,{-1,12}).design == settings.design,
+            "Invalid snap tolerances must leave settings unchanged");
+        history.reset(settings);
+        for (int i=1; i<=20; ++i) {
+            moved = settings;
+            moved.design = resizeCompositionElement(settings,CompositionElement::Foreground,ResizeCorner::BottomRight,
+                {float(i),float(i)});
+            history.observe(moved,true);
+        }
+        history.observe(moved,false);
+        require(history.undo() == settings && !history.canUndo() && history.redo() == moved,
+            "A resize gesture must be one complete Undo/Redo operation");
+        history.reset(settings);
+        history.observe(moved,true);
+        history.observe(settings,false);
+        require(!history.canUndo(),"Cancelled resize must restore settings without adding history");
         std::cout << "Preview hit testing, coordinate transforms, movement limits and drag history passed.\n";
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

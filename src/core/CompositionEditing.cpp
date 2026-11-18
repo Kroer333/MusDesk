@@ -99,4 +99,75 @@ CompositionDesign moveCompositionElement(const CompositionSettings& initial, Com
         return initial.design;
     return design;
 }
+std::array<CanvasPoint,4> boundsCorners(const CanvasBounds& bounds) {
+    return {{{bounds.left,bounds.top},{bounds.right,bounds.top},
+        {bounds.right,bounds.bottom},{bounds.left,bounds.bottom}}};
+}
+CompositionDesign resizeCompositionElement(const CompositionSettings& initial, CompositionElement element,
+    ResizeCorner corner, CanvasPoint delta) {
+    const auto bounds = elementBounds(initial,element);
+    const int index = static_cast<int>(corner);
+    if (!bounds || index < 0 || index > 3 || !std::isfinite(delta.x) || !std::isfinite(delta.y)
+        || (delta.x == 0 && delta.y == 0)) return initial.design;
+    const CanvasPoint center{(bounds->left+bounds->right)/2,(bounds->top+bounds->bottom)/2};
+    const auto point = boundsCorners(*bounds)[index];
+    const float vx = point.x-center.x, vy = point.y-center.y;
+    const double factor = 1+(double(vx)*delta.x+double(vy)*delta.y)/(double(vx)*vx+double(vy)*vy);
+    if (std::abs(factor-1) < 0.000001) return initial.design;
+    auto resized = initial;
+    if (element == CompositionElement::Foreground) {
+        const auto base = layoutFor(initial.format);
+        const auto layout = layoutFor(initial);
+        const float maximum = std::min(1.5f,std::min(base.canvas.width,base.canvas.height)*0.45f/base.discRadius);
+        resized.design.foregroundScale = static_cast<float>(std::clamp(layout.discRadius/base.discRadius*factor,0.5,double(maximum)));
+    } else resized.design.labelsScale = static_cast<float>(std::clamp(initial.design.labelsScale*factor,0.5,1.5));
+    const auto after = elementBounds(resized,element);
+    if (after) resized.design = moveCompositionElement(resized,element,
+        {center.x-(after->left+after->right)/2,center.y-(after->top+after->bottom)/2});
+    const auto finalBounds = elementBounds(resized,element);
+    if (finalBounds && std::abs(finalBounds->left-bounds->left) < 0.0001f
+        && std::abs(finalBounds->right-bounds->right) < 0.0001f
+        && std::abs(finalBounds->top-bounds->top) < 0.0001f
+        && std::abs(finalBounds->bottom-bounds->bottom) < 0.0001f) return initial.design;
+    return resized.design;
+}
+CompositionAlignment snapCompositionElement(const CompositionSettings& settings, CompositionElement element,
+    CanvasPoint tolerance) {
+    CompositionAlignment result{settings.design};
+    if (!std::isfinite(tolerance.x) || !std::isfinite(tolerance.y) || tolerance.x < 0 || tolerance.y < 0) return result;
+    const auto layout = layoutFor(settings);
+    auto current = settings;
+    for (int axis=0; axis<2; ++axis) {
+        const auto bounds = elementBounds(current,element);
+        if (!bounds) break;
+        const float size = axis == 0 ? layout.canvas.width : layout.canvas.height;
+        const float low = axis == 0 ? bounds->left : bounds->top;
+        const float high = axis == 0 ? bounds->right : bounds->bottom;
+        const std::array<float,3> positions{(low+high)/2,low,high};
+        const std::array<float,3> targets{size*0.5f,size*0.1f,size*0.9f};
+        float nearest = (axis == 0 ? tolerance.x : tolerance.y)+0.0001f;
+        auto best = current.design;
+        std::optional<float> guide;
+        for (int candidate=0; candidate<3; ++candidate) {
+            const float distance = targets[candidate]-positions[candidate];
+            if (std::abs(distance) > nearest) continue;
+            auto proposed = current;
+            proposed.design = moveCompositionElement(current,element,axis == 0 ? CanvasPoint{distance,0} : CanvasPoint{0,distance});
+            const auto placed = elementBounds(proposed,element);
+            if (!placed) continue;
+            const float a = axis == 0 ? placed->left : placed->top;
+            const float b = axis == 0 ? placed->right : placed->bottom;
+            const float position = candidate == 0 ? (a+b)/2 : (candidate == 1 ? a : b);
+            if (std::abs(position-targets[candidate]) > 0.01f) continue;
+            nearest = std::abs(distance);
+            best = proposed.design;
+            guide = targets[candidate];
+        }
+        current.design = best;
+        if (axis == 0) result.guideX = guide;
+        else result.guideY = guide;
+    }
+    result.design = current.design;
+    return result;
+}
 }

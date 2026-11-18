@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added proportional corner resizing, center/safe-margin snapping, editor guides and Alt bypass.
 - Added preview selection and dragging for foreground and labels/timeline, with grouped Undo/Redo and Escape cancellation.
 - Fixed hidden/moved captions restricting spectrum deformation and outdated FFmpeg restart guidance.
 
