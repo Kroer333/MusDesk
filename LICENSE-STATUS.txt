@@ -1,4 +1,4 @@
-MusDesk 0.1.0 - license information
+MusDesk - license information
 
 MusDesk's own source code is licensed under the MIT License.
 See LICENSE for the full license and copyright notice.
@@ -7,8 +7,11 @@ Third-party components retain their respective licenses and notices.
 See THIRD_PARTY_NOTICES.md and the licenses directory.
 The public Windows ZIP does not include FFmpeg or ffprobe. They must be obtained
 separately for audio import and video export; see README.md.
-The personal private ZIP includes FFmpeg and ffprobe under their own GPLv3 terms.
+Legacy personal private ZIPs include FFmpeg and ffprobe under their own GPLv3 terms.
 See PRIVATE_PACKAGE.txt, licenses/FFmpeg-build.txt, licenses/FFmpeg-build-info.txt
 and licenses/FFmpeg-binaries.sha256. This is a personal backup/use package, not
 a claim that complete Corresponding Source for tool redistribution is supplied.
 Repository privacy does not waive obligations when conveying copies to others.
+Public releases use the tools-free package; old bundled-tools attachments must
+be withdrawn before making a repository public unless redistribution requirements
+have been fulfilled.

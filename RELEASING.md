@@ -8,25 +8,28 @@ notes first. Use a new tag and archive; preserve published releases.
 From the repository root in a Visual Studio 2022 Developer PowerShell:
 
 ```powershell
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DMUSDESK_PACKAGE_MEDIA_TOOLS=ON
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DMUSDESK_PACKAGE_MEDIA_TOOLS=OFF
 cmake --build build --config Release --parallel 1 -- /nr:false
 ctest --test-dir build -C Release --output-on-failure
 cpack --config build/CPackConfig.cmake -C Release -D CPACK_PACKAGE_CHECKSUM=SHA256
 ```
 
-Close the EXE being rebuilt. The private package requires FFmpeg/ffprobe in
-`tools/ffmpeg/bin`, their build's `tools/ffmpeg/LICENSE` and source/build notes in
-`tools/ffmpeg/README.txt`. Set the option to `OFF` for a tools-free ZIP.
+Close the EXE being rebuilt. Public packages omit FFmpeg/ffprobe; users install
+them separately. Locally staged tools remain available for development/tests.
 
 Validate the newly generated archive (replace `<version>`):
 
 ```powershell
-pwsh -NoProfile -File scripts/TestPackage.ps1 -Archive "build/packages/MusDesk-<version>-private-windows-x64.zip" -AllowPrivateTools
+pwsh -NoProfile -File scripts/TestPackage.ps1 -Archive "build/packages/MusDesk-<version>-windows-x64.zip"
 ```
 
-For a tools-free ZIP, omit `-private` and `-AllowPrivateTools`.
 Extract to a fresh folder; check import, preview, export/cancel and external MP4
-playback including the ending. Check clean Windows when available; document gaps.
+playback including the ending after installing the tools. Check clean Windows
+when available; document gaps.
+
+Before making an existing repository public, review its full history and author
+email visibility. Back up and withdraw older bundled-tools release attachments
+unless their redistribution requirements have been fulfilled; keep their tags.
 
 ## Publish through GitHub Desktop / GitHub
 
@@ -37,7 +40,6 @@ playback including the ending. Check clean Windows when available; document gaps
 5. Download the attachment and verify its checksum and startup.
 
 Rebuild before publishing if packaged files changed. The tag and ZIP must match.
-Release access follows repository visibility. Bundled tools retain their own license
-requirements when shared; this personal packaging workflow does not assemble complete
-Corresponding Source. See [PRIVATE_PACKAGE.txt](PRIVATE_PACKAGE.txt) and
-[dependency notices](THIRD_PARTY_NOTICES.md).
+Release access follows repository visibility. The legacy private packaging option
+does not assemble complete Corresponding Source for bundled tools and is not the
+public release workflow. See [dependency notices](THIRD_PARTY_NOTICES.md).

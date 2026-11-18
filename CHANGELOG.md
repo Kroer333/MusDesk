@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Made the documented public release workflow tools-free and clarified FFmpeg setup.
 - Fixed hidden labels/timeline limiting vertical placement and overlay pulse; kept progress markers inside the frame.
 - Added Vinyl, Artwork card, Spectrum bars and Background & titles scenes.
 - Added artwork/gradient/solid backgrounds, element visibility, placement and size controls.

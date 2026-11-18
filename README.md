@@ -9,10 +9,12 @@ Turn music and artwork into animated MP4 videos. Windows 10/11 x64, OpenGL 3.3.
 
 1. Download the application ZIP from [Releases](https://github.com/Kroer333/MusDesk/releases).
 2. Extract the whole folder and run `MusDesk.exe`; keep its DLLs and assets together.
-3. Import audio and artwork, adjust the composition, then choose **Export MP4**.
+3. Install FFmpeg/ffprobe as described below, then restart MusDesk.
+4. Import audio and artwork, adjust the composition, then choose **Export MP4**.
 
-The private ZIP includes FFmpeg/ffprobe. For a tools-free ZIP, place both executables
-beside `MusDesk.exe` and restart. CPU export needs libx264 and AAC support.
+Public packages omit FFmpeg/ffprobe. Obtain a Windows build through the
+[FFmpeg download page](https://ffmpeg.org/download.html) and place both executables
+beside `MusDesk.exe`. CPU export needs libx264 and AAC support.
 
 ## Features
 
