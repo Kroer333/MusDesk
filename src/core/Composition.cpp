@@ -3,9 +3,35 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <optional>
 #include <stdexcept>
 
 namespace musdesk {
+namespace {
+struct OverlayBounds { float left, right, top, bottom; };
+std::optional<OverlayBounds> visibleLabels(const CompositionLayout& layout, const CompositionDesign& design) {
+    std::optional<OverlayBounds> bounds;
+    const auto include = [&](float left, float right, float top, float bottom) {
+        if (!bounds) bounds = OverlayBounds{left,right,top,bottom};
+        else {
+            bounds->left = std::min(bounds->left,left);
+            bounds->right = std::max(bounds->right,right);
+            bounds->top = std::min(bounds->top,top);
+            bounds->bottom = std::max(bounds->bottom,bottom);
+        }
+    };
+    const float scale = layout.textScale;
+    if (design.showTitle) include(layout.textX-layout.textWidth/2,layout.textX+layout.textWidth/2,
+        layout.titleY-80*scale,layout.titleY+20*scale);
+    if (design.showArtist) include(layout.textX-layout.textWidth/2,layout.textX+layout.textWidth/2,
+        layout.artistY-60*scale,layout.artistY+20*scale);
+    if (design.showProgress) include(layout.timelineLeft-13,layout.timelineRight+13,
+        layout.timelineY-13,layout.timelineY+13);
+    if (design.showTimestamps) include(layout.timelineLeft,layout.timelineRight,
+        layout.timelineY+20*scale,layout.timelineY+85*scale);
+    return bounds;
+}
+}
 bool needsArtwork(const CompositionDesign& design) {
     return design.background == BackgroundKind::Artwork || design.scene == SceneKind::Vinyl || design.scene == SceneKind::Cover;
 }
@@ -102,17 +128,18 @@ CompositionLayout layoutFor(const CompositionSettings& settings) {
     const float title = layout.titleY;
     layout.artistY = title+(layout.artistY-title)*design.labelsScale;
     layout.timelineY = title+(layout.timelineY-title)*design.labelsScale;
-    const float top = title-80*design.labelsScale;
-    const float bottom = layout.timelineY+85*design.labelsScale;
-    const float shift = std::clamp(design.labelsY*height,12-top,height-12-bottom);
+    layout.textScale = design.labelsScale;
+    const auto labels = visibleLabels(layout,design);
+    const float shift = labels ? std::clamp(design.labelsY*height,12-labels->top,height-12-labels->bottom)
+        : design.labelsY*height;
     layout.titleY += shift;
     layout.artistY += shift;
     layout.timelineY += shift;
+    const float margin = design.showProgress ? 25.0f : 12.0f;
     const float halfBar = std::min((layout.timelineRight-layout.timelineLeft)*design.labelsScale/2,
-        std::min(layout.textX-12,width-layout.textX-12));
+        std::min(layout.textX-margin,width-layout.textX-margin));
     layout.timelineLeft = layout.textX-halfBar;
     layout.timelineRight = layout.textX+halfBar;
-    layout.textScale = design.labelsScale;
     return layout;
 }
 
@@ -158,18 +185,16 @@ CompositionFrame compositionAt(double timeSeconds, const CompositionSettings& se
         ? std::min(0.18, safe(preset.subjectPulse, 0.12) * beat * safe(preset.pulseStrength, 2)) : 0);
     const auto layout = layoutFor(settings);
     const bool foreground = settings.design.scene != SceneKind::Titles;
-    const double left = std::min(layout.timelineLeft,layout.textX-layout.textWidth/2);
-    const double right = std::max(layout.timelineRight,layout.textX+layout.textWidth/2);
-    const double top = layout.titleY-80*layout.textScale;
-    const double bottom = layout.timelineY+85*layout.textScale;
+    const auto labels = visibleLabels(layout,settings.design);
     const auto fit = [&](double value,double origin,double size) {
         if (value > origin) return (size-12-origin)/(value-origin);
         if (value < origin) return (origin-12)/(origin-value);
         return 2.0;
     };
-    frame.subjectScale = std::min({frame.subjectScale,fit(left,layout.discX,layout.canvas.width),
-        fit(right,layout.discX,layout.canvas.width),fit(top,layout.discY,layout.canvas.height),
-        fit(bottom,layout.discY,layout.canvas.height),foreground ? fit(layout.discX-layout.discRadius,layout.discX,layout.canvas.width) : 2.0,
+    if (labels) frame.subjectScale = std::min({frame.subjectScale,fit(labels->left,layout.discX,layout.canvas.width),
+        fit(labels->right,layout.discX,layout.canvas.width),fit(labels->top,layout.discY,layout.canvas.height),
+        fit(labels->bottom,layout.discY,layout.canvas.height)});
+    frame.subjectScale = std::min({frame.subjectScale,foreground ? fit(layout.discX-layout.discRadius,layout.discX,layout.canvas.width) : 2.0,
         foreground ? fit(layout.discX+layout.discRadius,layout.discX,layout.canvas.width) : 2.0,
         foreground ? fit(layout.discY-layout.discRadius,layout.discY,layout.canvas.height) : 2.0,
         foreground ? fit(layout.discY+layout.discRadius,layout.discY,layout.canvas.height) : 2.0});

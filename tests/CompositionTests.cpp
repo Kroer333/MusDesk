@@ -147,9 +147,35 @@ int main() {
                         "Foreground placement must fit every scene and aspect ratio");
                     require(std::isfinite(frame.subjectScale) && frame.subjectScale >= 0.9999 && frame.subjectScale <= 1.18,
                         "Custom positions must not invert or clip the overlay pulse");
+                    for (unsigned visible=0; visible<16; ++visible) {
+                        variant.design.showTitle = (visible&1) != 0;
+                        variant.design.showArtist = (visible&2) != 0;
+                        variant.design.showProgress = (visible&4) != 0;
+                        variant.design.showTimestamps = (visible&8) != 0;
+                        const auto pose = musdesk::compositionAt(1,variant,hit);
+                        require(std::isfinite(pose.subjectScale) && pose.subjectScale >= 0.9999 && pose.subjectScale <= 1.18,
+                            "Visibility combinations must not shrink or invert the overlay pulse");
+                    }
                 }
             }
         }
+        musdesk::CompositionSettings titleOnly;
+        titleOnly.format = musdesk::CompositionFormat::Square;
+        titleOnly.design.scene = musdesk::SceneKind::Titles;
+        titleOnly.design.showArtist = false;
+        titleOnly.design.showProgress = titleOnly.design.showTimestamps = false;
+        titleOnly.design.labelsY = 0.3f;
+        require(musdesk::layoutFor(titleOnly).titleY > 750,
+            "Hidden timeline must not prevent moving a title toward the bottom");
+        musdesk::CompositionSettings hiddenLabels;
+        hiddenLabels.format = musdesk::CompositionFormat::Landscape;
+        hiddenLabels.design.labelsX = 0.3f;
+        hiddenLabels.design.showTitle = hiddenLabels.design.showArtist = false;
+        hiddenLabels.design.showProgress = hiddenLabels.design.showTimestamps = false;
+        hiddenLabels.preset.subjectPulse = 0.12f;
+        hiddenLabels.preset.pulseStrength = 1;
+        require(std::abs(musdesk::compositionAt(1,hiddenLabels,{0,0,1}).subjectScale-1.12) < 0.0001,
+            "Invisible labels must not constrain the foreground pulse");
         musdesk::CompositionSettings still;
         still.design.animateBackground = false;
         require(musdesk::compositionAt(10,still).backgroundZoom == 1

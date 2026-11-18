@@ -359,17 +359,46 @@ int main(int argc, char* argv[]) {
             auto shortClip = std::make_shared<musdesk::DecodedAudio>(*clip);
             shortClip->samples.resize(4800*2);
             auto variant = settings;
-            variant.format = musdesk::CompositionFormat::Square;
             variant.shortEdge = 720;
+            variant.durationSeconds = shortClip->durationSeconds();
             variant.design.scene = scene;
+            variant.design.foregroundScale = 0.8f;
+            variant.design.labelsScale = 0.85f;
+            variant.design.labelsY = 0.15f;
             variant.design.showProgress = variant.design.showTimestamps = false;
             if (scene != musdesk::SceneKind::Cover) {
                 renderer.clearArtwork();
                 variant.design.background = musdesk::BackgroundKind::Gradient;
             }
-            musdesk::ExportEngine job(renderer,variant,shortClip,tools,
-                utf8(folder/("scene-"+std::to_string(static_cast<int>(scene))+".mp4")),musdesk::ExportEncoder::Cpu);
-            require(finish(job).phase == musdesk::ExportPhase::Completed,"New scene types must export valid MP4 without requiring unused artwork");
+            for (auto format : {musdesk::CompositionFormat::Portrait,musdesk::CompositionFormat::Landscape,
+                musdesk::CompositionFormat::Square,musdesk::CompositionFormat::PortraitThreeFour,musdesk::CompositionFormat::LandscapeFourThree}) {
+                variant.format = format;
+                const auto movie = folder/("scene-"+std::to_string(static_cast<int>(scene))+"-"
+                    +std::to_string(static_cast<int>(format))+".mp4");
+                {
+                    musdesk::ExportEngine job(renderer,variant,shortClip,tools,utf8(movie),musdesk::ExportEncoder::Cpu);
+                    const auto result = finish(job);
+                    require(result.phase == musdesk::ExportPhase::Completed && result.totalFrames == 3,
+                        "Each new scene/format must export valid MP4 without requiring unused artwork");
+                }
+                if (format != musdesk::CompositionFormat::Square) continue;
+                const auto decodedFrame = folder/"scene-frame.rgba";
+                runTool({tools.ffmpegPath,"-v","error","-xerror","-nostdin","-y","-i",utf8(movie),
+                    "-frames:v","1","-f","rawvideo","-pix_fmt","rgba",utf8(decodedFrame)});
+                std::ifstream decodedFile(decodedFrame,std::ios::binary);
+                const std::vector<unsigned char> encoded((std::istreambuf_iterator<char>(decodedFile)),{});
+                renderer.renderFrame(0,variant,shortClip->reactionAt(0,variant.preset));
+                const auto expected = renderer.readPixels();
+                require(encoded.size() == expected.size(),"Scene export dimensions must match preview");
+                double error = 0;
+                std::size_t count = 0;
+                for (int y=0; y<720; y+=4) for (int x=0; x<720; x+=4) for (int c=0; c<3; ++c) {
+                    error += std::abs(int(encoded[(y*720+x)*4+c])-int(expected[((719-y)*720+x)*4+c]));
+                    ++count;
+                }
+                std::cout << "Scene " << static_cast<int>(scene) << " preview/export mean error: " << error/count << '\n';
+                require(error/count < 8,"New scene MP4 must match the original-time preview");
+            }
         }
         for (const auto& file : std::filesystem::directory_iterator(folder))
             require(file.path().filename().string().find(".tmp-") == std::string::npos, "Export left a partial temporary file");
