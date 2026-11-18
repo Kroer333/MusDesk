@@ -500,6 +500,22 @@ int main(int argc, char* argv[]) {
             if (!running) {
                 break;
             }
+            if (editorState.requestMediaToolsPage) {
+                editorState.requestMediaToolsPage = false;
+                if (!SDL_OpenURL("https://ffmpeg.org/download.html"))
+                    editorState.mediaToolsStatus = "Open https://ffmpeg.org/download.html in your browser.";
+            }
+            if (editorState.requestCheckTools) {
+                editorState.requestCheckTools = false;
+                if (!toolsFuture.valid() && !audioFuture.valid() && !editorState.exportBusy) {
+                    editorState.toolsChecked = editorState.ffmpegReady = editorState.ffprobeReady = false;
+                    editorState.mediaToolsStatus = "Checking FFmpeg / ffprobe...";
+                    toolsCancellation = std::stop_source{};
+                    toolsFuture = std::async(std::launch::async, [token = toolsCancellation.get_token()] {
+                        return musdesk::detectMediaTools(token);
+                    });
+                }
+            }
             if (toolsFuture.valid() && toolsFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
                 try {
                     mediaTools = toolsFuture.get();

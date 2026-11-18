@@ -391,7 +391,12 @@ void drawControls(EditorUiState& state) {
         drawFramingControls(state);
         ImGui::TextWrapped("%s", state.mediaToolsStatus.c_str());
         if (state.toolsChecked && (!state.ffmpegReady || !state.ffprobeReady)) {
-            ImGui::TextWrapped("Tools: MUSDESK_FFMPEG_DIR, executable directory, or PATH. Restart after installing.");
+            ImGui::TextWrapped("Audio import and MP4 export need FFmpeg and ffprobe. Download a Windows build, extract it, and copy ffmpeg.exe and ffprobe.exe next to MusDesk.exe.");
+            if (ImGui::Button("FFmpeg downloads",ImVec2(-1,0))) state.requestMediaToolsPage = true;
+            ImGui::BeginDisabled(state.audioImportPending || state.audioDialogPending);
+            if (ImGui::Button("Check tools again",ImVec2(-1,0))) state.requestCheckTools = true;
+            ImGui::EndDisabled();
+            ImGui::TextWrapped("Download: ffmpeg.org/download.html. CPU export needs libx264 and AAC. You can also use MUSDESK_FFMPEG_DIR or PATH.");
         }
         ImGui::BeginDisabled(!state.ffprobeReady || !state.ffmpegReady || state.audioDialogPending || state.artworkDialogPending || state.presetDialogPending || state.audioImportPending);
         const char* audioButton = state.audioImportPending ? "Preparing audio..."

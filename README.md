@@ -1,7 +1,7 @@
 # MusDesk
 
 Turn music and artwork into animated MP4 videos. Windows 10/11 x64, OpenGL 3.3.
-**English UI only.**
+**0.3.0 pre-release · English UI only.**
 
 ![MusDesk workspace (0.1.0)](screenshots/workspace.png)
 
@@ -9,7 +9,7 @@ Turn music and artwork into animated MP4 videos. Windows 10/11 x64, OpenGL 3.3.
 
 1. Download the application ZIP from [Releases](https://github.com/Kroer333/MusDesk/releases).
 2. Extract the whole folder and run `MusDesk.exe`; keep its DLLs and assets together.
-3. Install FFmpeg/ffprobe as described below, then restart MusDesk.
+3. Install FFmpeg/ffprobe as described below, then select **Check tools again** in Media.
 4. Import audio and artwork, adjust the composition, then choose **Export MP4**.
 
 Public packages omit FFmpeg/ffprobe. Obtain a Windows build through the
@@ -23,13 +23,12 @@ beside `MusDesk.exe`. CPU export needs libx264 and AAC support.
 - Projects, autosave/recovery, portable media collection and waveform seeking.
 - H.264/AAC MP4 at 30 FPS: 9:16, 16:9, 1:1, 3:4 or 4:3; 720/1080 px short edge.
 
-**In development after 0.2.0:** Vinyl, Artwork card, Spectrum bars and Background &
+**New in 0.3.0:** Vinyl, Artwork card, Spectrum bars and Background &
 titles scenes; gradient/solid backgrounds, placement/visibility controls, expanded
 Glow/Spectrum settings, Undo/Redo and selected-range export.
-These additions are not in the published 0.2.0 ZIP.
 
 Projects reference media rather than embedding it: use **Collect project** to move
-everything together. Development saves use project v4 / preset v7 and read older
+everything together. Version 0.3.0 saves use project v4 / preset v7 and read older
 versions; MusDesk 0.2.0 cannot open these new saves. Keep backups.
 
 ## Build
@@ -56,6 +55,6 @@ Audio stays in memory (20-minute limit; 120-second decode timeout). Animated Web
 and JPEG EXIF orientation are unsupported. Beat detection does not isolate instruments.
 Clean-Windows and NVIDIA/AMD encoder verification remain incomplete.
 
-[Changelog](CHANGELOG.md) · [0.2.0 release notes](RELEASE_NOTES.md) ·
+[Changelog](CHANGELOG.md) · [0.3.0 release notes](RELEASE_NOTES.md) ·
 [Release workflow](https://github.com/Kroer333/MusDesk/blob/main/RELEASING.md) ·
 [MIT license](LICENSE) · [Dependency notices](THIRD_PARTY_NOTICES.md)

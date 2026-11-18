@@ -75,6 +75,8 @@ struct EditorUiState {
     bool audioDialogPending = false;
     bool audioImportPending = false;
     bool toolsChecked = false;
+    bool requestCheckTools = false;
+    bool requestMediaToolsPage = false;
     bool ffprobeReady = false;
     bool ffmpegReady = false;
     std::string mediaToolsStatus = "Checking FFmpeg / ffprobe...";

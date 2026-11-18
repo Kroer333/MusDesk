@@ -1,14 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — pre-release
 
+- Added FFmpeg setup guidance and detection retry without restarting the app.
 - Made the documented public release workflow tools-free and clarified FFmpeg setup.
 - Fixed hidden labels/timeline limiting vertical placement and overlay pulse; kept progress markers inside the frame.
 - Added Vinyl, Artwork card, Spectrum bars and Background & titles scenes.
 - Added artwork/gradient/solid backgrounds, element visibility, placement and size controls.
 - Expanded independent Glow/Spectrum controls, smoothing and resets.
 - Added grouped Undo/Redo and selected-range MP4 export.
-- Project v4 and preset v7 read older formats; new saves require the development build.
+- Project v4 and preset v7 read older formats; new saves require MusDesk 0.3.0.
 
 ## 0.2.0 — 2026-10-31
 
