@@ -8,6 +8,7 @@
 namespace musdesk {
 enum class CompositionElement { None, Foreground, Labels };
 enum class ResizeCorner { None = -1, TopLeft, TopRight, BottomRight, BottomLeft };
+enum class CompositionEdit { CenterHorizontal, CenterVertical, ResetPosition, ResetSize };
 struct CanvasPoint { float x, y; };
 struct CanvasBounds { float left, right, top, bottom; };
 struct CompositionAlignment {
@@ -29,4 +30,8 @@ CompositionDesign resizeCompositionElement(const CompositionSettings& initial, C
     ResizeCorner corner, CanvasPoint delta);
 CompositionAlignment snapCompositionElement(const CompositionSettings& settings, CompositionElement element,
     CanvasPoint tolerance);
+CompositionDesign nudgeCompositionElement(const CompositionSettings& settings, CompositionElement element,
+    CanvasPoint outputPixels);
+CompositionDesign editCompositionElement(const CompositionSettings& settings, CompositionElement element,
+    CompositionEdit action);
 }

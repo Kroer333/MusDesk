@@ -788,6 +788,7 @@ int main(int argc, char* argv[]) {
                 history.reset(currentProject().composition);
                 editorState.previewSelection = musdesk::CompositionElement::None;
                 editorState.previewDragging = false;
+                editorState.previewKeyboardFocus = false;
                 resetHistory = false;
             }
             else if (!editorState.previewDragging && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsKeyPressed(ImGuiKey_Tab,false)))
@@ -797,10 +798,12 @@ int main(int argc, char* argv[]) {
             editorState.historyBlocked = editorState.exportBusy || editorState.audioImportPending
                 || editorState.projectDialogPending || editorState.artworkDialogPending || editorState.audioDialogPending
                 || editorState.presetDialogPending || editorState.showUnsavedPrompt || editorState.showRecoveryPrompt;
+            editorState.previewKeyboardEditing = false;
+            editorState.previewArrowKeysCaptured = false;
             musdesk::drawEditorUi(editorState, composition.textureId());
             if (!editorState.exportBusy && !editorState.audioImportPending && !editorState.projectDialogPending
                 && !editorState.artworkDialogPending && !editorState.audioDialogPending && !editorState.presetDialogPending
-                && !editorState.showUnsavedPrompt && !editorState.showRecoveryPrompt && !editorState.previewDragging
+                && !editorState.showUnsavedPrompt && !editorState.showRecoveryPrompt && !editorState.previewDragging && !editorState.previewKeyboardEditing
                 && editorState.toolsChecked && io.KeyCtrl) {
                 if (ImGui::IsKeyPressed(ImGuiKey_S, false)) {
                     if (io.KeyShift) editorState.requestSaveProjectAs = true;
@@ -820,7 +823,7 @@ int main(int argc, char* argv[]) {
                 editorState.cancelProjectAction = false;
                 pendingProjectAction = ProjectAction::None;
             }
-            history.observe(currentProject().composition,ImGui::IsAnyItemActive() || editorState.previewDragging);
+            history.observe(currentProject().composition,ImGui::IsAnyItemActive() || editorState.previewDragging || editorState.previewKeyboardEditing);
             if (!editorState.historyBlocked && (editorState.requestUndo || editorState.requestRedo)) {
                 const auto restored = editorState.requestUndo ? history.undo() : history.redo();
                 if (restored) {
@@ -889,8 +892,8 @@ int main(int argc, char* argv[]) {
                 || projectCollectDialog.pending() || editorState.collectingProject;
             if (audioClip && !editorState.exportBusy && !editorState.previewDragging && !io.WantCaptureKeyboard) {
                 if (editorState.audioReady && ImGui::IsKeyPressed(ImGuiKey_Space, false)) editorState.requestPlayPause = true;
-                const double shift = (ImGui::IsKeyPressed(ImGuiKey_RightArrow) ? 5.0 : 0)
-                    - (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) ? 5.0 : 0);
+                const double shift = editorState.previewArrowKeysCaptured ? 0
+                    : ((ImGui::IsKeyPressed(ImGuiKey_RightArrow) ? 5.0 : 0) - (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) ? 5.0 : 0));
                 if (shift != 0) {
                     editorState.timeSeconds = std::clamp(editorState.timeSeconds + shift, 0.0, editorState.durationSeconds);
                     editorState.seekAudio = true;

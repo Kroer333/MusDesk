@@ -543,6 +543,8 @@ void drawControls(EditorUiState& state) {
 }
 
 void drawPreview(EditorUiState& state, std::uint32_t texture) {
+    CompositionSettings settings{state.title.data(),state.artist.data(),state.durationSeconds,state.preset,
+        state.format,state.shortEdge,state.backgroundFraming,state.labelFraming,state.backgroundSoftness,state.design};
     ImGui::TextUnformatted("Preview");
     ImGui::SameLine();
     ImGui::TextDisabled("%s", formatName(state.format));
@@ -553,7 +555,20 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
     ImGui::SameLine();
     ImGui::Checkbox("Guides",&state.showAlignmentGuides);
     ImGui::EndDisabled();
-    ImGui::TextDisabled("Drag: move. Corners: resize. Alt: no snap. Esc: cancel.");
+    ImGui::TextDisabled("Drag: move. Corners: resize. Arrows: 1px / Shift: 10px.");
+    ImGui::BeginDisabled(state.historyBlocked || state.previewDragging || !elementBounds(settings,state.previewSelection));
+    const auto apply = [&](CompositionDesign design) {
+        if (design != state.design) { state.design = design; state.requestPausePreview = true; }
+        settings.design = state.design;
+    };
+    if (ImGui::Button("Center X")) apply(editCompositionElement(settings,state.previewSelection,CompositionEdit::CenterHorizontal));
+    ImGui::SameLine();
+    if (ImGui::Button("Center Y")) apply(editCompositionElement(settings,state.previewSelection,CompositionEdit::CenterVertical));
+    ImGui::SameLine();
+    if (ImGui::Button("Reset position")) apply(editCompositionElement(settings,state.previewSelection,CompositionEdit::ResetPosition));
+    ImGui::SameLine();
+    if (ImGui::Button("Reset size")) apply(editCompositionElement(settings,state.previewSelection,CompositionEdit::ResetSize));
+    ImGui::EndDisabled();
     ImGui::Separator();
 
     const ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -586,8 +601,6 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
             IM_COL32(100, 210, 190, 150));
     }
 
-    CompositionSettings settings{state.title.data(),state.artist.data(),state.durationSeconds,state.preset,
-        state.format,state.shortEdge,state.backgroundFraming,state.labelFraming,state.backgroundSoftness,state.design};
     const auto layout = layoutFor(settings);
     const auto mouse = ImGui::GetMousePos();
     const CanvasPoint normalized{(mouse.x-topLeft.x)/width,(mouse.y-topLeft.y)/height};
@@ -611,6 +624,8 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
     state.previewGuideY.reset();
     ImGui::SetCursorScreenPos(topLeft);
     ImGui::InvisibleButton("##MoveComposition",ImVec2(width,height));
+    if ((ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::IsItemHovered())
+        || ImGui::IsKeyPressed(ImGuiKey_Tab,false) || !ImGui::IsWindowFocused()) state.previewKeyboardFocus = false;
     if (!state.historyBlocked && (ImGui::IsItemActivated() || ImGui::IsItemClicked(ImGuiMouseButton_Left))) {
         const auto clicked = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
         const CanvasPoint start{(clicked.x-topLeft.x)/width,(clicked.y-topLeft.y)/height};
@@ -618,6 +633,7 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
         if (state.previewResizeCorner == ResizeCorner::None)
             state.previewSelection = hitComposition(settings,state.previewFrame,start);
         state.previewDragging = state.previewSelection != CompositionElement::None;
+        state.previewKeyboardFocus = state.previewDragging;
         state.previewDragMoved = false;
         if (state.previewDragging) {
             state.previewDragSettings = settings;
@@ -658,6 +674,21 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
                 }
             }
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) || !ImGui::IsItemActive()) state.previewDragging = false;
+        }
+    }
+    if (!state.historyBlocked && !state.previewDragging && state.previewKeyboardFocus
+        && state.previewSelection != CompositionElement::None && !ImGui::IsAnyItemActive() && !ImGui::GetIO().WantTextInput) {
+        const int dx = int(ImGui::IsKeyPressed(ImGuiKey_RightArrow))-int(ImGui::IsKeyPressed(ImGuiKey_LeftArrow));
+        const int dy = int(ImGui::IsKeyPressed(ImGuiKey_DownArrow))-int(ImGui::IsKeyPressed(ImGuiKey_UpArrow));
+        const bool holdingArrow = ImGui::IsKeyDown(ImGuiKey_LeftArrow) || ImGui::IsKeyDown(ImGuiKey_RightArrow)
+            || ImGui::IsKeyDown(ImGuiKey_UpArrow) || ImGui::IsKeyDown(ImGuiKey_DownArrow);
+        state.previewArrowKeysCaptured = holdingArrow || dx != 0 || dy != 0;
+        if (!ImGui::GetIO().KeyCtrl && !ImGui::GetIO().KeyAlt && !ImGui::GetIO().KeySuper) {
+            state.previewKeyboardEditing = holdingArrow;
+            const float step = ImGui::GetIO().KeyShift ? 10.0f : 1.0f;
+            const CanvasPoint pixels{step*dx,step*dy};
+            settings.design = state.design;
+            if (pixels.x != 0 || pixels.y != 0) apply(nudgeCompositionElement(settings,state.previewSelection,pixels));
         }
     }
     if (!state.historyBlocked && (state.previewDragging || ImGui::IsItemHovered())) {

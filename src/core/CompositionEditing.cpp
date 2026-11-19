@@ -170,4 +170,32 @@ CompositionAlignment snapCompositionElement(const CompositionSettings& settings,
     result.design = current.design;
     return result;
 }
+CompositionDesign nudgeCompositionElement(const CompositionSettings& settings, CompositionElement element, CanvasPoint outputPixels) {
+    const auto canvas = layoutFor(settings.format).canvas;
+    const auto output = outputSize(settings.format,settings.shortEdge);
+    return moveCompositionElement(settings,element,
+        {outputPixels.x*canvas.width/output.width,outputPixels.y*canvas.height/output.height});
+}
+CompositionDesign editCompositionElement(const CompositionSettings& settings, CompositionElement element, CompositionEdit action) {
+    const auto bounds = elementBounds(settings,element);
+    if (!bounds) return settings.design;
+    const CanvasPoint center{(bounds->left+bounds->right)/2,(bounds->top+bounds->bottom)/2};
+    const auto canvas = layoutFor(settings.format).canvas;
+    if (action == CompositionEdit::CenterHorizontal)
+        return moveCompositionElement(settings,element,{canvas.width*0.5f-center.x,0});
+    if (action == CompositionEdit::CenterVertical)
+        return moveCompositionElement(settings,element,{0,canvas.height*0.5f-center.y});
+    auto edited = settings;
+    if (action == CompositionEdit::ResetPosition) {
+        if (element == CompositionElement::Foreground) edited.design.foregroundX = edited.design.foregroundY = 0;
+        else edited.design.labelsX = edited.design.labelsY = 0;
+    } else if (action == CompositionEdit::ResetSize) {
+        if (element == CompositionElement::Foreground) edited.design.foregroundScale = 1;
+        else edited.design.labelsScale = 1;
+        const auto after = elementBounds(edited,element);
+        edited.design = moveCompositionElement(edited,element,
+            {center.x-(after->left+after->right)/2,center.y-(after->top+after->bottom)/2});
+    }
+    return edited.design;
+}
 }

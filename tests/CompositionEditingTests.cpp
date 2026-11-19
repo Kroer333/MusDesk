@@ -80,6 +80,52 @@ int main() {
                     }
                     moved.design = resizeCompositionElement(settings,element,ResizeCorner::BottomRight,{0,0});
                     require(moved == settings,"A handle click without movement must not change settings");
+                    for (int edge : {720,1080}) {
+                        auto positioned = settings;
+                        positioned.shortEdge = edge;
+                        const auto output = outputSize(format,edge);
+                        positioned.design = nudgeCompositionElement(positioned,element,{1,-10});
+                        const auto nudged = elementBounds(positioned,element);
+                        require(near(((nudged->left+nudged->right)/2-center.x)*output.width/layout.canvas.width,1)
+                            && near(((nudged->top+nudged->bottom)/2-center.y)*output.height/layout.canvas.height,-10),
+                            "Nudges must use output pixels in every format and resolution");
+                    }
+                    moved.design = editCompositionElement(settings,element,CompositionEdit::CenterHorizontal);
+                    auto centered = elementBounds(moved,element);
+                    require(near((centered->left+centered->right)/2,layout.canvas.width*0.5f)
+                        && near((centered->top+centered->bottom)/2,center.y),
+                        "Center X must align the selection without moving it vertically");
+                    moved.design = editCompositionElement(settings,element,CompositionEdit::CenterVertical);
+                    centered = elementBounds(moved,element);
+                    require(near((centered->top+centered->bottom)/2,layout.canvas.height*0.5f)
+                        && near((centered->left+centered->right)/2,center.x),
+                        "Center Y must align the selection without moving it horizontally");
+                    auto custom = settings;
+                    if (element == CompositionElement::Foreground) {
+                        custom.design.foregroundScale = 0.8f;
+                        custom.design.foregroundX = custom.design.foregroundY = 0.03f;
+                    } else {
+                        custom.design.labelsScale = 0.8f;
+                        custom.design.labelsX = custom.design.labelsY = 0.03f;
+                    }
+                    const auto resetPosition = editCompositionElement(custom,element,CompositionEdit::ResetPosition);
+                    require((element == CompositionElement::Foreground
+                        ? resetPosition.foregroundX == 0 && resetPosition.foregroundY == 0 && resetPosition.foregroundScale == 0.8f
+                        : resetPosition.labelsX == 0 && resetPosition.labelsY == 0 && resetPosition.labelsScale == 0.8f),
+                        "Reset position must restore offsets while retaining size");
+                    moved = custom;
+                    moved.design = editCompositionElement(custom,element,CompositionEdit::ResetSize);
+                    const auto resized = elementBounds(moved,element);
+                    const auto original = elementBounds(custom,element);
+                    require((element == CompositionElement::Foreground ? moved.design.foregroundScale : moved.design.labelsScale) == 1
+                        && near((resized->left+resized->right)/2,(original->left+original->right)/2)
+                        && near((resized->top+resized->bottom)/2,(original->top+original->bottom)/2),
+                        "Reset size must restore exactly 1x and preserve center when possible");
+                    if (element == CompositionElement::Foreground)
+                        require(moved.design.labelsScale == custom.design.labelsScale && moved.design.labelsX == custom.design.labelsX
+                            && moved.design.labelsY == custom.design.labelsY,"Foreground actions must preserve labels");
+                    else require(moved.design.foregroundScale == custom.design.foregroundScale && moved.design.foregroundX == custom.design.foregroundX
+                        && moved.design.foregroundY == custom.design.foregroundY,"Label actions must preserve foreground");
                 }
             }
         }
@@ -150,6 +196,15 @@ int main() {
         history.observe(moved,true);
         history.observe(settings,false);
         require(!history.canUndo(),"Cancelled resize must restore settings without adding history");
+        history.reset(settings);
+        moved = settings;
+        for (int i=0; i<20; ++i) {
+            moved.design = nudgeCompositionElement(moved,CompositionElement::Foreground,{1,0});
+            history.observe(moved,true);
+        }
+        history.observe(moved,false);
+        require(history.undo() == settings && !history.canUndo() && history.redo() == moved,
+            "Repeated key nudges must be grouped into one undoable gesture");
         std::cout << "Preview hit testing, coordinate transforms, movement limits and drag history passed.\n";
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

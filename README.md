@@ -30,6 +30,8 @@ Glow/Spectrum settings, Undo/Redo and selected-range export.
 **In development:** drag elements or resize them uniformly with corner handles.
 Snap aligns to center axes/10% margins; Alt bypasses it. Guides are editor-only.
 Selection pauses playback; Esc cancels and Undo/Redo handles each gesture.
+Click an element for arrow-key positioning (1 output pixel, Shift: 10; ignores Snap).
+Center X/Y and reset buttons affect only the selected group.
 
 Projects reference media rather than embedding it: use **Collect project** to move
 everything together. Version 0.3.0 saves use project v4 / preset v7 and read older
