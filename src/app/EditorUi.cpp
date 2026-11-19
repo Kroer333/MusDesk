@@ -192,7 +192,9 @@ void drawDesignControls(EditorUiState& state) {
         design.scene = static_cast<SceneKind>(scene);
     if (design.scene == SceneKind::Cover) ImGui::TextWrapped("A stationary artwork card. Crop it with Foreground artwork framing in Media.");
     if (design.scene == SceneKind::Bars) {
+        ImGui::BeginDisabled(state.foregroundPlacementLocked);
         effectSlider("##BarsHeight",design.barsHeight,0.25f,1.5f,"Bars height: %.2fx");
+        ImGui::EndDisabled();
         ImGui::TextWrapped("32 audio bands. Adjust color, width, gain and smoothing in Effects > Spectrum settings.");
     }
     if (ImGui::CollapsingHeader("Visible elements",ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -202,18 +204,28 @@ void drawDesignControls(EditorUiState& state) {
         ImGui::Checkbox("Time labels",&design.showTimestamps);
     }
     if (ImGui::CollapsingHeader("Element placement")) {
-        ImGui::BeginDisabled(design.scene == SceneKind::Titles);
+        ImGui::BeginDisabled(design.scene == SceneKind::Titles || state.foregroundPlacementLocked);
         effectSlider("##ForegroundScale",design.foregroundScale,0.5f,1.5f,"Foreground size: %.2fx");
         effectSlider("##ForegroundX",design.foregroundX,-0.3f,0.3f,"Foreground X: %+.2f");
         effectSlider("##ForegroundY",design.foregroundY,-0.3f,0.3f,"Foreground Y: %+.2f");
         ImGui::EndDisabled();
+        ImGui::BeginDisabled(state.labelsPlacementLocked);
         effectSlider("##LabelsScale",design.labelsScale,0.5f,1.5f,"Labels + timeline size: %.2fx");
         effectSlider("##LabelsX",design.labelsX,-0.3f,0.3f,"Labels X: %+.2f");
         effectSlider("##LabelsY",design.labelsY,-0.3f,0.3f,"Labels Y: %+.2f");
+        ImGui::EndDisabled();
+        ImGui::BeginDisabled(state.foregroundPlacementLocked && state.labelsPlacementLocked);
         if (ImGui::Button("Reset placement")) {
-            design.foregroundScale = design.labelsScale = 1;
-            design.foregroundX = design.foregroundY = design.labelsX = design.labelsY = 0;
+            if (!state.foregroundPlacementLocked) {
+                design.foregroundScale = 1;
+                design.foregroundX = design.foregroundY = 0;
+            }
+            if (!state.labelsPlacementLocked) {
+                design.labelsScale = 1;
+                design.labelsX = design.labelsY = 0;
+            }
         }
+        ImGui::EndDisabled();
         ImGui::TextWrapped("Offsets are fractions of the canvas. Placement stays inside the frame; adjust overlapping elements as needed.");
     }
     if (ImGui::CollapsingHeader("Background design")) {
@@ -555,10 +567,26 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
     ImGui::SameLine();
     ImGui::Checkbox("Guides",&state.showAlignmentGuides);
     ImGui::EndDisabled();
+    ImGui::BeginDisabled(state.historyBlocked || state.previewDragging);
+    ImGui::Checkbox("Lock foreground",&state.foregroundPlacementLocked);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Lock position and size for this session. Effects and Undo/Redo remain available.");
+    ImGui::SameLine();
+    ImGui::Checkbox("Lock labels",&state.labelsPlacementLocked);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Lock position and size for this session. Effects and Undo/Redo remain available.");
+    ImGui::EndDisabled();
     ImGui::TextDisabled("Drag: move. Corners: resize. Arrows: 1px / Shift: 10px.");
-    ImGui::BeginDisabled(state.historyBlocked || state.previewDragging || !elementBounds(settings,state.previewSelection));
+    ImGui::BeginDisabled(state.historyBlocked || state.previewDragging || state.placementLocked(state.previewSelection)
+        || !elementBounds(settings,state.previewSelection));
     const auto apply = [&](CompositionDesign design) {
-        if (design != state.design) { state.design = design; state.requestPausePreview = true; }
+        if (state.previewSelection == CompositionElement::Foreground) {
+            state.design.foregroundX = design.foregroundX;
+            state.design.foregroundY = design.foregroundY;
+            state.design.foregroundScale = design.foregroundScale;
+        } else if (state.previewSelection == CompositionElement::Labels) {
+            state.design.labelsX = design.labelsX;
+            state.design.labelsY = design.labelsY;
+            state.design.labelsScale = design.labelsScale;
+        }
         settings.design = state.design;
     };
     if (ImGui::Button("Center X")) apply(editCompositionElement(settings,state.previewSelection,CompositionEdit::CenterHorizontal));
@@ -608,6 +636,7 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
         5*layout.canvas.width/width/static_cast<float>(state.previewFrame.cameraZoom*state.previewFrame.subjectScale));
     const float handleSize = ImGui::GetFontSize()*0.28f;
     const auto handleAt = [&](ImVec2 position) {
+        if (state.placementLocked(state.previewSelection)) return ResizeCorner::None;
         if (const auto bounds = elementBounds(settings,state.previewSelection)) {
             const auto corners = boundsCorners(*bounds);
             for (int i=0; i<4; ++i) {
@@ -632,20 +661,19 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
         state.previewResizeCorner = handleAt(clicked);
         if (state.previewResizeCorner == ResizeCorner::None)
             state.previewSelection = hitComposition(settings,state.previewFrame,start);
-        state.previewDragging = state.previewSelection != CompositionElement::None;
-        state.previewKeyboardFocus = state.previewDragging;
+        state.previewKeyboardFocus = state.previewSelection != CompositionElement::None;
+        state.previewDragging = state.previewKeyboardFocus && !state.placementLocked(state.previewSelection);
         state.previewDragMoved = false;
         if (state.previewDragging) {
             state.previewDragSettings = settings;
             state.previewDragFrame = state.previewFrame;
             state.previewDragStart = previewToCanvas(start,layout,state.previewDragFrame);
-            state.requestPausePreview = true;
         }
     }
-    if (state.historyBlocked) state.previewDragging = false;
+    if (state.historyBlocked || state.placementLocked(state.previewSelection)) state.previewDragging = false;
     if (state.previewDragging) {
         if (ImGui::IsKeyPressed(ImGuiKey_Escape,false)) {
-            state.design = state.previewDragSettings.design;
+            apply(state.previewDragSettings.design);
             state.previewDragging = false;
         } else {
             const auto clicked = ImGui::GetIO().MouseClickedPos[ImGuiMouseButton_Left];
@@ -657,17 +685,17 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
                 const float scale = resizing || state.previewSelection == CompositionElement::Labels
                     ? static_cast<float>(state.previewDragFrame.subjectScale) : 1;
                 const CanvasPoint delta{(current.x-state.previewDragStart.x)/scale,(current.y-state.previewDragStart.y)/scale};
-                if (resizing) state.design = resizeCompositionElement(state.previewDragSettings,state.previewSelection,
-                    state.previewResizeCorner,delta);
+                if (resizing) apply(resizeCompositionElement(state.previewDragSettings,state.previewSelection,
+                    state.previewResizeCorner,delta));
                 else {
-                    state.design = moveCompositionElement(state.previewDragSettings,state.previewSelection,delta);
+                    apply(moveCompositionElement(state.previewDragSettings,state.previewSelection,delta));
                     if (state.previewSnapping && !ImGui::GetIO().KeyAlt) {
                         auto moved = state.previewDragSettings;
                         moved.design = state.design;
                         const float zoom = static_cast<float>(state.previewDragFrame.cameraZoom*state.previewDragFrame.subjectScale);
                         const auto aligned = snapCompositionElement(moved,state.previewSelection,
                             {7*layout.canvas.width/width/zoom,7*layout.canvas.height/height/zoom});
-                        state.design = aligned.design;
+                        apply(aligned.design);
                         state.previewGuideX = aligned.guideX;
                         state.previewGuideY = aligned.guideY;
                     }
@@ -683,7 +711,8 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
         const bool holdingArrow = ImGui::IsKeyDown(ImGuiKey_LeftArrow) || ImGui::IsKeyDown(ImGuiKey_RightArrow)
             || ImGui::IsKeyDown(ImGuiKey_UpArrow) || ImGui::IsKeyDown(ImGuiKey_DownArrow);
         state.previewArrowKeysCaptured = holdingArrow || dx != 0 || dy != 0;
-        if (!ImGui::GetIO().KeyCtrl && !ImGui::GetIO().KeyAlt && !ImGui::GetIO().KeySuper) {
+        if (!state.placementLocked(state.previewSelection)
+            && !ImGui::GetIO().KeyCtrl && !ImGui::GetIO().KeyAlt && !ImGui::GetIO().KeySuper) {
             state.previewKeyboardEditing = holdingArrow;
             const float step = ImGui::GetIO().KeyShift ? 10.0f : 1.0f;
             const CanvasPoint pixels{step*dx,step*dy};
@@ -695,7 +724,8 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
         const auto corner = state.previewDragging ? state.previewResizeCorner : hoveredHandle;
         if (corner != ResizeCorner::None) ImGui::SetMouseCursor(corner == ResizeCorner::TopLeft || corner == ResizeCorner::BottomRight
             ? ImGuiMouseCursor_ResizeNWSE : ImGuiMouseCursor_ResizeNESW);
-        else if (state.previewDragging || hovered != CompositionElement::None) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+        else if (state.previewDragging || (hovered != CompositionElement::None && !state.placementLocked(hovered)))
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
     }
     settings.design = state.design;
     if (!state.historyBlocked) {
@@ -720,7 +750,7 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
             }
             drawList->AddRect(ImVec2(topLeft.x+a.x*width,topLeft.y+a.y*height),
                 ImVec2(topLeft.x+b.x*width,topLeft.y+b.y*height),IM_COL32(100,230,205,230),0,0,1.5f);
-            for (const auto& corner : boundsCorners(*bounds)) {
+            if (!state.placementLocked(state.previewSelection)) for (const auto& corner : boundsCorners(*bounds)) {
                 const auto p = canvasToPreview(corner,updatedLayout,state.previewFrame);
                 const ImVec2 center(topLeft.x+p.x*width,topLeft.y+p.y*height);
                 drawList->AddRectFilled(ImVec2(center.x-handleSize,center.y-handleSize),

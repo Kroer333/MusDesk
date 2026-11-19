@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added independent foreground/label placement locks and kept playback running during preview edits.
+
 - Added focused 1/10-pixel keyboard positioning and per-selection centering/position/size resets with Undo/Redo.
 - Added proportional corner resizing, center/safe-margin snapping, editor guides and Alt bypass.
 - Added preview selection and dragging for foreground and labels/timeline, with grouped Undo/Redo and Escape cancellation.

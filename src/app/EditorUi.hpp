@@ -28,8 +28,13 @@ struct EditorUiState {
     ResizeCorner previewResizeCorner = ResizeCorner::None;
     bool previewSnapping = true;
     bool showAlignmentGuides = true;
+    bool foregroundPlacementLocked = false;
+    bool labelsPlacementLocked = false;
+    bool placementLocked(CompositionElement element) const {
+        return element == CompositionElement::Foreground ? foregroundPlacementLocked
+            : element == CompositionElement::Labels && labelsPlacementLocked;
+    }
     std::optional<float> previewGuideX, previewGuideY;
-    bool requestPausePreview = false;
     CanvasPoint previewDragStart{};
     CompositionSettings previewDragSettings;
     CompositionFrame previewDragFrame{};

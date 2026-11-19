@@ -356,6 +356,7 @@ int main(int argc, char* argv[]) {
         };
         auto applyProject = [&](const musdesk::ProjectDocument& project, const std::string& path) {
             resetHistory = true;
+            editorState.foregroundPlacementLocked = editorState.labelsPlacementLocked = false;
             editorState.exportSelection = false;
             editorState.exportStart = editorState.exportEnd = 0;
             clearOwnRecovery();
@@ -904,13 +905,6 @@ int main(int argc, char* argv[]) {
                 audioCancellation.request_stop();
             }
             try {
-                if (editorState.requestPausePreview) {
-                    editorState.requestPausePreview = false;
-                    editorState.audioPlaying = false;
-                    editorState.animatePreview = false;
-                    resumeAfterSeek = false;
-                    audioPlayer.pause();
-                }
                 if (editorState.requestRetryPreview && audioClip) preparePlayback();
                 editorState.requestRetryPreview = false;
                 if (beforeVolume != editorState.previewVolume || beforeMute != editorState.muteAudio)
