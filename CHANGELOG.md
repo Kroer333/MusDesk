@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added a hover audio panel at the preview's right edge, sharing the Media playback controls.
+
 - Split foreground and labels/timeline size pulses into independent controls and pivots; preset v8 migrates v1–v7 settings.
 
 - Added independent foreground/label placement locks and kept playback running during preview edits.

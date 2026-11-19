@@ -351,6 +351,44 @@ void drawWaveform(EditorUiState& state) {
         ImGui::SetTooltip("Seek: %.2f s / %.2f s\nClick or drag to seek", mouseFraction * state.durationSeconds, state.durationSeconds);
 }
 
+void drawAudioPreviewControls(EditorUiState& state) {
+    ImGui::SeparatorText("Preview audio");
+    if (!state.previewError.empty()) {
+        ImGui::TextWrapped("%s", state.previewError.c_str());
+        if (ImGui::Button("Retry audio output")) state.requestRetryPreview = true;
+    }
+    ImGui::BeginDisabled(!state.audioReady);
+    if (ImGui::Button(state.audioPlaying ? "Pause" : "Play")) state.requestPlayPause = true;
+    ImGui::SameLine();
+    if (ImGui::Button("Restart")) state.requestRestart = true;
+    ImGui::EndDisabled();
+    const auto position = formatTime(static_cast<std::uint64_t>(state.timeSeconds));
+    const auto duration = formatTime(static_cast<std::uint64_t>(state.durationSeconds));
+    ImGui::Text("%s / %s", position.c_str(), duration.c_str());
+    ImGui::BeginDisabled(state.audioImportPending);
+    drawWaveform(state);
+    const double start = 0;
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderScalar("##AudioTime", ImGuiDataType_Double, &state.timeSeconds,
+            &start, &state.durationSeconds, "%.2f s", ImGuiSliderFlags_AlwaysClamp)) state.seekAudio = true;
+    trackSeekInteraction(state);
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(!state.audioReady);
+    ImGui::SetNextItemWidth(-1);
+    ImGui::SliderFloat("##Volume", &state.previewVolume, 0, 100, "Volume: %.0f%%", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::Checkbox("Mute", &state.muteAudio);
+    ImGui::SameLine();
+    ImGui::Checkbox("Loop", &state.loopAudio);
+    ImGui::EndDisabled();
+    ImGui::ProgressBar(state.audioEnergy, ImVec2(-1, 0), "Audio energy");
+    if (state.rhythm) {
+        ImGui::ProgressBar(state.rhythm->bass.at(state.timeSeconds), ImVec2(-1, 0), "Bass energy");
+        ImGui::ProgressBar(state.rhythm->pulseAt(state.timeSeconds, state.preset.beatThreshold,state.preset.beatBand), ImVec2(-1, 0), "Hit pulse");
+        ImGui::Text("Detected attacks: %zu", state.rhythm->events(state.preset.beatBand).size());
+    }
+    ImGui::TextDisabled("Volume affects monitoring only.");
+}
+
 void drawControls(EditorUiState& state) {
     if (state.collectingProject) {
         ImGui::TextUnformatted("Collecting project and media...");
@@ -446,43 +484,7 @@ void drawControls(EditorUiState& state) {
             ImGui::TextWrapped("%s", state.audioError.c_str());
             ImGui::PopStyleColor();
         }
-        if (!state.audioPath.empty()) {
-            ImGui::SeparatorText("Preview audio");
-            if (!state.previewError.empty()) {
-                ImGui::TextWrapped("%s", state.previewError.c_str());
-                if (ImGui::Button("Retry audio output")) state.requestRetryPreview = true;
-            }
-            ImGui::BeginDisabled(!state.audioReady);
-            if (ImGui::Button(state.audioPlaying ? "Pause" : "Play")) state.requestPlayPause = true;
-            ImGui::SameLine();
-            if (ImGui::Button("Restart")) state.requestRestart = true;
-            ImGui::EndDisabled();
-            const auto position = formatTime(static_cast<std::uint64_t>(state.timeSeconds));
-            const auto duration = formatTime(static_cast<std::uint64_t>(state.durationSeconds));
-            ImGui::Text("%s / %s", position.c_str(), duration.c_str());
-            ImGui::BeginDisabled(state.audioImportPending);
-            drawWaveform(state);
-            const double start = 0;
-            ImGui::SetNextItemWidth(-1);
-            if (ImGui::SliderScalar("##AudioTime", ImGuiDataType_Double, &state.timeSeconds,
-                    &start, &state.durationSeconds, "%.2f s", ImGuiSliderFlags_AlwaysClamp)) state.seekAudio = true;
-            trackSeekInteraction(state);
-            ImGui::EndDisabled();
-            ImGui::BeginDisabled(!state.audioReady);
-            ImGui::SetNextItemWidth(-1);
-            ImGui::SliderFloat("##Volume", &state.previewVolume, 0, 100, "Volume: %.0f%%", ImGuiSliderFlags_AlwaysClamp);
-            ImGui::Checkbox("Mute", &state.muteAudio);
-            ImGui::SameLine();
-            ImGui::Checkbox("Loop", &state.loopAudio);
-            ImGui::EndDisabled();
-            ImGui::ProgressBar(state.audioEnergy, ImVec2(-1, 0), "Audio energy");
-            if (state.rhythm) {
-                ImGui::ProgressBar(state.rhythm->bass.at(state.timeSeconds), ImVec2(-1, 0), "Bass energy");
-                ImGui::ProgressBar(state.rhythm->pulseAt(state.timeSeconds, state.preset.beatThreshold,state.preset.beatBand), ImVec2(-1, 0), "Hit pulse");
-                ImGui::Text("Detected attacks: %zu", state.rhythm->events(state.preset.beatBand).size());
-            }
-            ImGui::TextDisabled("Volume affects monitoring only.");
-        }
+        if (!state.audioPath.empty()) drawAudioPreviewControls(state);
     }
     if (state.workspacePanel == 1) {
         ImGui::SeparatorText("Track labels");
@@ -573,7 +575,51 @@ void drawControls(EditorUiState& state) {
     }
 }
 
+void drawPreviewAudioOverlay(EditorUiState& state, ImVec2 corner, ImVec2 available) {
+    const bool wasOpen = state.audioOverlayOpen;
+    const bool disabled = state.workspacePanel == 2 || state.historyBlocked || state.previewDragging;
+    if (disabled) state.audioOverlayOpen = false;
+    const float em = ImGui::GetFontSize();
+    const float width = std::min(available.x,state.audioOverlayOpen ? 22*em : 8*em);
+    const float height = state.audioOverlayOpen ? 0 : ImGui::GetFrameHeight()+12;
+    ImGui::SetNextWindowPos(corner,ImGuiCond_Always,ImVec2(1,0));
+    ImGui::SetNextWindowSize(ImVec2(width,height));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(width,0),ImVec2(width,available.y));
+    ImGui::SetNextWindowBgAlpha(disabled ? 0.65f : 0.98f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,ImVec2(10,6));
+    auto background = ImGui::GetStyleColorVec4(ImGuiCol_ChildBg);
+    if (disabled) { background.x *= 0.65f; background.y *= 0.65f; background.z *= 0.65f; }
+    ImGui::PushStyleColor(ImGuiCol_WindowBg,background);
+    const bool visible = ImGui::Begin("##AudioPreviewOverlay",nullptr,ImGuiWindowFlags_NoTitleBar
+        | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings
+        | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNavFocus
+        | (state.audioOverlayOpen ? ImGuiWindowFlags_AlwaysAutoResize : 0));
+    if (visible) {
+        ImGui::BeginDisabled(disabled);
+        if (state.audioOverlayOpen) {
+            if (!state.audioName.empty()) ImGui::TextWrapped("%s",state.audioName.c_str());
+            if (state.audioPath.empty()) ImGui::TextWrapped("Import audio in Media and preview audio.");
+            else drawAudioPreviewControls(state);
+        } else {
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Audio  <");
+        }
+        ImGui::EndDisabled();
+        const bool interacting = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && ImGui::IsAnyItemActive();
+        state.audioOverlayOpen = !disabled && (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) || interacting);
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+    if (wasOpen && !state.audioOverlayOpen && state.audioSeeking) {
+        state.audioSeeking = false;
+        state.endAudioSeek = true;
+    }
+}
+
 void drawPreview(EditorUiState& state, std::uint32_t texture) {
+    const auto panelStart = ImGui::GetCursorScreenPos();
+    const auto panelSize = ImGui::GetContentRegionAvail();
     CompositionSettings settings{state.title.data(),state.artist.data(),state.durationSeconds,state.preset,
         state.format,state.shortEdge,state.backgroundFraming,state.labelFraming,state.backgroundSoftness,state.design};
     ImGui::TextUnformatted("Preview");
@@ -724,7 +770,7 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) || !ImGui::IsItemActive()) state.previewDragging = false;
         }
     }
-    if (!state.historyBlocked && !state.previewDragging && state.previewKeyboardFocus
+    if (!state.historyBlocked && !state.previewDragging && !state.audioOverlayOpen && state.previewKeyboardFocus
         && state.previewSelection != CompositionElement::None && !ImGui::IsAnyItemActive() && !ImGui::GetIO().WantTextInput) {
         const int dx = int(ImGui::IsKeyPressed(ImGuiKey_RightArrow))-int(ImGui::IsKeyPressed(ImGuiKey_LeftArrow));
         const int dy = int(ImGui::IsKeyPressed(ImGuiKey_DownArrow))-int(ImGui::IsKeyPressed(ImGuiKey_UpArrow));
@@ -781,6 +827,7 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
     }
     ImGui::SetCursorScreenPos(origin);
     ImGui::Dummy(available);
+    drawPreviewAudioOverlay(state,{panelStart.x+panelSize.x,panelStart.y},panelSize);
 }
 }
 

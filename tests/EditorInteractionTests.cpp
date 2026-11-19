@@ -1,5 +1,6 @@
 #include "EditorUi.hpp"
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -138,6 +139,39 @@ int main() {
         require(state.audioPlaying && state.animatePreview && !state.requestRestart && !state.seekAudio
             && !state.requestPlayPause && state.timeSeconds == 4.1,
             "Placement and effects must never request transport changes");
+        state.workspacePanel = 1;
+        const auto beforeOverlay = frame(state);
+        auto* overlay = ImGui::FindWindowByName("##AudioPreviewOverlay");
+        require(overlay != nullptr,"Audio hover tab must be drawn on the preview");
+        const auto tabCenter = ImVec2(overlay->Pos.x+overlay->Size.x/2,overlay->Pos.y+overlay->Size.y/2);
+        mouse(state,tabCenter,false);
+        frame(state);
+        require(state.audioOverlayOpen,"Hover must expand the audio panel outside Media");
+        const auto withOverlay = frame(state);
+        require(beforeOverlay.min.x == withOverlay.min.x && beforeOverlay.max.y == withOverlay.max.y,
+            "Audio overlay must not resize the composition preview");
+        require(overlay->Pos.x >= 0 && overlay->Pos.x+overlay->Size.x <= io.DisplaySize.x,
+            "Expanded audio controls must remain inside the application");
+        const auto insidePanel = ImVec2(overlay->Pos.x+20,overlay->Pos.y+20);
+        mouse(state,insidePanel,false);
+        require(state.audioOverlayOpen,"Moving from the tab into the expanded panel must keep it open");
+        const auto pauseButton = ImVec2(overlay->Pos.x+25,overlay->Pos.y+6
+            +ImGui::GetFontSize()+2*ImGui::GetStyle().SeparatorTextPadding.y
+            +ImGui::GetStyle().ItemSpacing.y+ImGui::GetFrameHeight()/2);
+        mouse(state,pauseButton,true);
+        mouse(state,pauseButton,false);
+        require(state.requestPlayPause,"Overlay Pause must use the same playback request as the Media panel");
+        state.requestPlayPause = false;
+        mouse(state,{10,10},false);
+        frame(state);
+        require(!state.audioOverlayOpen,"Leaving the expanded panel must collapse it");
+        state.workspacePanel = 2;
+        frame(state);
+        mouse(state,tabCenter,false);
+        frame(state);
+        require(!state.audioOverlayOpen,"Media workspace must keep the redundant hover panel inactive");
+        require(state.audioPlaying && state.timeSeconds == 4.1 && !state.requestPlayPause && !state.seekAudio,
+            "Opening and closing the audio panel must never modify playback");
         std::cout << "Editor interaction checks passed\n";
         ImGui::DestroyContext();
         return 0;

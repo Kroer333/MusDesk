@@ -25,6 +25,7 @@ struct EditorUiState {
     bool previewKeyboardFocus = false;
     bool previewKeyboardEditing = false;
     bool previewArrowKeysCaptured = false;
+    bool audioOverlayOpen = false;
     ResizeCorner previewResizeCorner = ResizeCorner::None;
     bool previewSnapping = true;
     bool showAlignmentGuides = true;

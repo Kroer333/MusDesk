@@ -34,6 +34,7 @@ Click an element for arrow-key positioning (1 output pixel, Shift: 10; ignores S
 Center X/Y and reset buttons affect only the selected group.
 Lock foreground/labels protects position and size for the session; effects stay editable.
 Size pulse has independent foreground and labels/timeline controls; new presets use v8.
+Hover Audio at the preview's top right for playback controls outside the Media tab.
 
 Projects reference media rather than embedding it: use **Collect project** to move
 everything together. Released 0.3.0 uses project v4 / preset v7; development writes
