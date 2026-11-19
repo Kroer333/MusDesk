@@ -1,5 +1,6 @@
 #include "musdesk/render/VisualizerRenderer.hpp"
 #include "musdesk/core/TimeFormat.hpp"
+#include "musdesk/core/CompositionEditing.hpp"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
@@ -99,6 +100,7 @@ uniform vec2 backgroundOffset;
 uniform float progress;
 uniform float audioEnergy;
 uniform float subjectScale;
+uniform vec4 labelsPose;
 uniform float ringMotion;
 uniform float ringPhase;
 uniform float spectrum[32];
@@ -258,7 +260,7 @@ void main() {
     if (sceneOptions.z > 0.5) {
     vec2 barStart = vec2(timelineGeometry.x,timelineGeometry.z);
     vec2 barEnd = vec2(timelineGeometry.y,timelineGeometry.z);
-    vec2 overlayPoint = discGeometry.xy+(p-discGeometry.xy)/subjectScale;
+    vec2 overlayPoint = labelsPose.xy+(p-labelsPose.xy)/labelsPose.z;
     float bar = segmentDistance(overlayPoint,barStart,barEnd);
     color = mix(color,vec3(0.20,0.26,0.36),1.0-smoothstep(3.0,5.0,bar));
     vec2 marker = mix(barStart,barEnd,progress);
@@ -568,6 +570,9 @@ void VisualizerRenderer::renderAtSize(double timeSeconds, const CompositionSetti
     scalar("progress", frame.progress);
     scalar("audioEnergy", std::isfinite(audio.energy) ? std::clamp(audio.energy, 0.0f, 1.0f) : 0);
     scalar("subjectScale", frame.subjectScale);
+    const auto labelOrigin = labelPulseOrigin(layout);
+    gl.Uniform4f(gl.GetUniformLocation(impl_->sceneProgram,"labelsPose"),labelOrigin.x,labelOrigin.y,
+        static_cast<float>(frame.labelsScale),0);
     gl.Uniform2f(gl.GetUniformLocation(impl_->sceneProgram, "cameraPose"),
         static_cast<float>(frame.cameraOffsetX), static_cast<float>(frame.cameraZoom));
     scalar("ringMotion", frame.ringMotion);
@@ -597,9 +602,13 @@ void VisualizerRenderer::renderAtSize(double timeSeconds, const CompositionSetti
     const auto topGlyph = std::min_element(impl_->glyphs.begin(),impl_->glyphs.end(),
         [](const auto& a, const auto& b) { return a.yoff < b.yoff; });
     const auto avoid = [&](double left,double right,double top,double bottom) {
+        left = labelOrigin.x+(left-labelOrigin.x)*frame.labelsScale;
+        right = labelOrigin.x+(right-labelOrigin.x)*frame.labelsScale;
+        top = labelOrigin.y+(top-labelOrigin.y)*frame.labelsScale;
+        bottom = labelOrigin.y+(bottom-labelOrigin.y)*frame.labelsScale;
         const double dx = std::max({left-layout.discX,0.0,layout.discX-right});
         const double dy = std::max({top-layout.discY,0.0,layout.discY-bottom});
-        clearanceDistance = std::min(clearanceDistance,std::hypot(dx,dy)*frame.subjectScale);
+        clearanceDistance = std::min(clearanceDistance,std::hypot(dx,dy));
     };
     if (design.showTitle) avoid(layout.textX-layout.textWidth/2,layout.textX+layout.textWidth/2,
         layout.titleY+topGlyph->yoff*layout.textScale,layout.titleY+20*layout.textScale);
@@ -636,24 +645,24 @@ void VisualizerRenderer::renderAtSize(double timeSeconds, const CompositionSetti
     glBindTexture(GL_TEXTURE_2D, impl_->fontAtlas);
     gl.BindVertexArray(impl_->textVao);
     gl.BindBuffer(GL_ARRAY_BUFFER, impl_->textBuffer);
-    const auto subjectScale = static_cast<float>(frame.subjectScale);
-    const auto overlayX = [&](float x) { return layout.discX + (x-layout.discX)*subjectScale; };
-    const auto overlayY = [&](float y) { return layout.discY + (y-layout.discY)*subjectScale; };
+    const auto labelsScale = static_cast<float>(frame.labelsScale);
+    const auto overlayX = [&](float x) { return labelOrigin.x + (x-labelOrigin.x)*labelsScale; };
+    const auto overlayY = [&](float y) { return labelOrigin.y + (y-labelOrigin.y)*labelsScale; };
     if (design.showTitle) impl_->centeredText(settings.title.empty() ? "Track title" : settings.title,
-        layout.discY + (layout.titleY-layout.discY) * subjectScale, subjectScale*layout.textScale, {0.92f,0.95f,1,1},
-        overlayX(layout.textX), layout.textWidth * subjectScale);
+        overlayY(layout.titleY), labelsScale*layout.textScale, {0.92f,0.95f,1,1},
+        overlayX(layout.textX), layout.textWidth * labelsScale);
     if (design.showArtist) impl_->centeredText(settings.artist.empty() ? "Artist name" : settings.artist,
-        layout.discY + (layout.artistY-layout.discY) * subjectScale, 0.64f * subjectScale*layout.textScale, {0.60f,0.68f,0.80f,1},
-        overlayX(layout.textX), layout.textWidth * subjectScale);
+        overlayY(layout.artistY), 0.64f * labelsScale*layout.textScale, {0.60f,0.68f,0.80f,1},
+        overlayX(layout.textX), layout.textWidth * labelsScale);
     const double duration = std::isfinite(settings.durationSeconds) && settings.durationSeconds > 0
         ? settings.durationSeconds : 252.0;
     const auto positionLabel = formatTime(static_cast<std::uint64_t>(std::min(frame.timeSeconds, 1.0e12)));
     const auto durationLabel = formatTime(static_cast<std::uint64_t>(std::min(duration, 1.0e12)));
     if (design.showTimestamps) {
         impl_->text(positionLabel,overlayX(layout.timelineLeft),overlayY(layout.timelineY+60*layout.textScale),
-            0.54f*subjectScale*layout.textScale,{0.66f,0.73f,0.84f,1});
+            0.54f*labelsScale*layout.textScale,{0.66f,0.73f,0.84f,1});
         impl_->text(durationLabel,overlayX(layout.timelineRight-impl_->textWidth(durationLabel)*0.54f*layout.textScale),
-            overlayY(layout.timelineY+60*layout.textScale),0.54f*subjectScale*layout.textScale,{0.66f,0.73f,0.84f,1});
+            overlayY(layout.timelineY+60*layout.textScale),0.54f*labelsScale*layout.textScale,{0.66f,0.73f,0.84f,1});
     }
     gl.BindVertexArray(0);
     gl.BindBuffer(GL_ARRAY_BUFFER, 0);

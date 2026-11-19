@@ -1,4 +1,5 @@
 #include "musdesk/core/Composition.hpp"
+#include "musdesk/core/CompositionEditing.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -43,11 +44,13 @@ int main() {
             musdesk::CompositionSettings maximumPulse;
             maximumPulse.format = format;
             maximumPulse.preset.subjectPulse = 0.12f;
+            maximumPulse.preset.labelsPulse = 0.12f;
             maximumPulse.preset.pulseStrength = 2;
             const auto pose = musdesk::compositionAt(1, maximumPulse, {1,1,1});
-            require(pose.subjectScale >= 1 && pose.subjectScale <= 1.18
-                && layout.discY + (layout.timelineY + 85 - layout.discY)*pose.subjectScale <= layout.canvas.height - 11
-                && layout.discX + (layout.timelineRight - layout.discX)*pose.subjectScale <= layout.canvas.width - 11,
+            const auto labelOrigin = musdesk::labelPulseOrigin(layout);
+            require(pose.labelsScale >= 1 && pose.labelsScale <= 1.18
+                && labelOrigin.y + (layout.timelineY + 85 - labelOrigin.y)*pose.labelsScale <= layout.canvas.height - 11
+                && labelOrigin.x + (layout.timelineRight - labelOrigin.x)*pose.labelsScale <= layout.canvas.width - 11,
                 "Maximum overlay pulse must keep the timeline and timestamps within each layout");
             const double maximumRing = layout.discRadius * 1.18;
             require(layout.discX > maximumRing && layout.discY > maximumRing
@@ -96,7 +99,7 @@ int main() {
         require(musdesk::compositionAt(5, disabled, hit) == musdesk::compositionAt(5, disabled),
             "Zero audio response must disable all new modulation");
         auto legacy = settings;
-        legacy.preset.subjectPulse = legacy.preset.backgroundReactivity = legacy.preset.ringReactivity = 0;
+        legacy.preset.subjectPulse = legacy.preset.labelsPulse = legacy.preset.backgroundReactivity = legacy.preset.ringReactivity = 0;
         require(musdesk::compositionAt(5, legacy, hit) == musdesk::compositionAt(5, legacy),
             "Legacy preset values must preserve the old frame pose");
         const auto invalidAudio = musdesk::compositionAt(5, settings,
@@ -155,6 +158,8 @@ int main() {
                         const auto pose = musdesk::compositionAt(1,variant,hit);
                         require(std::isfinite(pose.subjectScale) && pose.subjectScale >= 0.9999 && pose.subjectScale <= 1.18,
                             "Visibility combinations must not shrink or invert the overlay pulse");
+                        require(std::isfinite(pose.labelsScale) && pose.labelsScale >= 1 && pose.labelsScale <= 1.18,
+                            "Label pulse must remain bounded independently of foreground placement");
                     }
                 }
             }
@@ -168,6 +173,44 @@ int main() {
         require(musdesk::layoutFor(titleOnly).titleY > 750,
             "Hidden timeline must not prevent moving a title toward the bottom");
         musdesk::CompositionSettings hiddenLabels;
+        auto independent = settings;
+        independent.format = musdesk::CompositionFormat::Landscape;
+        independent.preset.pulseStrength = 1;
+        independent.preset.subjectPulse = 0.10f;
+        independent.preset.labelsPulse = 0.02f;
+        const auto independentFrame = musdesk::compositionAt(5,independent,hit);
+        require(std::abs(independentFrame.subjectScale-1.10) < 0.00001
+            && std::abs(independentFrame.labelsScale-1.02) < 0.00001,
+            "Foreground and labels must use their own pulse strengths");
+        auto labelsOff = independent;
+        labelsOff.preset.labelsEnabled = false;
+        auto expectedFrame = independentFrame;
+        expectedFrame.labelsScale = 1;
+        require(musdesk::compositionAt(5,labelsOff,hit) == expectedFrame,
+            "Disabling label pulse must preserve foreground, camera, background, rim and time");
+        auto foregroundOff = independent;
+        foregroundOff.preset.subjectEnabled = false;
+        expectedFrame = independentFrame;
+        expectedFrame.subjectScale = 1;
+        require(musdesk::compositionAt(5,foregroundOff,hit) == expectedFrame,
+            "Disabling foreground pulse must preserve every other frame effect");
+        auto shiftedForeground = independent;
+        shiftedForeground.design.foregroundX = 0.2f;
+        const auto independentLayout = musdesk::layoutFor(independent);
+        const auto shiftedLayout = musdesk::layoutFor(shiftedForeground);
+        const auto shiftedFrame = musdesk::compositionAt(5,shiftedForeground,hit);
+        const auto labelPoint = musdesk::CanvasPoint{independentLayout.textX,independentLayout.titleY};
+        const auto beforeLabel = musdesk::canvasToPreview(labelPoint,independentLayout,independentFrame,musdesk::CompositionElement::Labels);
+        const auto afterLabel = musdesk::canvasToPreview(labelPoint,shiftedLayout,shiftedFrame,musdesk::CompositionElement::Labels);
+        require(beforeLabel.x == afterLabel.x && beforeLabel.y == afterLabel.y,
+            "Moving the record must not change label pulse position or strength");
+        auto edgeLabels = independent;
+        edgeLabels.design.labelsX = 0.3f;
+        require(musdesk::compositionAt(5,edgeLabels,hit).subjectScale == independentFrame.subjectScale,
+            "Labels touching a canvas boundary must not limit record pulse");
+        independent.preset.labelsPulse = std::numeric_limits<float>::quiet_NaN();
+        require(musdesk::compositionAt(5,independent,hit).labelsScale == 1,
+            "Invalid label pulse input must produce a neutral scale");
         hiddenLabels.format = musdesk::CompositionFormat::Landscape;
         hiddenLabels.design.labelsX = 0.3f;
         hiddenLabels.design.showTitle = hiddenLabels.design.showArtist = false;

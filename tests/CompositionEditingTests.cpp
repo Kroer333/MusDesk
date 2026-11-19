@@ -24,7 +24,8 @@ int main() {
                     frame.cameraOffsetX = kick;
                     frame.cameraZoom = 1.1;
                     frame.subjectScale = 1.08;
-                    const auto label = canvasToPreview({layout.textX,layout.titleY},layout,frame);
+                    frame.labelsScale = 1.14;
+                    const auto label = canvasToPreview({layout.textX,layout.titleY},layout,frame,CompositionElement::Labels);
                     require(hitComposition(settings,frame,label) == CompositionElement::Labels,
                         "Hit testing must follow pulse, camera and every scene/aspect ratio");
                     if (scene != SceneKind::Titles) {

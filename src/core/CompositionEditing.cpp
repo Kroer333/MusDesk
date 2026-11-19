@@ -41,9 +41,15 @@ CanvasPoint previewToCanvas(CanvasPoint point, const CompositionLayout& layout, 
     return {static_cast<float>(((point.x-0.5-frame.cameraOffsetX)/frame.cameraZoom+0.5)*layout.canvas.width),
         static_cast<float>(((point.y-0.5)/frame.cameraZoom+0.5)*layout.canvas.height)};
 }
-CanvasPoint canvasToPreview(CanvasPoint point, const CompositionLayout& layout, const CompositionFrame& frame) {
-    point.x = layout.discX+(point.x-layout.discX)*static_cast<float>(frame.subjectScale);
-    point.y = layout.discY+(point.y-layout.discY)*static_cast<float>(frame.subjectScale);
+CanvasPoint labelPulseOrigin(const CompositionLayout& layout) {
+    return {layout.textX,(layout.titleY+layout.timelineY)*0.5f};
+}
+CanvasPoint canvasToPreview(CanvasPoint point, const CompositionLayout& layout, const CompositionFrame& frame,
+    CompositionElement element) {
+    const auto origin = element == CompositionElement::Labels ? labelPulseOrigin(layout) : CanvasPoint{layout.discX,layout.discY};
+    const auto scale = static_cast<float>(element == CompositionElement::Labels ? frame.labelsScale : frame.subjectScale);
+    point.x = origin.x+(point.x-origin.x)*scale;
+    point.y = origin.y+(point.y-origin.y)*scale;
     return {static_cast<float>((point.x/layout.canvas.width-0.5)*frame.cameraZoom+0.5+frame.cameraOffsetX),
         static_cast<float>((point.y/layout.canvas.height-0.5)*frame.cameraZoom+0.5)};
 }
@@ -54,17 +60,21 @@ CompositionElement hitComposition(const CompositionSettings& settings, const Com
         return CompositionElement::None;
     const auto layout = layoutFor(settings);
     auto point = previewToCanvas(normalized,layout,frame);
+    const auto labelOrigin = labelPulseOrigin(layout);
+    const CanvasPoint labelPoint{labelOrigin.x+(point.x-labelOrigin.x)/static_cast<float>(frame.labelsScale),
+        labelOrigin.y+(point.y-labelOrigin.y)/static_cast<float>(frame.labelsScale)};
     point.x = layout.discX+(point.x-layout.discX)/static_cast<float>(frame.subjectScale);
     point.y = layout.discY+(point.y-layout.discY)/static_cast<float>(frame.subjectScale);
-    const auto contains = [&](const CanvasBounds& bounds) {
-        return point.x >= bounds.left-tolerance && point.x <= bounds.right+tolerance
-            && point.y >= bounds.top-tolerance && point.y <= bounds.bottom+tolerance;
+    const auto contains = [&](const CanvasBounds& bounds, CanvasPoint p, double scale) {
+        const float margin = tolerance/static_cast<float>(scale);
+        return p.x >= bounds.left-margin && p.x <= bounds.right+margin
+            && p.y >= bounds.top-margin && p.y <= bounds.bottom+margin;
     };
     for (const auto& region : visibleLabelRegions(layout,settings.design))
-        if (contains(region)) return CompositionElement::Labels;
-    if (const auto bounds = elementBounds(settings,CompositionElement::Foreground); bounds && contains(*bounds)) {
+        if (contains(region,labelPoint,frame.labelsScale)) return CompositionElement::Labels;
+    if (const auto bounds = elementBounds(settings,CompositionElement::Foreground); bounds && contains(*bounds,point,frame.subjectScale)) {
         if (settings.design.scene != SceneKind::Vinyl
-            || std::hypot(point.x-layout.discX,point.y-layout.discY) <= layout.discRadius+tolerance)
+            || std::hypot(point.x-layout.discX,point.y-layout.discY) <= layout.discRadius+tolerance/frame.subjectScale)
             return CompositionElement::Foreground;
     }
     return CompositionElement::None;

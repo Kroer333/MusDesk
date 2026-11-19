@@ -22,6 +22,7 @@ struct VisualPreset {
     float backgroundBrightness = 0.88f;
     float beatThreshold = 0.55f;
     float subjectPulse = 0.05f;
+    float labelsPulse = 0.05f;
     float backgroundReactivity = 0.65f;
     float ringReactivity = 0.55f;
     float spectrumStrength = 0.65f;
@@ -41,6 +42,7 @@ struct VisualPreset {
     bool spectrumEnabled = false;
     bool wavesEnabled = false;
     bool subjectEnabled = true;
+    bool labelsEnabled = true;
     bool backgroundEnabled = true;
     bool cameraEnabled = false;
     float cameraStrength = 0.025f;

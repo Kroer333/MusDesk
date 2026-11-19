@@ -22,6 +22,8 @@ int main() {
         edited.title = "New title";
         edited.labelFraming.zoom = 2;
         edited.preset.spectrumPoints = 64;
+        edited.preset.labelsEnabled = false;
+        edited.preset.labelsPulse = 0.11f;
         edited.design.scene = musdesk::SceneKind::Cover;
         edited.design.showProgress = false;
         history.observe(edited,false);

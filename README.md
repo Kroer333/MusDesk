@@ -33,10 +33,11 @@ Editing keeps audio and animation playing; Esc cancels and Undo/Redo handles eac
 Click an element for arrow-key positioning (1 output pixel, Shift: 10; ignores Snap).
 Center X/Y and reset buttons affect only the selected group.
 Lock foreground/labels protects position and size for the session; effects stay editable.
+Size pulse has independent foreground and labels/timeline controls; new presets use v8.
 
 Projects reference media rather than embedding it: use **Collect project** to move
-everything together. Version 0.3.0 saves use project v4 / preset v7 and read older
-versions; MusDesk 0.2.0 cannot open these new saves. Keep backups.
+everything together. Released 0.3.0 uses project v4 / preset v7; development writes
+preset v8 and reads v1–v7. Older releases cannot read v8 presets/projects. Keep backups.
 
 ## Build
 

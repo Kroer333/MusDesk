@@ -51,8 +51,8 @@ VisualPreset parsePreset(std::string_view text) {
             if (event == Json::parse_event_t::object_end) keys.pop_back();
             return true;
         });
-        if (!json.at("version").is_number_integer() || json.at("version") < 1 || json.at("version") > 7)
-            throw std::runtime_error("Unsupported preset version; expected integer 1..7.");
+        if (!json.at("version").is_number_integer() || json.at("version") < 1 || json.at("version") > 8)
+            throw std::runtime_error("Unsupported preset version; expected integer 1..8.");
         const bool legacy = json.at("version") == 1;
         if (legacy) fields(json, {"version", "name", "disc_rpm", "glow", "background"});
         else if (json.at("version") < 5) fields(json, {"version", "name", "disc_rpm", "glow", "background", "reactivity"});
@@ -85,7 +85,8 @@ VisualPreset parsePreset(std::string_view text) {
             if (json.at("version") == 2) fields(reactivity, {"beat_threshold", "subject_pulse", "background", "ring"});
             else if (json.at("version") == 3) fields(reactivity, {"beat_threshold", "subject_pulse", "background", "ring", "spectrum"});
             else if (json.at("version") < 6) fields(reactivity, {"beat_threshold", "subject_pulse", "background", "ring", "spectrum", "spectrum_gain_db", "spectrum_balance"});
-            else fields(reactivity, {"beat_level_db", "beat_band", "subject_pulse", "background", "ring", "spectrum", "spectrum_gain_db", "spectrum_balance"});
+            else if (json.at("version") < 8) fields(reactivity, {"beat_level_db", "beat_band", "subject_pulse", "background", "ring", "spectrum", "spectrum_gain_db", "spectrum_balance"});
+            else fields(reactivity, {"beat_level_db", "beat_band", "subject_pulse", "labels_pulse", "background", "ring", "spectrum", "spectrum_gain_db", "spectrum_balance"});
             if (json.at("version") < 6)
                 preset.beatThreshold = static_cast<float>(number(reactivity.at("beat_threshold"), 0, 1, "reactivity.beat_threshold"));
             else {
@@ -97,6 +98,8 @@ VisualPreset parsePreset(std::string_view text) {
                 else throw std::runtime_error("Beat band must be bass, drums or wide.");
             }
             preset.subjectPulse = static_cast<float>(number(reactivity.at("subject_pulse"), 0, 0.12, "reactivity.subject_pulse"));
+            if (json.at("version") >= 8)
+                preset.labelsPulse = static_cast<float>(number(reactivity.at("labels_pulse"),0,0.12,"reactivity.labels_pulse"));
             preset.backgroundReactivity = static_cast<float>(number(reactivity.at("background"), 0, 1, "reactivity.background"));
             preset.ringReactivity = static_cast<float>(number(reactivity.at("ring"), 0, 1, "reactivity.ring"));
             if (json.at("version") >= 3)
@@ -109,7 +112,8 @@ VisualPreset parsePreset(std::string_view text) {
         if (json.at("version") >= 5) {
             const auto& effects = json.at("effects");
             if (json.at("version") == 5) fields(effects, {"glow", "spectrum", "waves", "subject", "background", "camera", "camera_strength", "camera_threshold"});
-            else fields(effects, {"glow", "spectrum", "waves", "subject", "background", "camera", "camera_strength"});
+            else if (json.at("version") < 8) fields(effects, {"glow", "spectrum", "waves", "subject", "background", "camera", "camera_strength"});
+            else fields(effects, {"glow", "spectrum", "waves", "subject", "labels", "background", "camera", "camera_strength"});
             const auto flag = [&](const char* name) {
                 if (!effects.at(name).is_boolean()) throw std::runtime_error(std::string("Effect flag must be boolean: ") + name);
                 return effects.at(name).get<bool>();
@@ -118,6 +122,7 @@ VisualPreset parsePreset(std::string_view text) {
             preset.spectrumEnabled = flag("spectrum");
             preset.wavesEnabled = flag("waves");
             preset.subjectEnabled = flag("subject");
+            if (json.at("version") >= 8) preset.labelsEnabled = flag("labels");
             preset.backgroundEnabled = flag("background");
             preset.cameraEnabled = flag("camera");
             preset.cameraStrength = static_cast<float>(number(effects.at("camera_strength"), 0, 0.05f, "effects.camera_strength"));
@@ -128,7 +133,11 @@ VisualPreset parsePreset(std::string_view text) {
         }
         if (json.at("version") < 6 && (preset.name == "Soft Glow" || preset.name == "Beat Pulse" || preset.name == "Side Kick"))
             preset.spectrumEnabled = preset.wavesEnabled = false;
-        if (json.at("version") == 7) {
+        if (json.at("version") < 8) {
+            preset.labelsPulse = preset.subjectPulse;
+            preset.labelsEnabled = preset.subjectEnabled;
+        }
+        if (json.at("version") >= 7) {
             preset.glowWidth = static_cast<float>(number(glow.at("width"),0.2,3,"glow.width"));
             preset.glowSoftness = static_cast<float>(number(glow.at("softness"),0.25f,3,"glow.softness"));
             preset.glowReactivity = static_cast<float>(number(glow.at("reactivity"),0,3,"glow.reactivity"));
@@ -162,19 +171,20 @@ std::string serializePreset(const VisualPreset& preset) {
     validatePreset(preset);
     try {
         const char* bands[]{"bass","drums","wide"};
-        const Json json{{"version", 7}, {"name", preset.name}, {"disc_rpm", preset.discRpm},
+        const Json json{{"version", 8}, {"name", preset.name}, {"disc_rpm", preset.discRpm},
             {"spectrum_style", {{"color",preset.spectrumColor},{"points",preset.spectrumPoints},
                 {"sharpness",preset.spectrumSharpness},{"randomness",preset.spectrumRandomness},
                 {"speed",preset.spectrumSpeed},{"line_width",preset.spectrumLineWidth},{"gap",preset.spectrumGap},
                 {"intensity",preset.spectrumIntensity},{"attack_ms",preset.spectrumAttackMs},{"release_ms",preset.spectrumReleaseMs}}},
             {"effects", {{"glow", preset.glowEnabled}, {"spectrum", preset.spectrumEnabled},
-                {"waves", preset.wavesEnabled}, {"subject", preset.subjectEnabled}, {"background", preset.backgroundEnabled},
+                {"waves", preset.wavesEnabled}, {"subject", preset.subjectEnabled}, {"labels", preset.labelsEnabled}, {"background", preset.backgroundEnabled},
                 {"camera", preset.cameraEnabled}, {"camera_strength", preset.cameraStrength}}},
             {"glow", {{"color", preset.glowColor}, {"intensity", preset.glowIntensity}, {"pulse_strength", preset.pulseStrength},
                 {"width",preset.glowWidth},{"softness",preset.glowSoftness},{"reactivity",preset.glowReactivity},
                 {"base",preset.glowBase},{"attack_ms",preset.glowAttackMs},{"release_ms",preset.glowReleaseMs}}},
             {"background", {{"speed", preset.backgroundSpeed}, {"zoom", preset.backgroundZoom}, {"brightness", preset.backgroundBrightness}}},
             {"reactivity", {{"beat_level_db", beatLevelDb(preset.beatThreshold)}, {"beat_band", bands[static_cast<int>(preset.beatBand)]}, {"subject_pulse", preset.subjectPulse},
+                {"labels_pulse", preset.labelsPulse},
                 {"background", preset.backgroundReactivity}, {"ring", preset.ringReactivity}, {"spectrum", preset.spectrumStrength},
                 {"spectrum_gain_db", preset.spectrumGainDb}, {"spectrum_balance", preset.spectrumBalance}}}};
         return json.dump(2) + '\n';

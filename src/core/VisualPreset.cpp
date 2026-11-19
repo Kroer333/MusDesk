@@ -18,6 +18,7 @@ VisualPreset beatPulsePreset() {
     preset.backgroundSpeed = 1.1;
     preset.backgroundZoom = 1.18f;
     preset.subjectPulse = 0.07f;
+    preset.labelsPulse = 0.07f;
     preset.backgroundReactivity = 0.9f;
     preset.ringReactivity = 0.9f;
     preset.spectrumStrength = 0.9f;
@@ -27,7 +28,7 @@ VisualPreset beatPulsePreset() {
 VisualPreset sideKickPreset() {
     auto preset = beatPulsePreset();
     preset.name = "Side Kick";
-    preset.subjectEnabled = false;
+    preset.subjectEnabled = preset.labelsEnabled = false;
     preset.cameraEnabled = true;
     preset.glowIntensity = 0.6f;
     return preset;
@@ -38,7 +39,7 @@ VisualPreset spectrumPulsePreset() {
     preset.name = "Spectrum Pulse";
     preset.glowEnabled = false;
     preset.spectrumEnabled = true;
-    preset.subjectEnabled = false;
+    preset.subjectEnabled = preset.labelsEnabled = false;
     preset.spectrumStrength = 1.5f;
     return preset;
 }
@@ -77,6 +78,7 @@ void validatePreset(const VisualPreset& preset) {
     range(preset.backgroundBrightness, 0, 1.5, "background.brightness (0..1.5)");
     range(preset.beatThreshold, 0, 1, "reactivity.beat_threshold (0..1)");
     range(preset.subjectPulse, 0, 0.12f, "reactivity.subject_pulse (0..0.12)");
+    range(preset.labelsPulse, 0, 0.12f, "reactivity.labels_pulse (0..0.12)");
     range(preset.backgroundReactivity, 0, 1, "reactivity.background (0..1)");
     range(preset.ringReactivity, 0, 1, "reactivity.ring (0..1)");
     range(preset.spectrumStrength, 0, 4, "reactivity.spectrum (0..4)");

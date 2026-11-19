@@ -75,6 +75,7 @@ struct CompositionFrame {
     double backgroundOffsetY;
     double progress;
     double subjectScale = 1;
+    double labelsScale = 1;
     double ringMotion = 0;
     double cameraOffsetX = 0;
     double cameraZoom = 1;

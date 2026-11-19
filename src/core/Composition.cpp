@@ -159,6 +159,8 @@ CompositionFrame compositionAt(double timeSeconds, const CompositionSettings& se
     const double drive = (0.65 * safe(audio.bass, 1) + 0.35 * beat) * safe(preset.pulseStrength, 2);
     frame.subjectScale = 1 + (preset.subjectEnabled
         ? std::min(0.18, safe(preset.subjectPulse, 0.12) * beat * safe(preset.pulseStrength, 2)) : 0);
+    frame.labelsScale = 1 + (preset.labelsEnabled
+        ? std::min(0.18, safe(preset.labelsPulse, 0.12) * beat * safe(preset.pulseStrength, 2)) : 0);
     const auto layout = layoutFor(settings);
     const bool foreground = settings.design.scene != SceneKind::Titles;
     const auto labels = visibleLabelBounds(layout,settings.design);
@@ -167,13 +169,16 @@ CompositionFrame compositionAt(double timeSeconds, const CompositionSettings& se
         if (value < origin) return (origin-12)/(origin-value);
         return 2.0;
     };
-    if (labels) frame.subjectScale = std::min({frame.subjectScale,fit(labels->left,layout.discX,layout.canvas.width),
-        fit(labels->right,layout.discX,layout.canvas.width),fit(labels->top,layout.discY,layout.canvas.height),
-        fit(labels->bottom,layout.discY,layout.canvas.height)});
+    const auto labelOrigin = labelPulseOrigin(layout);
+    if (labels) frame.labelsScale = std::max(1.0,std::min({frame.labelsScale,fit(labels->left,labelOrigin.x,layout.canvas.width),
+        fit(labels->right,labelOrigin.x,layout.canvas.width),fit(labels->top,labelOrigin.y,layout.canvas.height),
+        fit(labels->bottom,labelOrigin.y,layout.canvas.height)}));
+    else frame.labelsScale = 1;
     frame.subjectScale = std::min({frame.subjectScale,foreground ? fit(layout.discX-layout.discRadius,layout.discX,layout.canvas.width) : 2.0,
         foreground ? fit(layout.discX+layout.discRadius,layout.discX,layout.canvas.width) : 2.0,
         foreground ? fit(layout.discY-layout.discRadius,layout.discY,layout.canvas.height) : 2.0,
         foreground ? fit(layout.discY+layout.discRadius,layout.discY,layout.canvas.height) : 2.0});
+    if (!foreground) frame.subjectScale = 1;
     frame.ringMotion = preset.wavesEnabled ? drive * safe(preset.ringReactivity, 1) : 0;
     if (preset.cameraEnabled) {
         const double kick = std::isfinite(audio.kick) ? std::clamp<double>(audio.kick, -1, 1) : 0;

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Split foreground and labels/timeline size pulses into independent controls and pivots; preset v8 migrates v1–v7 settings.
+
 - Added independent foreground/label placement locks and kept playback running during preview edits.
 
 - Added focused 1/10-pixel keyboard positioning and per-selection centering/position/size resets with Undo/Redo.

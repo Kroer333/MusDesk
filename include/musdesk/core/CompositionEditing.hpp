@@ -19,7 +19,9 @@ struct CompositionAlignment {
 std::vector<CanvasBounds> visibleLabelRegions(const CompositionLayout& layout, const CompositionDesign& design);
 std::optional<CanvasBounds> visibleLabelBounds(const CompositionLayout& layout, const CompositionDesign& design);
 std::optional<CanvasBounds> elementBounds(const CompositionSettings& settings, CompositionElement element);
-CanvasPoint canvasToPreview(CanvasPoint point, const CompositionLayout& layout, const CompositionFrame& frame);
+CanvasPoint labelPulseOrigin(const CompositionLayout& layout);
+CanvasPoint canvasToPreview(CanvasPoint point, const CompositionLayout& layout, const CompositionFrame& frame,
+    CompositionElement element = CompositionElement::Foreground);
 CanvasPoint previewToCanvas(CanvasPoint normalized, const CompositionLayout& layout, const CompositionFrame& frame);
 CompositionElement hitComposition(const CompositionSettings& settings, const CompositionFrame& frame,
     CanvasPoint normalized, float tolerance = 0);

@@ -42,7 +42,7 @@ void drawPresetControls(EditorUiState& state) {
     auto& preset = state.preset;
     ImGui::SeparatorText("Audio response");
     ImGui::SetNextItemWidth(-1);
-    changed |= ImGui::SliderFloat("##Pulse", &preset.pulseStrength, 0, 2, "Audio response: %.2f", ImGuiSliderFlags_AlwaysClamp);
+    changed |= ImGui::SliderFloat("##Pulse", &preset.pulseStrength, 0, 2, "Master response: %.2f", ImGuiSliderFlags_AlwaysClamp);
     int band = static_cast<int>(preset.beatBand);
     ImGui::SetNextItemWidth(-1);
     if (ImGui::Combo("##BeatBand", &band, "Bass: 35-180 Hz\0Drums: 180-2500 Hz\0Wide: 35-2500 Hz\0")) {
@@ -50,7 +50,6 @@ void drawPresetControls(EditorUiState& state) {
         changed = true;
     }
     float minimumDb = static_cast<float>(beatLevelDb(preset.beatThreshold));
-    float subjectPercent = preset.subjectPulse * 100;
     ImGui::SetNextItemWidth(-1);
     if (ImGui::SliderFloat("##BeatThreshold", &minimumDb, -60, 0, "Hit gate: %.1f dBFS", ImGuiSliderFlags_AlwaysClamp)) {
         preset.beatThreshold = beatLevelFromDb(minimumDb);
@@ -76,14 +75,34 @@ void drawPresetControls(EditorUiState& state) {
         ImGui::EndDisabled();
     }
     ImGui::EndDisabled();
-    changed |= ImGui::Checkbox("Overlay pulse", &preset.subjectEnabled);
-    ImGui::BeginDisabled(!preset.subjectEnabled);
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##SubjectPulse", &subjectPercent, 0, 12, "Overlay size pulse: %.1f%%", ImGuiSliderFlags_AlwaysClamp)) {
-        preset.subjectPulse = subjectPercent / 100;
-        changed = true;
+    const bool pulseOpen = ImGui::CollapsingHeader("Size pulse");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Independent group sizes. Both use the shared hit gate and master audio response.");
+    if (pulseOpen) {
+        if (ImGui::BeginTable("##PulseGroups",2)) {
+            const auto pulseRow = [&](const char* label,bool& enabled,float& strength,bool available) {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::PushID(label);
+                ImGui::BeginDisabled(!available);
+                changed |= ImGui::Checkbox(label,&enabled);
+                ImGui::TableNextColumn();
+                ImGui::BeginDisabled(!enabled);
+                float percent = strength*100;
+                ImGui::SetNextItemWidth(-1);
+                if (ImGui::SliderFloat("##Strength",&percent,0,12,"%.1f%%",ImGuiSliderFlags_AlwaysClamp)) {
+                    strength = percent/100;
+                    changed = true;
+                }
+                ImGui::EndDisabled();
+                ImGui::EndDisabled();
+                ImGui::PopID();
+            };
+            pulseRow("Foreground",preset.subjectEnabled,preset.subjectPulse,state.design.scene != SceneKind::Titles);
+            pulseRow("Labels + time",preset.labelsEnabled,preset.labelsPulse,
+                state.design.showTitle || state.design.showArtist || state.design.showProgress || state.design.showTimestamps);
+            ImGui::EndTable();
+        }
     }
-    ImGui::EndDisabled();
     const bool movingArtwork = state.design.background == BackgroundKind::Artwork && state.design.animateBackground;
     ImGui::BeginDisabled(!movingArtwork);
     changed |= ImGui::Checkbox("Reactive background", &preset.backgroundEnabled);
@@ -633,14 +652,14 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
     const auto mouse = ImGui::GetMousePos();
     const CanvasPoint normalized{(mouse.x-topLeft.x)/width,(mouse.y-topLeft.y)/height};
     const auto hovered = hitComposition(settings,state.previewFrame,normalized,
-        5*layout.canvas.width/width/static_cast<float>(state.previewFrame.cameraZoom*state.previewFrame.subjectScale));
+        5*layout.canvas.width/width/static_cast<float>(state.previewFrame.cameraZoom));
     const float handleSize = ImGui::GetFontSize()*0.28f;
     const auto handleAt = [&](ImVec2 position) {
         if (state.placementLocked(state.previewSelection)) return ResizeCorner::None;
         if (const auto bounds = elementBounds(settings,state.previewSelection)) {
             const auto corners = boundsCorners(*bounds);
             for (int i=0; i<4; ++i) {
-                const auto point = canvasToPreview(corners[i],layout,state.previewFrame);
+                const auto point = canvasToPreview(corners[i],layout,state.previewFrame,state.previewSelection);
                 if (std::abs(position.x-(topLeft.x+point.x*width)) <= handleSize*2
                     && std::abs(position.y-(topLeft.y+point.y*height)) <= handleSize*2)
                     return static_cast<ResizeCorner>(i);
@@ -682,8 +701,9 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
                 const auto startLayout = layoutFor(state.previewDragSettings);
                 const auto current = previewToCanvas(normalized,startLayout,state.previewDragFrame);
                 const bool resizing = state.previewResizeCorner != ResizeCorner::None;
-                const float scale = resizing || state.previewSelection == CompositionElement::Labels
-                    ? static_cast<float>(state.previewDragFrame.subjectScale) : 1;
+                const float pulseScale = static_cast<float>(state.previewSelection == CompositionElement::Labels
+                    ? state.previewDragFrame.labelsScale : state.previewDragFrame.subjectScale);
+                const float scale = resizing ? pulseScale : 1;
                 const CanvasPoint delta{(current.x-state.previewDragStart.x)/scale,(current.y-state.previewDragStart.y)/scale};
                 if (resizing) apply(resizeCompositionElement(state.previewDragSettings,state.previewSelection,
                     state.previewResizeCorner,delta));
@@ -692,7 +712,7 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
                     if (state.previewSnapping && !ImGui::GetIO().KeyAlt) {
                         auto moved = state.previewDragSettings;
                         moved.design = state.design;
-                        const float zoom = static_cast<float>(state.previewDragFrame.cameraZoom*state.previewDragFrame.subjectScale);
+                        const float zoom = static_cast<float>(state.previewDragFrame.cameraZoom)*pulseScale;
                         const auto aligned = snapCompositionElement(moved,state.previewSelection,
                             {7*layout.canvas.width/width/zoom,7*layout.canvas.height/height/zoom});
                         apply(aligned.design);
@@ -731,13 +751,13 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
     if (!state.historyBlocked) {
         if (const auto bounds = elementBounds(settings,state.previewSelection)) {
             const auto updatedLayout = layoutFor(settings);
-            const auto a = canvasToPreview({bounds->left,bounds->top},updatedLayout,state.previewFrame);
-            const auto b = canvasToPreview({bounds->right,bounds->bottom},updatedLayout,state.previewFrame);
+            const auto a = canvasToPreview({bounds->left,bounds->top},updatedLayout,state.previewFrame,state.previewSelection);
+            const auto b = canvasToPreview({bounds->right,bounds->bottom},updatedLayout,state.previewFrame,state.previewSelection);
             drawList->PushClipRect(topLeft,bottomRight,true);
             if (state.showAlignmentGuides) {
                 const auto line = [&](CanvasPoint from,CanvasPoint to,bool active) {
-                    const auto p = canvasToPreview(from,updatedLayout,state.previewFrame);
-                    const auto q = canvasToPreview(to,updatedLayout,state.previewFrame);
+                    const auto p = canvasToPreview(from,updatedLayout,state.previewFrame,state.previewSelection);
+                    const auto q = canvasToPreview(to,updatedLayout,state.previewFrame,state.previewSelection);
                     drawList->AddLine(ImVec2(topLeft.x+p.x*width,topLeft.y+p.y*height),
                         ImVec2(topLeft.x+q.x*width,topLeft.y+q.y*height),
                         active ? IM_COL32(255,208,100,240) : IM_COL32(100,210,190,70),active ? 1.8f : 1.0f);
@@ -751,7 +771,7 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
             drawList->AddRect(ImVec2(topLeft.x+a.x*width,topLeft.y+a.y*height),
                 ImVec2(topLeft.x+b.x*width,topLeft.y+b.y*height),IM_COL32(100,230,205,230),0,0,1.5f);
             if (!state.placementLocked(state.previewSelection)) for (const auto& corner : boundsCorners(*bounds)) {
-                const auto p = canvasToPreview(corner,updatedLayout,state.previewFrame);
+                const auto p = canvasToPreview(corner,updatedLayout,state.previewFrame,state.previewSelection);
                 const ImVec2 center(topLeft.x+p.x*width,topLeft.y+p.y*height);
                 drawList->AddRectFilled(ImVec2(center.x-handleSize,center.y-handleSize),
                     ImVec2(center.x+handleSize,center.y+handleSize),IM_COL32(100,230,205,255),1);

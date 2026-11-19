@@ -56,11 +56,27 @@ int main(int argc, char* argv[]) {
         musdesk::validatePreset(soft);
         musdesk::validatePreset(beat);
         const auto json = musdesk::serializePreset(soft);
+        const auto withoutField = [](std::string text,const std::string& name) {
+            const auto key = text.find('"'+name+'"');
+            require(key != std::string::npos,"Missing migration fixture field");
+            const auto start = text.rfind('\n',key)+1;
+            text.erase(start,text.find('\n',key)-start+1);
+            return text;
+        };
+        const auto version7Json = withoutField(withoutField(replace(json,"\"version\": 8","\"version\": 7"),"labels"),"labels_pulse");
+        const auto version7 = musdesk::parsePreset(version7Json);
+        require(version7 == soft && version7.labelsPulse == version7.subjectPulse
+            && version7.labelsEnabled == version7.subjectEnabled,
+            "Version 7 must copy the linked pulse into independent group settings");
+        const auto version7Disabled = musdesk::parsePreset(replace(version7Json,"\"subject\": true","\"subject\": false"));
+        require(!version7Disabled.subjectEnabled && !version7Disabled.labelsEnabled,
+            "Disabled legacy overlay pulse must stay disabled for both groups");
         const auto legacy = musdesk::parsePreset(R"({"version":1,"name":"Soft Glow","disc_rpm":8,
             "glow":{"color":[0.24,0.6,1],"intensity":0.8,"pulse_strength":0.6},
             "background":{"speed":0.6,"zoom":1.16,"brightness":0.88}})");
         auto legacyExpected = soft;
         legacyExpected.subjectPulse = legacyExpected.backgroundReactivity = legacyExpected.ringReactivity = 0;
+        legacyExpected.labelsPulse = 0;
         legacyExpected.spectrumStrength = 0;
         require(legacy == legacyExpected && musdesk::parsePreset(musdesk::serializePreset(legacy)) == legacy,
             "Version 1 presets must migrate without enabling new effects");
@@ -105,6 +121,9 @@ int main(int argc, char* argv[]) {
             "Version 6 must migrate with matching colors and neutral new controls");
         require(musdesk::parsePreset(json) == soft && musdesk::parsePreset(musdesk::serializePreset(beat)) == beat,
             "Built-in preset round trip must preserve every value");
+        for (const auto* old : {&legacy,&version2,&version3,&version4,&version5,&version6,&version7})
+            require(old->labelsPulse == old->subjectPulse && old->labelsEnabled == old->subjectEnabled,
+                "Every older preset version must copy its linked pulse settings into both groups");
         if (argc == 2) {
             const auto examples = std::filesystem::u8path(argv[1]);
             require(musdesk::loadPreset(utf8(examples / "soft-glow.json")) == soft
@@ -120,6 +139,8 @@ int main(int argc, char* argv[]) {
         custom.glowColor = {0, 1, 0.5f};
         custom.beatThreshold = 0.73f;
         custom.subjectPulse = 0.11f;
+        custom.labelsPulse = 0.025f;
+        custom.labelsEnabled = true;
         custom.backgroundReactivity = 0.35f;
         custom.ringReactivity = 0.42f;
         custom.spectrumStrength = 0.37f;
@@ -172,13 +193,18 @@ int main(int argc, char* argv[]) {
         }
         rejected([&] { (void)musdesk::loadPreset(utf8(folder / "missing-preset.json")); });
         rejected([&] { (void)musdesk::parsePreset("{"); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 7", "\"version\": 8")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 7", "\"version\": 7.0")); });
+        rejected([&] { (void)musdesk::parsePreset(replaceNumber(json,"labels_pulse","0.13")); });
+        rejected([&] { (void)musdesk::parsePreset(replaceNumber(json,"labels_pulse","-0.01")); });
+        rejected([&] { (void)musdesk::parsePreset(replaceNumber(json,"labels_pulse","true")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json,"\"labels\": true","\"labels\": 1")); });
+        rejected([&] { (void)musdesk::parsePreset(withoutField(json,"labels_pulse")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 8", "\"version\": 9")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 8", "\"version\": 8.0")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"disc_rpm\": 8.0", "\"disc_rpm\": true")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"disc_rpm\": 8.0", "\"disc_rpm\": 46")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"name\": \"Soft Glow\"", "\"name\": \"\"")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 7", "\"unknown\": 0")); });
-        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 7", "\"version\": 7, \"version\": 7")); }, "duplicate");
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 8", "\"unknown\": 0")); });
+        rejected([&] { (void)musdesk::parsePreset(replace(json, "\"version\": 8", "\"version\": 8, \"version\": 8")); }, "duplicate");
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"spectrum_gain_db\": 0.0", "\"spectrum_gain_db\": 25")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"camera\": false", "\"camera\": 0")); });
         rejected([&] { (void)musdesk::parsePreset(replace(json, "\"camera_strength\": 0.025", "\"camera_strength\": 0.9")); });

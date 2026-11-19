@@ -164,7 +164,7 @@ int main(int argc, char* argv[]) {
         musdesk::CompositionSettings settings;
         auto fftSettings = settings;
         fftSettings.preset.spectrumEnabled = true;
-        fftSettings.preset.ringReactivity = fftSettings.preset.subjectPulse = fftSettings.preset.backgroundReactivity = 0;
+        fftSettings.preset.ringReactivity = fftSettings.preset.subjectPulse = fftSettings.preset.labelsPulse = fftSettings.preset.backgroundReactivity = 0;
         musdesk::AudioReaction spectrumA, spectrumB;
         spectrumA.spectrum[6] = 1;
         spectrumB.spectrum[25] = 1;
@@ -376,7 +376,7 @@ int main(int argc, char* argv[]) {
         renderer.renderFrame(4, cameraSettings, cameraAudio);
         require(rightKick == renderer.readPixels(), "Camera rendering must reproduce identical pixels after seek");
         isolated = settings;
-        isolated.preset.subjectPulse = isolated.preset.ringReactivity = 0;
+        isolated.preset.subjectPulse = isolated.preset.labelsPulse = isolated.preset.ringReactivity = 0;
         renderer.renderFrame(4, isolated);
         const auto backgroundIdle = renderer.readPixels();
         renderer.renderFrame(4, isolated, musdesk::AudioReaction{0, 1, 0});

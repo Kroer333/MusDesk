@@ -115,6 +115,8 @@ int main(int, char*[]) {
         project.composition.preset.discRpm = -12;
         project.composition.preset.beatThreshold = 0.68f;
         project.composition.preset.subjectPulse = 0.10f;
+        project.composition.preset.labelsPulse = 0.025f;
+        project.composition.preset.labelsEnabled = false;
         project.composition.preset.glowEnabled = false;
         project.composition.preset.cameraEnabled = true;
         project.composition.preset.beatBand = musdesk::BeatBand::Wide;
