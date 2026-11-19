@@ -186,6 +186,20 @@ CompositionDesign nudgeCompositionElement(const CompositionSettings& settings, C
     return moveCompositionElement(settings,element,
         {outputPixels.x*canvas.width/output.width,outputPixels.y*canvas.height/output.height});
 }
+CompositionDesign setCompositionElementTransform(const CompositionSettings& settings, CompositionElement element,
+    CanvasPoint outputCenter, float scale) {
+    if (!elementBounds(settings,element) || !std::isfinite(outputCenter.x) || !std::isfinite(outputCenter.y)
+        || !std::isfinite(scale)) return settings.design;
+    auto edited = settings;
+    if (element == CompositionElement::Foreground) edited.design.foregroundScale = std::clamp(scale,0.5f,1.5f);
+    else edited.design.labelsScale = std::clamp(scale,0.5f,1.5f);
+    const auto bounds = elementBounds(edited,element);
+    const auto canvas = layoutFor(settings.format).canvas;
+    const auto output = outputSize(settings.format,settings.shortEdge);
+    return moveCompositionElement(edited,element,
+        {std::clamp(outputCenter.x,0.0f,float(output.width))*canvas.width/output.width-(bounds->left+bounds->right)/2,
+         std::clamp(outputCenter.y,0.0f,float(output.height))*canvas.height/output.height-(bounds->top+bounds->bottom)/2});
+}
 CompositionDesign editCompositionElement(const CompositionSettings& settings, CompositionElement element, CompositionEdit action) {
     const auto bounds = elementBounds(settings,element);
     if (!bounds) return settings.design;

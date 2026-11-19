@@ -32,7 +32,7 @@ Snap aligns to center axes/10% margins; Alt bypasses it. Guides are editor-only.
 Editing keeps audio and animation playing; Esc cancels and Undo/Redo handles each gesture.
 Click an element for arrow-key positioning (1 output pixel, Shift: 10; ignores Snap).
 Center X/Y and reset buttons affect only the selected group.
-Lock foreground/labels protects position and size for the session; effects stay editable.
+Select a preview group, use Lock to protect it, or Placement... for exact center pixels and size.
 Size pulse has independent foreground and labels/timeline controls; new presets use v8.
 Hover Audio at the preview's top right for playback controls outside the Media tab.
 

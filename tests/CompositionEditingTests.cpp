@@ -58,6 +58,27 @@ int main() {
                         "Dragging outside preview must keep elements inside canvas and supported ranges");
                     const auto originalBounds = elementBounds(settings,element);
                     if (!originalBounds) continue;
+                    for (int edge : {720,1080}) {
+                        auto numeric = settings;
+                        numeric.shortEdge = edge;
+                        const auto output = outputSize(format,edge);
+                        const CanvasPoint center{(originalBounds->left+originalBounds->right)*0.5f*output.width/layout.canvas.width+12,
+                            (originalBounds->top+originalBounds->bottom)*0.5f*output.height/layout.canvas.height-8};
+                        numeric.design = setCompositionElementTransform(numeric,element,center,0.8f);
+                        const auto actual = elementBounds(numeric,element);
+                        require(near((actual->left+actual->right)*0.5f*output.width/layout.canvas.width,center.x)
+                            && near((actual->top+actual->bottom)*0.5f*output.height/layout.canvas.height,center.y),
+                            "Numeric center and size must use output pixels in every layout");
+                        if (element == CompositionElement::Foreground)
+                            require(numeric.design.foregroundScale == 0.8f && numeric.design.labelsX == settings.design.labelsX
+                                && numeric.design.labelsScale == settings.design.labelsScale,"Numeric foreground edit must preserve labels");
+                        else require(numeric.design.labelsScale == 0.8f && numeric.design.foregroundX == settings.design.foregroundX
+                            && numeric.design.foregroundScale == settings.design.foregroundScale,"Numeric label edit must preserve foreground");
+                        numeric.design = setCompositionElementTransform(numeric,element,{-1e30f,1e30f},99);
+                        validateDesign(numeric.design);
+                        require(setCompositionElementTransform(numeric,element,{0,0},std::numeric_limits<float>::quiet_NaN()) == numeric.design,
+                            "Nonfinite numeric placement input must be ignored");
+                    }
                     const CanvasPoint center{(originalBounds->left+originalBounds->right)/2,
                         (originalBounds->top+originalBounds->bottom)/2};
                     for (int i=0; i<4; ++i) {

@@ -222,31 +222,6 @@ void drawDesignControls(EditorUiState& state) {
         ImGui::Checkbox("Progress line",&design.showProgress);
         ImGui::Checkbox("Time labels",&design.showTimestamps);
     }
-    if (ImGui::CollapsingHeader("Element placement")) {
-        ImGui::BeginDisabled(design.scene == SceneKind::Titles || state.foregroundPlacementLocked);
-        effectSlider("##ForegroundScale",design.foregroundScale,0.5f,1.5f,"Foreground size: %.2fx");
-        effectSlider("##ForegroundX",design.foregroundX,-0.3f,0.3f,"Foreground X: %+.2f");
-        effectSlider("##ForegroundY",design.foregroundY,-0.3f,0.3f,"Foreground Y: %+.2f");
-        ImGui::EndDisabled();
-        ImGui::BeginDisabled(state.labelsPlacementLocked);
-        effectSlider("##LabelsScale",design.labelsScale,0.5f,1.5f,"Labels + timeline size: %.2fx");
-        effectSlider("##LabelsX",design.labelsX,-0.3f,0.3f,"Labels X: %+.2f");
-        effectSlider("##LabelsY",design.labelsY,-0.3f,0.3f,"Labels Y: %+.2f");
-        ImGui::EndDisabled();
-        ImGui::BeginDisabled(state.foregroundPlacementLocked && state.labelsPlacementLocked);
-        if (ImGui::Button("Reset placement")) {
-            if (!state.foregroundPlacementLocked) {
-                design.foregroundScale = 1;
-                design.foregroundX = design.foregroundY = 0;
-            }
-            if (!state.labelsPlacementLocked) {
-                design.labelsScale = 1;
-                design.labelsX = design.labelsY = 0;
-            }
-        }
-        ImGui::EndDisabled();
-        ImGui::TextWrapped("Offsets are fractions of the canvas. Placement stays inside the frame; adjust overlapping elements as needed.");
-    }
     if (ImGui::CollapsingHeader("Background design")) {
         int background = static_cast<int>(design.background);
         ImGui::SetNextItemWidth(-1);
@@ -633,13 +608,31 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
     ImGui::Checkbox("Guides",&state.showAlignmentGuides);
     ImGui::EndDisabled();
     ImGui::BeginDisabled(state.historyBlocked || state.previewDragging);
-    ImGui::Checkbox("Lock foreground",&state.foregroundPlacementLocked);
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Lock position and size for this session. Effects and Undo/Redo remain available.");
+    const char* groupNames[]{"Select group","Foreground","Labels + timeline"};
+    ImGui::SetNextItemWidth(ImGui::GetFontSize()*13);
+    if (ImGui::BeginCombo("##PreviewGroup",groupNames[static_cast<int>(state.previewSelection)])) {
+        for (auto group : {CompositionElement::None,CompositionElement::Foreground,CompositionElement::Labels}) {
+            const auto name = std::string(groupNames[static_cast<int>(group)])+(state.placementLocked(group) ? " (locked)" : "");
+            ImGui::BeginDisabled(group != CompositionElement::None && !elementBounds(settings,group));
+            if (ImGui::Selectable(name.c_str(),state.previewSelection == group)) {
+                state.previewSelection = group;
+                state.previewKeyboardFocus = false;
+            }
+            ImGui::EndDisabled();
+        }
+        ImGui::EndCombo();
+    }
     ImGui::SameLine();
-    ImGui::Checkbox("Lock labels",&state.labelsPlacementLocked);
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Lock position and size for this session. Effects and Undo/Redo remain available.");
+    ImGui::BeginDisabled(!elementBounds(settings,state.previewSelection));
+    bool locked = state.placementLocked(state.previewSelection);
+    if (ImGui::Checkbox("Lock",&locked)) {
+        if (state.previewSelection == CompositionElement::Foreground) state.foregroundPlacementLocked = locked;
+        else if (state.previewSelection == CompositionElement::Labels) state.labelsPlacementLocked = locked;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Lock this group's position and size for the session; effects remain editable.");
     ImGui::EndDisabled();
-    ImGui::TextDisabled("Drag: move. Corners: resize. Arrows: 1px / Shift: 10px.");
+    ImGui::EndDisabled();
+    ImGui::SameLine();
     ImGui::BeginDisabled(state.historyBlocked || state.previewDragging || state.placementLocked(state.previewSelection)
         || !elementBounds(settings,state.previewSelection));
     const auto apply = [&](CompositionDesign design) {
@@ -654,6 +647,30 @@ void drawPreview(EditorUiState& state, std::uint32_t texture) {
         }
         settings.design = state.design;
     };
+    if (ImGui::Button("Placement...")) ImGui::OpenPopup("Group placement");
+    if (ImGui::BeginPopup("Group placement")) {
+        if (const auto bounds = elementBounds(settings,state.previewSelection)) {
+            const auto canvas = layoutFor(settings.format).canvas;
+            const auto output = outputSize(settings.format,settings.shortEdge);
+            float x = (bounds->left+bounds->right)*0.5f*output.width/canvas.width;
+            float y = (bounds->top+bounds->bottom)*0.5f*output.height/canvas.height;
+            float percent = (state.previewSelection == CompositionElement::Foreground
+                ? state.design.foregroundScale : state.design.labelsScale)*100;
+            ImGui::TextUnformatted(groupNames[static_cast<int>(state.previewSelection)]);
+            ImGui::SetNextItemWidth(ImGui::GetFontSize()*12);
+            bool changed = ImGui::InputFloat("Center X (px)",&x,1,10,"%.2f");
+            ImGui::SetNextItemWidth(ImGui::GetFontSize()*12);
+            changed |= ImGui::InputFloat("Center Y (px)",&y,1,10,"%.2f");
+            ImGui::SetNextItemWidth(ImGui::GetFontSize()*12);
+            changed |= ImGui::InputFloat("Size (%)",&percent,1,10,"%.2f");
+            if (changed) apply(setCompositionElementTransform(settings,state.previewSelection,{x,y},percent/100));
+            ImGui::TextDisabled("Output pixels, before effects. Size: 50-150%%.");
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(state.historyBlocked || state.previewDragging || state.placementLocked(state.previewSelection)
+        || !elementBounds(settings,state.previewSelection));
     if (ImGui::Button("Center X")) apply(editCompositionElement(settings,state.previewSelection,CompositionEdit::CenterHorizontal));
     ImGui::SameLine();
     if (ImGui::Button("Center Y")) apply(editCompositionElement(settings,state.previewSelection,CompositionEdit::CenterVertical));

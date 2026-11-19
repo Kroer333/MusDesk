@@ -34,6 +34,8 @@ CompositionAlignment snapCompositionElement(const CompositionSettings& settings,
     CanvasPoint tolerance);
 CompositionDesign nudgeCompositionElement(const CompositionSettings& settings, CompositionElement element,
     CanvasPoint outputPixels);
+CompositionDesign setCompositionElementTransform(const CompositionSettings& settings, CompositionElement element,
+    CanvasPoint outputCenter, float scale);
 CompositionDesign editCompositionElement(const CompositionSettings& settings, CompositionElement element,
     CompositionEdit action);
 }

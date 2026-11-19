@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added preview group selection with lock status and a compact numeric placement inspector, replacing duplicate placement sliders.
+
 - Added a hover audio panel at the preview's right edge, sharing the Media playback controls.
 
 - Split foreground and labels/timeline size pulses into independent controls and pivots; preset v8 migrates v1–v7 settings.
